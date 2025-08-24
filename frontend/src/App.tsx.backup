@@ -1,0 +1,147 @@
+import React, { useEffect, useState } from 'react';
+import './App.css        <div className="flex gap-2">
+          <button 
+            className="px-3 py-1 bg-blue-600 rounded hover:bg-blue-700 text-sm"
+            onClick={createNewProject}
+          >
+            📄 New Project
+          </button>
+          <button 
+            className="px-3 py-1 bg-green-600 rounded hover:bg-green-700 text-sm"
+            onClick={saveProject}
+          >
+            💾 Save
+          </button>
+          <button 
+            className="px-3 py-1 bg-purple-600 rounded hover:bg-purple-700 text-sm"
+            onClick={loadProject}
+          >
+            📂 Load
+          </button>
+          <button 
+            className="px-3 py-1 bg-red-600 rounded hover:bg-red-700 text-sm"
+            onClick={() => setShowExportSystem(true)}
+            disabled={!currentProject}
+          >
+            🎬 Export
+          </button>tor from './components/CanvasEditor';
+import Timeline from './components/Timeline';
+import AssetPanel from './components/AssetPanel';
+import PropertiesPanel from './components/PropertiesPanel';
+import ProjectTemplates from './components/ProjectTemplates';
+import ExportSystem from './components/ExportSystem';
+import { useAppStore, createDefaultProject } from './store/appStore';
+
+function App() {
+  const { currentProject, setProject } = useAppStore();
+  const [showProjectTemplates, setShowProjectTemplates] = useState(false);
+  const [showExportSystem, setShowExportSystem] = useState(false);
+
+  useEffect(() => {
+    // Initialize with a default project if none exists
+    if (!currentProject) {
+      const defaultProject = createDefaultProject();
+      setProject(defaultProject);
+    }
+  }, [currentProject, setProject]);
+
+  const createNewProject = () => {
+    setShowProjectTemplates(true);
+  };
+
+  const saveProject = async () => {
+    if (!currentProject) return;
+    
+    try {
+      const response = await fetch('http://localhost:3001/api/projects', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(currentProject)
+      });
+      
+      if (response.ok) {
+        alert('Project saved successfully!');
+      } else {
+        alert('Failed to save project');
+      }
+    } catch (error) {
+      alert(`Save error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const loadProject = async () => {
+    try {
+      const response = await fetch('http://localhost:3001/api/projects');
+      const projects = await response.json();
+      
+      if (projects.length > 0) {
+        // For now, load the first project. In a real app, you'd show a project picker
+        setProject(projects[0]);
+        alert(`Loaded project: ${projects[0].name}`);
+      } else {
+        alert('No saved projects found');
+      }
+    } catch (error) {
+      alert(`Load error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+  return (
+    <div className="h-screen flex flex-col bg-gray-900 text-white">
+      <header className="bg-gray-800 p-4 border-b border-gray-700 flex justify-between items-center">
+        <h1 className="text-xl font-bold">Scribe Animator</h1>
+        <div className="flex gap-2">
+          <button 
+            className="px-3 py-1 bg-blue-600 rounded hover:bg-blue-700 text-sm"
+            onClick={createNewProject}
+          >
+            📄 New Project
+          </button>
+          <button 
+            className="px-3 py-1 bg-green-600 rounded hover:bg-green-700 text-sm"
+            onClick={saveProject}
+          >
+            💾 Save
+          </button>
+          <button 
+            className="px-3 py-1 bg-orange-600 rounded hover:bg-orange-700 text-sm"
+            onClick={loadProject}
+          >
+            📂 Load
+          </button>
+          <div className="text-sm text-gray-400">
+            {currentProject ? currentProject.name : 'Loading...'}
+          </div>
+        </div>
+      </header>
+      
+      <div className="flex-1 flex">
+        <div className="w-64 bg-gray-800 border-r border-gray-700">
+          <AssetPanel />
+        </div>
+        
+        <div className="flex-1 flex flex-col">
+          <div className="flex-1 p-4">
+            <CanvasEditor />
+          </div>
+          
+          <div className="h-48 bg-gray-800 border-t border-gray-700">
+            <Timeline />
+          </div>
+        </div>
+
+        <div className="w-80 bg-gray-800 border-l border-gray-700">
+          <PropertiesPanel />
+        </div>
+      </div>
+
+      {/* Project Templates Modal */}
+      {showProjectTemplates && (
+        <ProjectTemplates onClose={() => setShowProjectTemplates(false)} />
+      )}
+    </div>
+  );
+}
+
+export default App;

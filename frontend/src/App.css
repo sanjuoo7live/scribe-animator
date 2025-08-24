@@ -1,0 +1,401 @@
+/* Modern Application Styles */
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: #1a1a1a;
+  color: #ffffff;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+}
+
+/* Header Styles */
+.app-header {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 12px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+  z-index: 100;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+
+.header-left h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+.project-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.project-name {
+  background: rgba(255,255,255,0.2);
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  backdrop-filter: blur(10px);
+}
+
+.header-actions {
+  display: flex;
+  gap: 12px;
+}
+
+/* Button Styles */
+.btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #ff6b6b 0%, #ff8e8e 100%);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, #ff5252 0%, #ff7979 100%);
+}
+
+.btn-secondary {
+  background: rgba(255,255,255,0.2);
+  color: white;
+  backdrop-filter: blur(10px);
+}
+
+.btn-secondary:hover {
+  background: rgba(255,255,255,0.3);
+}
+
+/* Layout Styles */
+.app-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.left-panel {
+  min-width: 250px;
+  max-width: 500px;
+  width: 320px;
+  background: #1f2937;
+  border-right: 1px solid #374151;
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+  position: relative;
+}
+
+.panel-resizer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 4px;
+  height: 100%;
+  background: #374151;
+  cursor: col-resize;
+  transition: background-color 0.2s ease;
+  z-index: 1000;
+}
+
+.panel-resizer:hover {
+  background: #3b82f6;
+}
+
+.panel-resizer.resizing {
+  background: #2563eb;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #111827;
+}
+
+/* Custom Scrollbar for Asset Panel */
+.left-panel *::-webkit-scrollbar {
+  width: 6px;
+}
+
+.left-panel *::-webkit-scrollbar-track {
+  background: #374151;
+}
+
+.left-panel *::-webkit-scrollbar-thumb {
+  background: #6b7280;
+  border-radius: 3px;
+}
+
+.left-panel *::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* Asset Button Enhancements */
+.asset-button {
+  transition: all 0.2s ease;
+  background: #374151;
+  border: 1px solid #4b5563;
+  color: white;
+}
+
+.asset-button:hover {
+  background: #4b5563;
+  border-color: #3b82f6;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+}
+
+/* Improved text contrast */
+.text-contrast {
+  color: #f9fafb;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+}
+
+.canvas-container {
+  flex: 1;
+  background: #242424;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.timeline-container {
+  background: #111827;
+  border-top: 2px solid #374151;
+  overflow: hidden;
+  box-shadow: 0 -4px 10px rgba(0,0,0,0.2);
+  min-height: 200px;
+  max-height: 500px;
+}
+
+.timeline-resizer {
+  height: 4px;
+  background: #374151;
+  cursor: row-resize;
+  transition: background-color 0.2s ease;
+  z-index: 1000;
+  border-top: 1px solid #4b5563;
+}
+
+.timeline-resizer:hover {
+  background: #3b82f6;
+}
+
+.timeline-resizer.resizing {
+  background: #2563eb;
+}
+
+.right-panel {
+  width: 280px;
+  background: #2d2d2d;
+  border-left: 1px solid #404040;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+/* Canvas Editor Styles */
+.canvas-editor {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+/* Compact Slider for Floating Toolbar */
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #3b82f6;
+  cursor: pointer;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+input[type="range"]::-webkit-slider-track {
+  width: 100%;
+  height: 4px;
+  cursor: pointer;
+  background: #374151;
+  border-radius: 2px;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #3b82f6;
+  cursor: pointer;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+input[type="range"]::-moz-range-track {
+  width: 100%;
+  height: 4px;
+  cursor: pointer;
+  background: #374151;
+  border-radius: 2px;
+}
+
+.canvas-controls {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  z-index: 10;
+}
+
+.canvas-control-group {
+  background: rgba(0,0,0,0.8);
+  backdrop-filter: blur(10px);
+  border-radius: 8px;
+  padding: 8px;
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.canvas-btn {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.2);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.canvas-btn:hover {
+  background: rgba(255,255,255,0.1);
+  border-color: rgba(255,255,255,0.4);
+}
+
+.canvas-btn.active {
+  background: #4f46e5;
+  border-color: #4f46e5;
+}
+
+.canvas-settings-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: rgba(0,0,0,0.8);
+  border: 1px solid rgba(255,255,255,0.2);
+  color: white;
+  padding: 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  z-index: 10;
+}
+
+.canvas-settings-btn:hover {
+  background: rgba(0,0,0,0.9);
+  border-color: rgba(255,255,255,0.4);
+}
+
+/* Color picker and stroke controls */
+.color-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.color-picker {
+  width: 32px;
+  height: 32px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-radius: 6px;
+  cursor: pointer;
+  background: transparent;
+}
+
+.stroke-width-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stroke-slider {
+  width: 60px;
+}
+
+/* Remove old styles */
+.App {
+  text-align: left;
+}
+
+.App-logo {
+  display: none;
+}
+
+.App-header {
+  display: none;
+}
+
+.App-link {
+  display: none;
+}
+
+@keyframes App-logo-spin {
+  /* Hide old animation */
+}
+
+/* Preview Mode Styles */
+body.preview-mode .left-panel,
+body.preview-mode .right-panel {
+  opacity: 0.3;
+  transition: opacity 0.3s ease;
+}
+
+body.preview-mode .timeline-container {
+  opacity: 0.7;
+  transition: opacity 0.3s ease;
+}
+
+body.preview-mode .app-header {
+  opacity: 0.5;
+  transition: opacity 0.3s ease;
+}
+
+body.preview-mode:hover .left-panel,
+body.preview-mode:hover .right-panel,
+body.preview-mode:hover .timeline-container,
+body.preview-mode:hover .app-header {
+  opacity: 1;
+}

@@ -1,0 +1,310 @@
+/* Plugin System Styles */
+.plugin-system {
+  background: white;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.plugin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+  border-bottom: 1px solid #eee;
+  padding-bottom: 8px;
+}
+
+.tab-buttons {
+  display: flex;
+  gap: 4px;
+}
+
+.tab-btn {
+  padding: 6px 12px;
+  border: 1px solid #ddd;
+  background: #f5f5f5;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.tab-btn.active {
+  background: #007bff;
+  color: white;
+  border-color: #007bff;
+}
+
+.category-filter {
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.category-select {
+  padding: 4px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.effects-list {
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 16px;
+}
+
+.effect-card {
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  margin-bottom: 4px;
+  cursor: pointer;
+}
+
+.effect-card:hover {
+  background: #f8f9fa;
+}
+
+.effect-card.selected {
+  background: #e3f2fd;
+  border-color: #2196f3;
+}
+
+.effect-name {
+  font-weight: bold;
+  margin-bottom: 2px;
+}
+
+.effect-description {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 2px;
+}
+
+.effect-category {
+  font-size: 10px;
+  background: #e9ecef;
+  padding: 2px 6px;
+  border-radius: 12px;
+  display: inline-block;
+}
+
+.effect-editor {
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 12px;
+  background: #fafafa;
+}
+
+.parameter-group {
+  margin-bottom: 12px;
+}
+
+.parameter-label {
+  display: block;
+  font-weight: bold;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.parameter-description {
+  font-weight: normal;
+  color: #666;
+}
+
+.parameter-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.parameter-range {
+  flex: 1;
+}
+
+.parameter-value {
+  font-size: 12px;
+  min-width: 40px;
+}
+
+.parameter-color {
+  width: 40px;
+  height: 30px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.parameter-select, .parameter-text {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.effect-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.apply-effect-btn {
+  background: #28a745;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.apply-effect-btn:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+}
+
+.preview-effect-btn {
+  background: #17a2b8;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.plugin-card {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.plugin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.plugin-info .plugin-name {
+  font-weight: bold;
+  font-size: 14px;
+}
+
+.plugin-version, .plugin-author {
+  font-size: 12px;
+  color: #666;
+}
+
+.toggle-btn {
+  padding: 4px 12px;
+  border-radius: 4px;
+  border: 1px solid;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.toggle-btn.enabled {
+  background: #28a745;
+  color: white;
+  border-color: #28a745;
+}
+
+.toggle-btn.disabled {
+  background: #6c757d;
+  color: white;
+  border-color: #6c757d;
+}
+
+.store-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.search-bar {
+  display: flex;
+  gap: 8px;
+}
+
+.search-bar input {
+  padding: 4px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.store-categories {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.store-category {
+  padding: 4px 12px;
+  border: 1px solid #ddd;
+  background: #f5f5f5;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.store-category.active {
+  background: #007bff;
+  color: white;
+  border-color: #007bff;
+}
+
+.store-plugin-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+.plugin-preview {
+  font-size: 24px;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8f9fa;
+  border-radius: 8px;
+}
+
+.plugin-details {
+  flex: 1;
+}
+
+.plugin-details .plugin-name {
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.plugin-details .plugin-author {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.plugin-details .plugin-description {
+  font-size: 13px;
+  color: #333;
+  margin-bottom: 4px;
+}
+
+.plugin-price {
+  font-weight: bold;
+  color: #28a745;
+}
+
+.install-btn {
+  background: #007bff;
+  color: white;
+  border: none;
+  padding: 6px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+}

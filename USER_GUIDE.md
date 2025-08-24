@@ -159,6 +159,36 @@
 - **Track Height**: Adjustable track sizes
 - **Selection Range**: Select portions of timeline
 
+### Timeline Enhancements (Controls)
+
+- Open with the “Show Timeline Enhancements” button under the timeline.
+- Quick Duration and Zoom: pick presets for project length and zoom level.
+- Snap to Grid: when enabled, drag/resize snaps to 0.1s increments for precise timing.
+- Markers: add a labeled marker (label + time) and it appears as a yellow tick on the ruler above tracks. Use Clear to remove all.
+- Animation Presets: quick-apply a preset easing (Linear, Ease In, Ease Out, Bounce) to the selected keyframe.
+
+### Keyframe Editor
+
+- Open with the “Show Keyframe Editor” button.
+- Right‑click a purple bar to add keyframes; they show as yellow markers.
+- Select a keyframe to edit properties (X, Y, Scale, Rotation, Opacity) and Easing.
+- Tools: Copy Keyframes, Reverse Order, Distribute Evenly.
+
+### Animation Curves
+
+- Click “Animation Curves” to open the curve editor modal.
+- Choose presets or switch to Custom and drag control points to design a cubic-bezier curve.
+- Click Apply Curve to set easing on the selected keyframe.
+
+### Playback & Preview
+
+- Smooth Playback (toggle in Enhancements) makes time advance in even 1/60s steps for steadier playhead movement.
+- Preview Mode dims non-essential UI for focused review (visual-only convenience).
+
+### Auto‑Save
+
+- Auto‑save (enabled by default) stores timeline state locally and restores it on reload. Disable via Enhancements if needed.
+
 ---
 
 ## Audio Management

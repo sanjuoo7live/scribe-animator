@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 🎬 Scribe Animator - Professional Animation Studio
 
 A comprehensive, web-based animation platform for creating professional whiteboard animations, explainer videos, and interactive content with AI-powered assistance.
@@ -320,34 +321,40 @@ export const createCustomEffect = (config: CustomPlugin) => {
 - **Testing**: Jest + React Testing Library
 - **Documentation**: Comprehensive JSDoc comments
 
-## 📞 **Support**
+## � **Quick Start**
 
-### Getting Help
-- **🤖 AI Assistant**: Built-in contextual help (F1 key)
-- **📖 Documentation**: Comprehensive guides and references
-- **💬 Community**: GitHub Discussions and Issues
-- **📧 Direct Support**: Technical assistance available
+### Prerequisites
+- Node.js 16+ and npm
+- Modern web browser
+- 4GB+ RAM recommended
 
-### Reporting Issues
-1. Check existing issues and documentation
-2. Create detailed bug report with steps to reproduce
-3. Include system information and browser details
-4. Attach relevant project files if possible
+### Installation (Quick)
+```bash
+cd frontend
+npm ci
+npm start
+```
 
----
+### First Animation
+1. Open http://localhost:3000
+2. Click "New Project" and set your preferences
+3. Add elements from the Asset Panel (left sidebar)
+4. Use AI Assistant for automated animations
+5. Export your video when complete
 
-## 📜 **License**
+### Run (Production Build)
+```bash
+cd frontend
+npm run build
+```
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+## Release
 
-## 🙏 **Acknowledgments**
+This repository was tagged `v0.1.0` for the initial feature release (timeline click-to-jump, animation system, timeline enhancements).
 
-- **Konva.js** - Powerful 2D canvas library
-- **React Team** - Modern UI framework
-- **Web Audio API** - Professional audio processing
-- **Open Source Community** - Inspiration and collaboration
+## CI
 
----
+A minimal GitHub Actions workflow is included at `.github/workflows/ci.yml` to install dependencies, build the frontend, and run the frontend tests on pushes and PRs to `main`.
 
 **🎬 Scribe Animator** - *Professional Animation Made Simple*
 
@@ -488,3 +495,31 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - All data stored locally
 - Personal use only
 - Ready for further development and customization
+=======
+# scribe-animator
+
+## Quick Start (Frontend)
+
+Make sure you have Node.js 18+ and npm installed.
+
+```bash
+cd frontend
+npm ci
+npm start
+```
+
+To build for production:
+
+```bash
+cd frontend
+npm run build
+```
+
+## Release
+
+This repository was tagged `v0.1.0` for the initial feature release (timeline click-to-jump, animation system, timeline enhancements).
+
+## CI
+
+A minimal GitHub Actions workflow is included at `.github/workflows/ci.yml` to install dependencies, build the frontend, and run the frontend tests on pushes and PRs to `main`.
+>>>>>>> 263fd10 (chore(ci): add GitHub Actions workflow and README run instructions)

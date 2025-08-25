@@ -35,16 +35,22 @@ const CanvasEditor: React.FC = () => {
   const [fitMode, setFitMode] = React.useState<'width' | 'contain'>('contain');
   const [canvasSize, setCanvasSize] = React.useState({ width: 800, height: 600 });
 
-  // Deselect on Escape key
+  // Keyboard shortcuts: Escape to deselect, Delete/Backspace to remove selected
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        selectObject(null);
+        return;
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedObject && !editingText) {
+        e.preventDefault();
+        removeObject(selectedObject);
         selectObject(null);
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectObject]);
+  }, [selectObject, removeObject, selectedObject, editingText]);
 
   React.useEffect(() => {
     const updateSize = () => {
@@ -580,7 +586,7 @@ const CanvasEditor: React.FC = () => {
         if (obj.type === 'text') {
                   return (
           <Text key={obj.id} id={obj.id} x={animatedProps.x ?? obj.x} y={animatedProps.y ?? obj.y}
-      text={obj.properties.text || 'Text'} fontSize={obj.properties.fontSize || 16} width={obj.width || 1} rotation={obj.rotation || 0}
+      text={obj.properties.text || 'Text'} fontSize={obj.properties.fontSize || 16} width={obj.width ?? undefined} rotation={obj.rotation || 0}
                       scaleX={animatedProps.scaleX ?? 1} scaleY={animatedProps.scaleY ?? 1} opacity={animatedProps.opacity ?? 1}
                       fill={isSelected ? '#4f46e5' : obj.properties.fill || '#000'} draggable={tool === 'select'}
                       onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }} onDblClick={() => handleTextDoubleClick(obj.id)}

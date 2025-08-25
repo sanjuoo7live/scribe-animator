@@ -376,18 +376,32 @@ const CanvasEditor: React.FC = () => {
           >
             ✏️ {tool === 'pen' ? 'Stop' : 'Draw'}
           </button>
-          <button className="px-3 py-1 bg-blue-600 rounded hover:bg-blue-700 text-sm font-medium" onClick={addText}>📝 Text</button>
-          <button className={`px-3 py-1 rounded text-sm font-medium transition-colors ${fitMode === 'width' ? 'bg-green-600 text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'}`} onClick={() => setFitMode(fitMode === 'width' ? 'contain' : 'width')} title={fitMode === 'width' ? 'Fit Mode: Width (click to switch to Contain)' : 'Fit Mode: Contain (click to switch to Width)'}>
-            {fitMode === 'width' ? '↔️ Fit Width' : '🧩 Fit Contain'}
-          </button>
-          <div className="w-px h-4 bg-gray-500 mx-2" />
-          <button className={`px-3 py-1 rounded text-sm font-medium transition-colors ${canUndo() ? 'bg-gray-600 text-gray-300 hover:bg-gray-500' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`} onClick={canUndo() ? undo : undefined} disabled={!canUndo()} title="Undo (Ctrl/Cmd + Z)">↶ Undo</button>
-          <button className={`px-3 py-1 rounded text-sm font-medium transition-colors ${canRedo() ? 'bg-gray-600 text-gray-300 hover:bg-gray-500' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`} onClick={canRedo() ? redo : undefined} disabled={!canRedo()} title="Redo (Ctrl/Cmd + Shift + Z)">↷ Redo</button>
-          <div className="w-px h-4 bg-gray-500 mx-2" />
-          <div className="flex items-center gap-2">
-            <input type="color" value={strokeColor} onChange={(e) => setStrokeColor(e.target.value)} className="w-8 h-8 rounded border border-gray-600" />
-            <input type="range" min="1" max="20" value={strokeWidth} onChange={(e) => setStrokeWidth(Number(e.target.value))} className="w-20" />
-            <span className="text-xs text-gray-300 w-6 text-center">{strokeWidth}</span>
+          {/* Shortcuts hint next to Draw */}
+          <span
+            className="text-[11px] px-2 py-0.5 rounded bg-gray-700 text-gray-200 border border-gray-600 cursor-help"
+            title="Shortcuts: D = Toggle Draw, Esc = Stop, V = Select"
+          >
+            D/Esc/V
+          </span>
+          {/* Brush controls moved beside Draw */}
+          <div className="flex items-center gap-2 ml-1">
+            <input
+              type="color"
+              value={strokeColor}
+              onChange={(e) => setStrokeColor(e.target.value)}
+              className="w-8 h-8 rounded border border-gray-600"
+              title="Brush Color"
+            />
+            <input
+              type="range"
+              min="1"
+              max="20"
+              value={strokeWidth}
+              onChange={(e) => setStrokeWidth(Number(e.target.value))}
+              className="w-24"
+              title="Brush Size"
+            />
+            <span className="text-xs text-gray-300 w-6 text-center" title="Brush Size">{strokeWidth}</span>
             <select
               value={penType}
               onChange={(e) => setPenType(e.target.value as any)}
@@ -399,6 +413,14 @@ const CanvasEditor: React.FC = () => {
               <option value="dashed">Dashed</option>
             </select>
           </div>
+          <button className="px-3 py-1 bg-blue-600 rounded hover:bg-blue-700 text-sm font-medium" onClick={addText}>📝 Text</button>
+          <button className={`px-3 py-1 rounded text-sm font-medium transition-colors ${fitMode === 'width' ? 'bg-green-600 text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'}`} onClick={() => setFitMode(fitMode === 'width' ? 'contain' : 'width')} title={fitMode === 'width' ? 'Fit Mode: Width (click to switch to Contain)' : 'Fit Mode: Contain (click to switch to Width)'}>
+            {fitMode === 'width' ? '↔️ Fit Width' : '🧩 Fit Contain'}
+          </button>
+          <div className="w-px h-4 bg-gray-500 mx-2" />
+          <button className={`px-3 py-1 rounded text-sm font-medium transition-colors ${canUndo() ? 'bg-gray-600 text-gray-300 hover:bg-gray-500' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`} onClick={canUndo() ? undo : undefined} disabled={!canUndo()} title="Undo (Ctrl/Cmd + Z)">↶ Undo</button>
+          <button className={`px-3 py-1 rounded text-sm font-medium transition-colors ${canRedo() ? 'bg-gray-600 text-gray-300 hover:bg-gray-500' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`} onClick={canRedo() ? redo : undefined} disabled={!canRedo()} title="Redo (Ctrl/Cmd + Shift + Z)">↷ Redo</button>
+          
         </div>
         <div className="flex items-center gap-2">
           {selectedObject && (

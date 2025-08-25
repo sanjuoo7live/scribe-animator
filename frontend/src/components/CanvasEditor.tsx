@@ -35,6 +35,17 @@ const CanvasEditor: React.FC = () => {
   const [fitMode, setFitMode] = React.useState<'width' | 'contain'>('contain');
   const [canvasSize, setCanvasSize] = React.useState({ width: 800, height: 600 });
 
+  // Deselect on Escape key
+  React.useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        selectObject(null);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectObject]);
+
   React.useEffect(() => {
     const updateSize = () => {
       const projW = currentProject?.width || 800;
@@ -114,10 +125,13 @@ const CanvasEditor: React.FC = () => {
   };
 
   const handleObjectDrag = (id: string, node: any) => {
-    const ox = typeof node.offsetX === 'function' ? node.offsetX() : node.offsetX || 0;
-    const oy = typeof node.offsetY === 'function' ? node.offsetY() : node.offsetY || 0;
     const nx = typeof node.x === 'function' ? node.x() : node.x || 0;
     const ny = typeof node.y === 'function' ? node.y() : node.y || 0;
+    const obj = currentProject?.objects.find((o) => o.id === id);
+    if (!obj) return;
+    // Default: offset-aware calculation
+    const ox = typeof node.offsetX === 'function' ? node.offsetX() : node.offsetX || 0;
+    const oy = typeof node.offsetY === 'function' ? node.offsetY() : node.offsetY || 0;
     updateObject(id, { x: nx - ox, y: ny - oy });
   };
 
@@ -130,11 +144,31 @@ const CanvasEditor: React.FC = () => {
     const baseHeight = obj?.height ?? (typeof node.height === 'function' ? node.height() : 100);
     const newWidth = Math.max(1, baseWidth * scaleX);
     const newHeight = Math.max(1, baseHeight * scaleY);
-    const ox = typeof node.offsetX === 'function' ? node.offsetX() : node.offsetX || 0;
-    const oy = typeof node.offsetY === 'function' ? node.offsetY() : node.offsetY || 0;
     const nx = typeof node.x === 'function' ? node.x() : node.x || 0;
     const ny = typeof node.y === 'function' ? node.y() : node.y || 0;
-    updateObject(id, { x: nx - ox, y: ny - oy, width: newWidth, height: newHeight, rotation });
+
+  if (obj && obj.type === 'text') {
+      // Text resizing: horizontal scale adjusts width; vertical scale adjusts fontSize
+      const baseFont = obj.properties?.fontSize || 16;
+      const newFont = Math.max(8, baseFont * scaleY);
+      const ox = typeof node.offsetX === 'function' ? node.offsetX() : node.offsetX || 0;
+      const oy = typeof node.offsetY === 'function' ? node.offsetY() : node.offsetY || 0;
+      updateObject(id, {
+        x: nx - ox,
+        y: ny - oy,
+        width: Math.max(20, newWidth),
+        height: obj.height, // height is implied by font size; keep unchanged
+        rotation,
+        properties: { ...obj.properties, fontSize: newFont },
+      });
+  } else {
+      // Default: offset-aware update using current offsets
+      const ox = typeof node.offsetX === 'function' ? node.offsetX() : node.offsetX || 0;
+      const oy = typeof node.offsetY === 'function' ? node.offsetY() : node.offsetY || 0;
+      updateObject(id, { x: nx - ox, y: ny - oy, width: newWidth, height: newHeight, rotation });
+    }
+
+    // Reset scale so width/height reflect the new size
     if (typeof node.scaleX === 'function') {
       node.scaleX(1);
       node.scaleY(1);
@@ -277,6 +311,19 @@ const CanvasEditor: React.FC = () => {
             y={currentProject?.cameraPosition?.y || 0}
           >
             <Layer>
+              {/* Clickable background to allow deselection when clicking blank space */}
+              <Rect
+                id="canvas-bg"
+                x={0}
+                y={0}
+                width={currentProject?.width || 800}
+                height={currentProject?.height || 600}
+                fill="rgba(0,0,0,0)"
+                listening={true}
+                onMouseDown={() => {
+                  if (tool === 'select') selectObject(null);
+                }}
+              />
               <Text text="Scribe Animator Canvas" x={50} y={50} fontSize={24} fill="gray" />
 
               {lines.map((line, i) => (
@@ -368,15 +415,37 @@ const CanvasEditor: React.FC = () => {
                     );
                   }
                   if (props.shapeType === 'arrow') {
-                    const w = obj.width || 100; const h = obj.height || 100;
+                    const w = Math.max(2, obj.width || 100);
+                    const thickness = Math.max(2, obj.height || 8); // treat height as thickness
+                    // Apply slideIn animation to position, others to Group properties
+                    const groupX = animatedProps.x ?? obj.x;
+                    const groupY = animatedProps.y ?? obj.y;
                     return (
-                      <Group key={obj.id} id={obj.id}
-                        x={(animatedProps.x ?? obj.x) + w / 2} y={(animatedProps.y ?? obj.y) + h / 2}
-                        offsetX={w / 2} offsetY={h / 2} rotation={obj.rotation || 0}
-                        draggable={tool === 'select'} onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
-                        onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)} onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}>
-                        <Arrow points={[-w / 2, 0, w / 2, 0]} pointerLength={20} pointerWidth={20}
-                          fill={props.fill || 'transparent'} stroke={isSelected ? '#4f46e5' : props.stroke || '#000'} strokeWidth={(props.strokeWidth || 2) + (isSelected ? 1 : 0)} />
+                      <Group
+                        key={obj.id}
+                        id={obj.id}
+                        x={groupX}
+                        y={groupY}
+                        rotation={obj.rotation || 0}
+                        scaleX={animatedProps.scaleX ?? 1}
+                        scaleY={animatedProps.scaleY ?? 1}
+                        opacity={animatedProps.opacity ?? 1}
+                        draggable={tool === 'select'}
+                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
+                        onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
+                        onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
+                      >
+                        <Arrow
+                          points={[0, thickness / 2, w, thickness / 2]}
+                          pointerLength={Math.max(10, Math.min(80, w * 0.25))}
+                          pointerWidth={Math.max(6, thickness)}
+                          fill={props.fill || 'transparent'}
+                          stroke={isSelected ? '#4f46e5' : props.stroke || '#000'}
+                          strokeWidth={props.strokeWidth || Math.max(2, Math.min(thickness, 16))}
+                          lineCap="round"
+                          lineJoin="round"
+                          hitStrokeWidth={Math.max(10, thickness)}
+                        />
                       </Group>
                     );
                   }
@@ -393,10 +462,10 @@ const CanvasEditor: React.FC = () => {
                   }
                 }
 
-                if (obj.type === 'text') {
+        if (obj.type === 'text') {
                   return (
                     <Text key={obj.id} id={obj.id} x={animatedProps.x ?? obj.x} y={animatedProps.y ?? obj.y}
-                      text={obj.properties.text || 'Text'} fontSize={obj.properties.fontSize || 16} rotation={obj.rotation || 0}
+          text={obj.properties.text || 'Text'} fontSize={obj.properties.fontSize || 16} width={obj.width || undefined} rotation={obj.rotation || 0}
                       scaleX={animatedProps.scaleX ?? 1} scaleY={animatedProps.scaleY ?? 1} opacity={animatedProps.opacity ?? 1}
                       fill={isSelected ? '#4f46e5' : obj.properties.fill || '#000'} draggable={tool === 'select'}
                       onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }} onDblClick={() => handleTextDoubleClick(obj.id)}

@@ -17,7 +17,7 @@ const CanvasSettings: React.FC<CanvasSettingsProps> = ({ isOpen, onClose }) => {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
-  if (!isOpen || !currentProject) return null;
+  if (!isOpen) return null;
 
   const boardStyles = [
     { id: 'whiteboard', name: 'Whiteboard', color: '#ffffff', texture: 'none' },
@@ -34,6 +34,11 @@ const CanvasSettings: React.FC<CanvasSettingsProps> = ({ isOpen, onClose }) => {
     { name: 'Widescreen (21:9)', width: 2560, height: 1080 },
     { name: 'HD (4:3)', width: 1440, height: 1080 }
   ];
+
+  const projWidth = currentProject?.width ?? 800;
+  const projHeight = currentProject?.height ?? 600;
+  const projBoardStyle = currentProject?.boardStyle ?? 'whiteboard';
+  const projBg = currentProject?.backgroundColor ?? '#ffffff';
 
   const updateCanvasSize = (width: number, height: number) => {
     updateProject({ width, height });
@@ -63,13 +68,13 @@ const CanvasSettings: React.FC<CanvasSettingsProps> = ({ isOpen, onClose }) => {
         {/* Canvas Size */}
         <div className="mb-10">
           <h3 className="text-xl font-semibold text-gray-200 mb-4 border-b border-gray-600 pb-2">Canvas Size</h3>
-          <div className="grid grid-cols-1 gap-3 mb-5">
+    <div className="grid grid-cols-1 gap-3 mb-5">
             {canvasPresets.map((preset) => (
               <button
                 key={preset.name}
                 onClick={() => updateCanvasSize(preset.width, preset.height)}
                 className={`p-4 text-left rounded-xl border transition-all ${
-                  currentProject.width === preset.width && currentProject.height === preset.height
+      projWidth === preset.width && projHeight === preset.height
                     ? 'bg-blue-600 text-white border-blue-500 shadow-lg'
                     : 'bg-gray-700 text-gray-200 border-gray-600 hover:bg-gray-600 hover:border-gray-500'
                 }`}
@@ -89,8 +94,8 @@ const CanvasSettings: React.FC<CanvasSettingsProps> = ({ isOpen, onClose }) => {
                 <input
                   type="number"
                   placeholder="Width"
-                  value={currentProject.width}
-                  onChange={(e) => updateCanvasSize(Number(e.target.value), currentProject.height)}
+                  value={projWidth}
+                  onChange={(e) => updateCanvasSize(Number(e.target.value), projHeight)}
                   className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:border-blue-500 focus:outline-none transition-colors"
                 />
               </div>
@@ -100,8 +105,8 @@ const CanvasSettings: React.FC<CanvasSettingsProps> = ({ isOpen, onClose }) => {
                 <input
                   type="number"
                   placeholder="Height"
-                  value={currentProject.height}
-                  onChange={(e) => updateCanvasSize(currentProject.width, Number(e.target.value))}
+                  value={projHeight}
+                  onChange={(e) => updateCanvasSize(projWidth, Number(e.target.value))}
                   className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:border-blue-500 focus:outline-none transition-colors"
                 />
               </div>
@@ -112,13 +117,13 @@ const CanvasSettings: React.FC<CanvasSettingsProps> = ({ isOpen, onClose }) => {
         {/* Board Style */}
         <div className="mb-10">
           <h3 className="text-xl font-semibold text-gray-200 mb-4 border-b border-gray-600 pb-2">Board Style</h3>
-          <div className="space-y-3">
+    <div className="space-y-3">
             {boardStyles.map((style) => (
               <button
                 key={style.id}
                 onClick={() => updateBoardStyle(style.id, style.color)}
                 className={`p-4 rounded-xl border flex items-center gap-4 transition-all w-full ${
-                  currentProject.boardStyle === style.id
+      projBoardStyle === style.id
                     ? 'border-blue-500 bg-blue-600 shadow-lg'
                     : 'border-gray-600 bg-gray-700 hover:border-gray-500 hover:bg-gray-600'
                 }`}
@@ -138,19 +143,19 @@ const CanvasSettings: React.FC<CanvasSettingsProps> = ({ isOpen, onClose }) => {
           </div>
           
           {/* Custom Color Picker */}
-          {currentProject.boardStyle === 'custom' && (
+    {projBoardStyle === 'custom' && (
             <div className="mt-5 pt-5 border-t border-gray-600">
               <label className="block text-lg font-semibold text-gray-200 mb-3">Custom Background Color</label>
               <div className="flex gap-4 items-center">
                 <input
                   type="color"
-                  value={currentProject.backgroundColor || '#ffffff'}
+      value={projBg}
                   onChange={(e) => updateProject({ backgroundColor: e.target.value })}
                   className="w-16 h-12 rounded-lg border border-gray-600 cursor-pointer"
                 />
                 <input
                   type="text"
-                  value={currentProject.backgroundColor || '#ffffff'}
+      value={projBg}
                   onChange={(e) => updateProject({ backgroundColor: e.target.value })}
                   placeholder="#ffffff"
                   className="flex-1 p-3 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:border-blue-500 focus:outline-none transition-colors"

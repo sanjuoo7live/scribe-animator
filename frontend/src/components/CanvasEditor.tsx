@@ -372,7 +372,14 @@ const CanvasEditor: React.FC = () => {
                   if (props.shapeType === 'circle') {
                     const w = obj.width || 100; const h = obj.height || 100;
                     return (
-                      <Group key={obj.id} id={obj.id} x={obj.x} y={obj.y} rotation={obj.rotation || 0} draggable={tool === 'select'}
+                      <Group key={obj.id} id={obj.id} 
+                        x={animatedProps.x ?? obj.x} 
+                        y={animatedProps.y ?? obj.y} 
+                        rotation={obj.rotation || 0}
+                        scaleX={animatedProps.scaleX ?? 1}
+                        scaleY={animatedProps.scaleY ?? 1}
+                        opacity={animatedProps.opacity ?? 1}
+                        draggable={tool === 'select'}
                         onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
                         onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)} onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}>
                         <Circle x={w / 2} y={h / 2} radius={Math.min(w, h) / 2}
@@ -383,7 +390,14 @@ const CanvasEditor: React.FC = () => {
                   if (props.shapeType === 'triangle') {
                     const w = obj.width || 100; const h = obj.height || 100; const trianglePoints = [w / 2, 0, 0, h, w, h];
                     return (
-                      <Group key={obj.id} id={obj.id} x={obj.x} y={obj.y} rotation={obj.rotation || 0} draggable={tool === 'select'}
+                      <Group key={obj.id} id={obj.id} 
+                        x={animatedProps.x ?? obj.x} 
+                        y={animatedProps.y ?? obj.y} 
+                        rotation={obj.rotation || 0}
+                        scaleX={animatedProps.scaleX ?? 1}
+                        scaleY={animatedProps.scaleY ?? 1}
+                        opacity={animatedProps.opacity ?? 1}
+                        draggable={tool === 'select'}
                         onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
                         onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)} onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}>
                         <Line points={trianglePoints} closed
@@ -394,7 +408,14 @@ const CanvasEditor: React.FC = () => {
                   if (props.shapeType === 'star') {
                     const w = obj.width || 100; const h = obj.height || 100;
                     return (
-                      <Group key={obj.id} id={obj.id} x={obj.x} y={obj.y} rotation={obj.rotation || 0} draggable={tool === 'select'}
+                      <Group key={obj.id} id={obj.id} 
+                        x={animatedProps.x ?? obj.x} 
+                        y={animatedProps.y ?? obj.y} 
+                        rotation={obj.rotation || 0}
+                        scaleX={animatedProps.scaleX ?? 1}
+                        scaleY={animatedProps.scaleY ?? 1}
+                        opacity={animatedProps.opacity ?? 1}
+                        draggable={tool === 'select'}
                         onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
                         onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)} onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}>
                         <Star x={w / 2} y={h / 2} numPoints={5} innerRadius={Math.min(w, h) / 4} outerRadius={Math.min(w, h) / 2}
@@ -406,7 +427,14 @@ const CanvasEditor: React.FC = () => {
                     const w = obj.width || 100; const h = obj.height || 100;
                     const heartPoints = [w / 2, h * 0.3, w * 0.8, 0, w, h * 0.3, w / 2, h, 0, h * 0.3, w * 0.2, 0];
                     return (
-                      <Group key={obj.id} id={obj.id} x={obj.x} y={obj.y} rotation={obj.rotation || 0} draggable={tool === 'select'}
+                      <Group key={obj.id} id={obj.id} 
+                        x={animatedProps.x ?? obj.x} 
+                        y={animatedProps.y ?? obj.y} 
+                        rotation={obj.rotation || 0}
+                        scaleX={animatedProps.scaleX ?? 1}
+                        scaleY={animatedProps.scaleY ?? 1}
+                        opacity={animatedProps.opacity ?? 1}
+                        draggable={tool === 'select'}
                         onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
                         onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)} onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}>
                         <Line points={heartPoints} closed

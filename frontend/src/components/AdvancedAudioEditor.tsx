@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useAppStore } from '../store/appStore';
+// import { useAppStore } from '../store/appStore';
 import './AdvancedAudioEditor.css';
 
 interface AudioTrack {
@@ -24,22 +24,15 @@ interface AudioEffect {
   parameters: { [key: string]: number };
 }
 
-interface WaveformRegion {
-  id: string;
-  start: number;
-  end: number;
-  color: string;
-  label?: string;
-}
+// Reserved for future waveform selection features
 
 const AdvancedAudioEditor: React.FC = () => {
-  const { currentProject } = useAppStore();
+  // const { currentProject } = useAppStore();
   const [audioTracks, setAudioTracks] = useState<AudioTrack[]>([]);
   const [selectedTrack, setSelectedTrack] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
+  const [currentTime] = useState(0);
   const [zoomLevel, setZoomLevel] = useState(1);
-  const [selectedRegions, setSelectedRegions] = useState<WaveformRegion[]>([]);
   const [showEffectsPanel, setShowEffectsPanel] = useState(false);
   const audioContext = useRef<AudioContext | null>(null);
   const waveformCanvas = useRef<HTMLCanvasElement>(null);
@@ -78,14 +71,36 @@ const AdvancedAudioEditor: React.FC = () => {
   ];
 
   useEffect(() => {
-    if (!audioContext.current) {
-      audioContext.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const Ctor = (window.AudioContext || (window as any).webkitAudioContext);
+    if (!audioContext.current || (audioContext.current as any).state === 'closed') {
+      audioContext.current = new Ctor();
     }
+
+    const handleVisibility = () => {
+      const ctx = audioContext.current;
+      if (!ctx) return;
+      // Autosuspend on hidden to save CPU; resume on visible
+      if (document.visibilityState === 'hidden') {
+        if (ctx.state === 'running') ctx.suspend().catch(() => {});
+      } else {
+        if (ctx.state !== 'running') ctx.resume().catch(() => {});
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
     
     return () => {
-      if (audioContext.current) {
-        audioContext.current.close();
+      document.removeEventListener('visibilitychange', handleVisibility);
+      const ctx = audioContext.current;
+      if (!ctx) return;
+      // Only close if not already closed
+      if ((ctx as any).state && (ctx as any).state !== 'closed') {
+        try {
+          ctx.close().catch(() => {});
+        } catch (_) {
+          // swallow "Cannot close a closed AudioContext" or vendor quirks
+        }
       }
+      audioContext.current = null;
     };
   }, []);
 
@@ -145,50 +160,7 @@ const AdvancedAudioEditor: React.FC = () => {
     }
   };
 
-  const drawWaveform = (track: AudioTrack, canvas: HTMLCanvasElement) => {
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const { width, height } = canvas;
-    ctx.clearRect(0, 0, width, height);
-
-    // Background
-    ctx.fillStyle = '#1a1a1a';
-    ctx.fillRect(0, 0, width, height);
-
-    // Waveform
-    ctx.strokeStyle = track.muted ? '#555' : '#4FC3F7';
-    ctx.fillStyle = track.muted ? '#333' : 'rgba(79, 195, 247, 0.3)';
-    ctx.lineWidth = 1;
-
-    const barWidth = width / track.waveformData.length;
-    
-    ctx.beginPath();
-    track.waveformData.forEach((amplitude, index) => {
-      const x = index * barWidth;
-      const barHeight = amplitude * height * 0.8;
-      const y = (height - barHeight) / 2;
-      
-      ctx.fillRect(x, y, barWidth - 1, barHeight);
-    });
-
-    // Selection regions
-    selectedRegions.forEach(region => {
-      const startX = (region.start / 100) * width;
-      const endX = (region.end / 100) * width;
-      ctx.fillStyle = region.color + '40';
-      ctx.fillRect(startX, 0, endX - startX, height);
-    });
-
-    // Playhead
-    const playheadX = (currentTime / (currentProject?.duration || 10)) * width;
-    ctx.strokeStyle = '#FF5722';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(playheadX, 0);
-    ctx.lineTo(playheadX, height);
-    ctx.stroke();
-  };
+  // Waveform drawing is managed elsewhere or via future enhancements
 
   const addEffectToTrack = (trackId: string, effectType: AudioEffect['type']) => {
     const effectTemplate = availableEffects.find(e => e.type === effectType);

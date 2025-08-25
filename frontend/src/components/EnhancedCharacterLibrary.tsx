@@ -211,21 +211,27 @@ const EnhancedCharacterLibrary: React.FC = () => {
 
         {/* Search Bar */}
         <div style={{ marginBottom: '16px' }}>
-          <input
-            type="text"
-            placeholder="Search characters..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '10px 12px',
-              backgroundColor: '#374151',
-              color: 'white',
-              border: '1px solid #4B5563',
-              borderRadius: '8px',
-              fontSize: '14px'
-            }}
-          />
+          <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #4B5563', borderRadius: 8, overflow: 'hidden', backgroundColor: '#374151' }}>
+            <span style={{ padding: '0 10px', color: '#9CA3AF' }}>🔎</span>
+            <input
+              type="text"
+              placeholder="Search characters..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{
+                flex: 1,
+                padding: '10px 12px',
+                backgroundColor: 'transparent',
+                color: 'white',
+                border: 'none',
+                fontSize: '14px',
+                outline: 'none'
+              }}
+            />
+            {searchTerm && (
+              <button onClick={() => setSearchTerm('')} title="Clear search" aria-label="Clear search" style={{ padding: '8px 10px', color: '#9CA3AF', background: 'transparent', border: 'none', cursor: 'pointer' }}>✕</button>
+            )}
+          </div>
         </div>
 
         {/* Category Filter */}

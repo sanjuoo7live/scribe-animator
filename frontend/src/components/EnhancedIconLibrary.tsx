@@ -38,84 +38,34 @@ const EnhancedIconLibrary: React.FC<EnhancedIconLibraryProps> = ({ onIconSelect 
       {/* Header with Search and Controls */}
       <div style={{ padding: '16px', borderBottom: '1px solid #374151', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-          <div style={{ position: 'relative', flex: '1' }}>
+          <div style={{ display: 'flex', alignItems: 'center', flex: 1, border: '1px solid #6B7280', borderRadius: 8, overflow: 'hidden', backgroundColor: '#374151' }}>
+            <span style={{ padding: '0 10px', color: '#9CA3AF' }}>🔎</span>
             <input
               type="text"
               placeholder="Search icons..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               style={{
-                width: '100%',
-                padding: '8px 8px 8px 32px',
-                border: '1px solid #6B7280',
-                borderRadius: '6px',
+                flex: 1,
+                padding: '10px 8px',
+                border: 'none',
                 fontSize: '14px',
-                backgroundColor: '#374151',
+                backgroundColor: 'transparent',
                 color: 'white',
                 outline: 'none'
               }}
             />
-            <svg
-              style={{ position: 'absolute', left: '8px', top: '10px', width: '16px', height: '16px', color: '#9CA3AF' }}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
             {searchQuery && (
-              <button
-                onClick={clearSearch}
-                style={{
-                  position: 'absolute',
-                  right: '8px',
-                  top: '8px',
-                  padding: '4px',
-                  color: '#9CA3AF',
-                  backgroundColor: 'transparent',
-                  border: 'none',
-                  cursor: 'pointer'
-                }}
-              >
-                <svg style={{ width: '16px', height: '16px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+              <button onClick={clearSearch} title="Clear search" aria-label="Clear search" style={{ padding: '8px', color: '#9CA3AF', background: 'transparent', border: 'none', cursor: 'pointer' }}>✕</button>
             )}
-          </div>
-          
-          <div style={{ display: 'flex', gap: '1px', border: '1px solid #6B7280', borderRadius: '6px' }}>
+            <span style={{ width: 1, height: 24, backgroundColor: '#6B7280', margin: '0 6px' }} />
             <button
-              onClick={() => setViewMode('grid')}
-              style={{
-                padding: '8px',
-                backgroundColor: viewMode === 'grid' ? '#3B82F6' : 'transparent',
-                color: viewMode === 'grid' ? 'white' : '#9CA3AF',
-                border: 'none',
-                cursor: 'pointer',
-                borderRadius: '5px 0 0 5px'
-              }}
-              title="Grid View"
+              onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
+              title={viewMode === 'grid' ? 'List View' : 'Grid View'}
+              aria-pressed={viewMode === 'list'}
+              style={{ padding: '8px 10px', color: '#E5E7EB', background: 'transparent', border: 'none', cursor: 'pointer' }}
             >
-              <svg style={{ width: '16px', height: '16px' }} fill="currentColor" viewBox="0 0 24 24">
-                <path d="M3 11h8V3H3v8zm2-6h4v4H5V5zm8-2v8h8V3h-8zm6 6h-4V5h4v4zM3 21h8v-8H3v8zm2-6h4v4H5v-4zm10-2h8v8h-8v-8zm2 2v4h4v-4h-4z"/>
-              </svg>
-            </button>
-            <button
-              onClick={() => setViewMode('list')}
-              style={{
-                padding: '8px',
-                backgroundColor: viewMode === 'list' ? '#3B82F6' : 'transparent',
-                color: viewMode === 'list' ? 'white' : '#9CA3AF',
-                border: 'none',
-                cursor: 'pointer',
-                borderRadius: '0 5px 5px 0'
-              }}
-              title="List View"
-            >
-              <svg style={{ width: '16px', height: '16px' }} fill="currentColor" viewBox="0 0 24 24">
-                <path d="M4 6h16v2H4zm0 5h16v2H4zm0 5h16v2H4z"/>
-              </svg>
+              {viewMode === 'grid' ? '☰' : '▦'}
             </button>
           </div>
         </div>

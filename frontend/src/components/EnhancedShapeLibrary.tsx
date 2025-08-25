@@ -126,7 +126,7 @@ const EnhancedShapeLibrary: React.FC<EnhancedShapeLibraryProps> = ({ onAddShape 
         >
           <span>{collection.icon}</span>
           <span className="hidden sm:inline">{collection.name}</span>
-          <span className="bg-black/20 px-2 py-0.5 rounded-full text-xs">
+          <span className="inline-flex min-w-[24px] justify-center bg-black/20 px-2.5 py-0.5 rounded-full text-xs">
             {collection.shapes.length}
           </span>
         </button>
@@ -136,32 +136,38 @@ const EnhancedShapeLibrary: React.FC<EnhancedShapeLibraryProps> = ({ onAddShape 
 
   const SearchBar: React.FC = () => (
     <div className="mb-4">
-      <div className="relative">
+      <div
+        className="flex items-center w-full bg-gray-700 border border-gray-600 rounded-lg overflow-hidden"
+        role="search"
+        aria-label="Search shapes"
+      >
+        <span className="px-3 text-gray-400 select-none">🔎</span>
         <input
           type="text"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           placeholder="Search shapes... (e.g., 'arrow', 'business', 'heart')"
-          className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 pr-24"
+          className="flex-1 p-3 bg-transparent text-white placeholder-gray-400 focus:outline-none"
         />
-        <div className="absolute right-2 top-2 flex gap-1">
+        {searchTerm && (
           <button
-            onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
-            className="p-1.5 bg-gray-600 rounded hover:bg-gray-500 transition-colors"
-            title={`Switch to ${viewMode === 'grid' ? 'list' : 'grid'} view`}
+            onClick={() => setSearchTerm('')}
+            className="px-2 py-2 text-gray-300 hover:text-white focus:outline-none"
+            title="Clear search"
+            aria-label="Clear search"
           >
-            {viewMode === 'grid' ? '☰' : '▦'}
+            ✕
           </button>
-          {searchTerm && (
-            <button
-              onClick={() => setSearchTerm('')}
-              className="p-1.5 bg-gray-600 rounded hover:bg-gray-500 transition-colors text-gray-300"
-              title="Clear search"
-            >
-              ✕
-            </button>
-          )}
-        </div>
+        )}
+        <span className="w-px h-6 bg-gray-600 mx-1" aria-hidden="true" />
+        <button
+          onClick={() => setViewMode(viewMode === 'grid' ? 'list' : 'grid')}
+          className="px-3 py-2 text-gray-200 hover:bg-gray-600 focus:outline-none"
+          title={`Switch to ${viewMode === 'grid' ? 'list' : 'grid'} view`}
+          aria-pressed={viewMode === 'list'}
+        >
+          {viewMode === 'grid' ? '☰' : '▦'}
+        </button>
       </div>
       {searchTerm && (
         <div className="text-sm text-gray-400 mt-2">

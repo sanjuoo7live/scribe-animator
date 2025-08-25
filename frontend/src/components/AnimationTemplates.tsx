@@ -325,77 +325,93 @@ const AnimationTemplates: React.FC = () => {
     : templates.filter(t => t.category === selectedCategory);
 
   return (
-    <div className="h-full">
-      <h4 className="text-sm font-semibold text-gray-300 mb-4">Animation Templates</h4>
-      
-      {/* Category Filter */}
-      <div className="mb-4">
-        <div className="flex flex-wrap gap-1">
-          {categories.map((category) => (
-            <button
-              key={category.id}
-              onClick={() => setSelectedCategory(category.id)}
-              className={`px-2 py-1 rounded text-xs ${
-                selectedCategory === category.id
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-              }`}
-            >
-              {category.icon} {category.name}
-            </button>
-          ))}
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="flex-shrink-0 p-4 border-b border-gray-600">
+        <h4 className="text-sm font-semibold text-gray-300 mb-4">Animation Templates</h4>
+        
+        {/* Category Filter */}
+        <div className="mb-4">
+          <div className="flex flex-wrap gap-1">
+            {categories.map((category) => (
+              <button
+                key={category.id}
+                onClick={() => setSelectedCategory(category.id)}
+                className={`px-2 py-1 rounded text-xs ${
+                  selectedCategory === category.id
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                }`}
+              >
+                {category.icon} {category.name}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
-      {/* Templates Grid */}
-      <div className="grid grid-cols-1 gap-3 max-h-96 overflow-y-auto">
-        {filteredTemplates.length === 0 ? (
-          <div className="text-center text-gray-400 py-8">
-            <div className="text-2xl mb-2">🎭</div>
-            <div className="text-sm">No templates in this category</div>
-          </div>
-        ) : (
-          filteredTemplates.map((template) => (
-            <div
-              key={template.id}
-              className="bg-gray-700 hover:bg-gray-600 rounded-lg p-3 transition-colors cursor-pointer group"
-              onClick={() => applyTemplate(template)}
-            >
-              <div className="flex items-start gap-3">
-                <div className="text-2xl">{template.thumbnail}</div>
-                <div className="flex-1 min-w-0">
-                  <h5 className="text-sm font-medium text-white group-hover:text-blue-300">
-                    {template.name}
-                  </h5>
-                  <p className="text-xs text-gray-400 mb-2 line-clamp-2">
-                    {template.description}
-                  </p>
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs text-gray-500">
-                      {template.preview}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {template.duration}s • {template.objects.length} objects
+      {/* Scrollable Templates Grid */}
+      <div 
+        className="flex-1 overflow-auto scrollbar-thin scrollbar-track-gray-700 scrollbar-thumb-gray-500 hover:scrollbar-thumb-gray-400 p-4"
+        tabIndex={0}
+        role="region"
+        aria-label="Animation templates list"
+      >
+        <div className="grid grid-cols-1 gap-3">
+          {filteredTemplates.length === 0 ? (
+            <div className="text-center text-gray-400 py-8">
+              <div className="text-2xl mb-2">🎭</div>
+              <div className="text-sm">No templates in this category</div>
+            </div>
+          ) : (
+            filteredTemplates.map((template) => (
+              <div
+                key={template.id}
+                className="bg-gray-700 hover:bg-gray-600 rounded-lg p-3 transition-colors cursor-pointer group"
+                onClick={() => applyTemplate(template)}
+              >
+                <div className="flex items-start gap-3">
+                  <div className="text-2xl">{template.thumbnail}</div>
+                  <div className="flex-1 min-w-0">
+                    <h5 className="text-sm font-medium text-white group-hover:text-blue-300">
+                      {template.name}
+                    </h5>
+                    <p className="text-xs text-gray-400 mb-2 line-clamp-2">
+                      {template.description}
+                    </p>
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs text-gray-500">
+                        {template.preview}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {template.duration}s • {template.objects.length} objects
+                      </div>
                     </div>
                   </div>
                 </div>
-              </div>
-              
-              <div className="mt-2 pt-2 border-t border-gray-600 opacity-0 group-hover:opacity-100 transition-opacity">
-                <div className="text-xs text-blue-400">
-                  Click to apply template to canvas
+                
+                <div className="mt-2 pt-2 border-t border-gray-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="text-xs text-blue-400">
+                    Click to apply template to canvas
+                  </div>
                 </div>
               </div>
-            </div>
-          ))
-        )}
+            ))
+          )}
+        </div>
       </div>
 
-      {/* Template Info */}
-      <div className="mt-4 pt-4 border-t border-gray-600">
-        <div className="text-xs text-gray-400">
-          <div>{filteredTemplates.length} templates available</div>
-          <div className="mt-1">Templates add objects to your current timeline</div>
+      {/* Template Info Footer */}
+      <div className="flex-shrink-0 p-4 pt-3 border-t border-gray-600">
+        <div className="text-xs text-gray-400 flex justify-between items-center">
+          <div>
+            <div>{filteredTemplates.length} templates available</div>
+            <div className="mt-1">Templates add objects to your current timeline</div>
+          </div>
+          {filteredTemplates.length > 6 && (
+            <div className="text-gray-500">
+              ↕️ Scroll for more
+            </div>
+          )}
         </div>
       </div>
     </div>

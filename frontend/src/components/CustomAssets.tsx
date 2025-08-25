@@ -20,6 +20,8 @@ const CustomAssets: React.FC = () => {
   const [showDrawPathEditor, setShowDrawPathEditor] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<CustomAsset | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [embedUrl, setEmbedUrl] = useState('');
+  const [embedError, setEmbedError] = useState<string | null>(null);
 
   // Load custom assets from backend
   const loadAssets = async () => {
@@ -129,6 +131,72 @@ const CustomAssets: React.FC = () => {
     addObject(newObject);
   };
 
+  // Helpers to build embed URLs
+  const buildYouTubeEmbed = (url: string): string | null => {
+    try {
+      const u = new URL(url);
+      if (!/^(www\.)?youtube\.com$|^(www\.)?youtu\.be$/.test(u.hostname)) return null;
+      // youtu.be/<id>
+      if (u.hostname.includes('youtu.be')) {
+        const id = u.pathname.replace('/', '');
+        return id ? `https://www.youtube.com/embed/${id}` : null;
+      }
+      // youtube.com/watch?v=<id>
+      const id = u.searchParams.get('v');
+      return id ? `https://www.youtube.com/embed/${id}` : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const buildInstagramEmbed = (url: string): string | null => {
+    try {
+      const u = new URL(url);
+      if (!u.hostname.includes('instagram.com')) return null;
+      // Accept reels/shorts URLs; Instagram embeds use oembed or post embed. We'll use the public embed path with query params.
+      // Example: https://www.instagram.com/reel/<id> -> https://www.instagram.com/reel/<id>/embed
+      return `${u.origin}${u.pathname.replace(/\/?$/, '/') }embed`;
+    } catch {
+      return null;
+    }
+  };
+
+  const addEmbedToCanvas = () => {
+    setEmbedError(null);
+    const url = embedUrl.trim();
+    if (!url) return;
+    const yt = buildYouTubeEmbed(url);
+    const ig = yt ? null : buildInstagramEmbed(url);
+    const embedSrc = yt || ig;
+    if (!embedSrc) {
+      setEmbedError('Enter a valid YouTube or Instagram URL');
+      return;
+    }
+    if (!currentProject) {
+      alert('Please create a project first');
+      return;
+    }
+    const newObject = {
+      id: `embed-${Date.now()}`,
+      type: 'videoEmbed' as const,
+      x: 120 + Math.random() * 120,
+      y: 120 + Math.random() * 120,
+      width: 400,
+      height: 700,
+      properties: {
+        src: embedSrc,
+        originalUrl: url,
+        provider: yt ? 'youtube' : 'instagram'
+      },
+      animationStart: 0,
+      animationDuration: 5,
+      animationType: 'none' as const,
+      animationEasing: 'easeOut' as const
+    };
+    addObject(newObject);
+    setEmbedUrl('');
+  };
+
   // Delete custom asset
   const deleteAsset = async (asset: CustomAsset) => {
     // eslint-disable-next-line no-restricted-globals
@@ -174,6 +242,29 @@ const CustomAssets: React.FC = () => {
         >
           {uploading ? 'Uploading...' : 'Upload'}
         </button>
+      </div>
+
+      {/* URL Embeds (YouTube / Instagram) */}
+      <div className="mb-3 p-2 bg-gray-800 rounded border border-gray-700">
+        <div className="text-xs text-gray-300 mb-2">Add YouTube or Instagram URL</div>
+        <div className="flex items-stretch gap-0 overflow-hidden rounded border border-gray-700 bg-gray-700">
+          <span className="px-3 flex items-center text-gray-300">🔗</span>
+          <input
+            type="url"
+            placeholder="https://www.youtube.com/watch?v=... or https://www.instagram.com/reel/..."
+            value={embedUrl}
+            onChange={(e) => setEmbedUrl(e.target.value)}
+            className="flex-1 p-2 bg-transparent text-white text-sm focus:outline-none"
+          />
+          <button
+            onClick={addEmbedToCanvas}
+            className="px-4 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium"
+            title="Add video"
+          >
+            Add
+          </button>
+        </div>
+        {embedError && <div className="text-xs text-red-400 mt-1">{embedError}</div>}
       </div>
 
       <input
@@ -246,7 +337,7 @@ const CustomAssets: React.FC = () => {
                   e.stopPropagation();
                   deleteAsset(asset);
                 }}
-                className="absolute top-1 right-1 w-5 h-5 bg-red-600 hover:bg-red-700 text-white text-xs rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
+                className="absolute top-1 right-1 w-5 h-5 bg-red-600 hover:bg-red-700 text-white text-xs rounded-full shadow flex items-center justify-center"
                 title="Delete asset"
               >
                 ×

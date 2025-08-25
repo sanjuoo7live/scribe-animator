@@ -1,5 +1,5 @@
 import React from 'react';
-import { Stage, Layer, Line, Text, Rect, Circle, Star, RegularPolygon, Arrow, Transformer, Group } from 'react-konva';
+import { Stage, Layer, Line, Text, Rect, Circle, Star, RegularPolygon, Arrow, Transformer, Group, Image as KonvaImage } from 'react-konva';
 import Konva from 'konva';
 import { useAppStore } from '../store/appStore';
 import CanvasSettings from './CanvasSettings';
@@ -9,6 +9,7 @@ const CanvasEditor: React.FC = () => {
   const stageRef = React.useRef<Konva.Stage>(null);
   const transformerRef = React.useRef<Konva.Transformer>(null);
   const canvasContainerRef = React.useRef<HTMLDivElement>(null);
+  const overlayRef = React.useRef<HTMLDivElement>(null);
 
   const {
     currentProject,
@@ -71,6 +72,85 @@ const CanvasEditor: React.FC = () => {
   const [showCanvasSettings, setShowCanvasSettings] = React.useState(false);
   const [fitMode, setFitMode] = React.useState<'width' | 'contain'>('contain');
   const [canvasSize, setCanvasSize] = React.useState({ width: 800, height: 600 });
+
+  // Scroll handler for canvas container
+  const handleCanvasScroll = React.useCallback((event: Event) => {
+    const target = event.target as HTMLDivElement;
+    // Track scroll position if needed for future features
+    // Currently just handling the scroll event
+    console.log('Canvas scrolled to:', { x: target.scrollLeft, y: target.scrollTop });
+  }, []);
+
+  // Setup scroll listener for canvas container
+  React.useEffect(() => {
+    const container = canvasContainerRef.current;
+    if (container) {
+      container.addEventListener('scroll', handleCanvasScroll);
+      return () => container.removeEventListener('scroll', handleCanvasScroll);
+    }
+  }, [handleCanvasScroll]);
+
+  // Center canvas in container when canvas is smaller than container
+  const centerCanvas = React.useCallback(() => {
+    const container = canvasContainerRef.current;
+    if (!container) return;
+
+    const containerWidth = container.clientWidth - 32; // Account for padding
+    const containerHeight = container.clientHeight - 32; // Account for padding
+    
+    if (canvasSize.width < containerWidth) {
+      const scrollX = Math.max(0, (canvasSize.width - containerWidth) / 2);
+      container.scrollLeft = scrollX;
+    }
+    
+    if (canvasSize.height < containerHeight) {
+      const scrollY = Math.max(0, (canvasSize.height - containerHeight) / 2);
+      container.scrollTop = scrollY;
+    }
+  }, [canvasSize]);
+
+  // Center canvas when canvas size changes
+  React.useEffect(() => {
+    const timeoutId = setTimeout(centerCanvas, 100);
+    return () => clearTimeout(timeoutId);
+  }, [canvasSize, centerCanvas]);
+
+  // Keyboard scrolling for canvas
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const container = canvasContainerRef.current;
+      if (!container || !container.contains(document.activeElement)) return;
+
+      const scrollSpeed = 20;
+      let scrolled = false;
+
+      switch (e.key) {
+        case 'ArrowUp':
+          container.scrollTop -= scrollSpeed;
+          scrolled = true;
+          break;
+        case 'ArrowDown':
+          container.scrollTop += scrollSpeed;
+          scrolled = true;
+          break;
+        case 'ArrowLeft':
+          container.scrollLeft -= scrollSpeed;
+          scrolled = true;
+          break;
+        case 'ArrowRight':
+          container.scrollLeft += scrollSpeed;
+          scrolled = true;
+          break;
+      }
+
+      if (scrolled) {
+        e.preventDefault();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Debug Settings visibility state
   React.useEffect(() => {
@@ -472,6 +552,18 @@ const CanvasEditor: React.FC = () => {
     }
   }, [selectedObject]);
 
+  // Cleanup overlay iframes that no longer correspond to any objects
+  React.useEffect(() => {
+    const overlay = overlayRef.current;
+    const ids = new Set((currentProject?.objects || []).filter(o => o.type === 'videoEmbed').map(o => `iframe-${o.id}`));
+    if (!overlay) return;
+    Array.from(overlay.querySelectorAll('iframe')).forEach((el) => {
+      if (!ids.has(el.id)) {
+        el.remove();
+      }
+    });
+  }, [currentProject?.objects]);
+
   React.useEffect(() => {
     if (!selectedObject || !stageRef.current || !transformerRef.current) return;
     const node = stageRef.current.findOne(`#${selectedObject}`);
@@ -575,10 +667,18 @@ const CanvasEditor: React.FC = () => {
 
       <div className="bg-gray-700 px-3 py-1 text-xs text-gray-300 border-b border-gray-600">
         {currentProject ? <span>📁 {currentProject.name} {selectedObject && `| Selected: ${selectedObject.slice(0, 12)}...`}</span> : <span>⚠️ No project loaded</span>}
+        <span className="ml-4 text-gray-400">💡 Use mouse wheel or arrow keys to scroll canvas</span>
       </div>
 
-      <div ref={canvasContainerRef} className="flex-1 bg-gray-200 overflow-hidden flex items-center justify-center p-4">
-        <div className="rounded shadow-lg overflow-hidden" style={{ width: `${canvasSize.width}px`, height: `${canvasSize.height}px`, backgroundColor: currentProject?.backgroundColor || '#ffffff' }}>
+      <div 
+        ref={canvasContainerRef} 
+        className="flex-1 bg-gray-200 overflow-auto flex items-center justify-center p-4 scrollbar-thin scrollbar-track-gray-300 scrollbar-thumb-gray-500 hover:scrollbar-thumb-gray-600"
+        tabIndex={0}
+        style={{ outline: 'none' }}
+      >
+        <div className="rounded shadow-lg overflow-hidden relative min-w-fit min-h-fit" style={{ width: `${canvasSize.width}px`, height: `${canvasSize.height}px`, backgroundColor: currentProject?.backgroundColor || '#ffffff' }}>
+          {/* Absolute overlay for external iframes (video embeds) */}
+          <div ref={overlayRef} className="absolute inset-0 pointer-events-none"></div>
           <Stage
             ref={stageRef}
             width={canvasSize.width}
@@ -646,6 +746,68 @@ const CanvasEditor: React.FC = () => {
                 }
 
                 const isSelected = selectedObject === obj.id;
+
+                // Video Embeds: draw a selectable proxy Rect in Konva and position an iframe on top
+                if (obj.type === 'videoEmbed') {
+                  const x = animatedProps.x ?? obj.x;
+                  const y = animatedProps.y ?? obj.y;
+                  const w = obj.width || 320;
+                  const h = obj.height || 568;
+
+                  // schedule iframe positioning after Konva renders
+                  requestAnimationFrame(() => {
+                    const overlay = overlayRef.current;
+                    const stage = stageRef.current;
+                    if (!overlay || !stage) return;
+                    let iframe = overlay.querySelector(`#iframe-${obj.id}`) as HTMLIFrameElement | null;
+                    if (!iframe) {
+                      iframe = document.createElement('iframe');
+                      iframe.id = `iframe-${obj.id}`;
+                      iframe.src = obj.properties?.src || '';
+                      iframe.allow = 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share';
+                      iframe.referrerPolicy = 'no-referrer-when-downgrade';
+                      iframe.style.position = 'absolute';
+                      iframe.style.border = '0';
+                      iframe.style.pointerEvents = isSelected ? 'auto' : 'none';
+                      overlay.appendChild(iframe);
+                    }
+                    // Toggle pointer-events based on selection to allow interacting only when selected
+                    iframe.style.pointerEvents = isSelected ? 'auto' : 'none';
+                    // Convert stage coords to DOM coords
+                    const transform = stage.getAbsoluteTransform().copy();
+                    const p = transform.point({ x, y });
+                    const scaleX = stage.scaleX() || 1;
+                    const scaleY = stage.scaleY() || 1;
+                    iframe.style.left = `${p.x}px`;
+                    iframe.style.top = `${p.y}px`;
+                    iframe.style.width = `${w * scaleX}px`;
+                    iframe.style.height = `${h * scaleY}px`;
+                    iframe.style.opacity = `${animatedProps.opacity ?? 1}`;
+                  });
+
+                  return (
+                    <Rect
+                      key={obj.id}
+                      id={obj.id}
+                      x={x}
+                      y={y}
+                      width={w}
+                      height={h}
+                      rotation={obj.rotation || 0}
+                      scaleX={animatedProps.scaleX ?? 1}
+                      scaleY={animatedProps.scaleY ?? 1}
+                      opacity={animatedProps.opacity ?? 1}
+                      fill={isSelected ? 'rgba(59,130,246,0.1)' : 'rgba(148,163,184,0.15)'}
+                      stroke={isSelected ? '#4f46e5' : '#94a3b8'}
+                      strokeWidth={2}
+                      draggable={tool === 'select'}
+                      onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }}
+                      onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
+                      onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
+                    />
+                  );
+                }
+                
 
                 if (obj.type === 'shape') {
                   const props = obj.properties;
@@ -904,21 +1066,46 @@ const CanvasEditor: React.FC = () => {
                 }
 
                 if (obj.type === 'image') {
-                  const assetType = obj.properties.assetType;
-                  if (['hand', 'character', 'prop'].includes(assetType)) {
+                  const src: string | undefined = obj.properties?.src;
+                  const looksLikeImage = !!src && (src.startsWith('http') || src.includes('/api/assets') || /\.(png|jpe?g|gif|svg)$/i.test(src));
+                  if (!looksLikeImage) {
+                    // Fallback to text/emoji if src is not a URL/path
                     return (
-                      <Text key={obj.id} id={obj.id} x={animatedProps.x ?? obj.x} y={animatedProps.y ?? obj.y}
-                        text={obj.properties.src || obj.properties.alt || '❓'} fontSize={Math.max((obj.width || 80) * 0.9, 24)} rotation={obj.rotation || 0}
-                        scaleX={animatedProps.scaleX ?? 1} scaleY={animatedProps.scaleY ?? 1} opacity={animatedProps.opacity ?? 1}
-                        fill={isSelected ? '#4f46e5' : '#000000'} stroke={isSelected ? '#4f46e5' : 'transparent'} strokeWidth={isSelected ? 1 : 0}
-                        draggable={tool === 'select'} onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }}
-                        onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)} onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)} />
+                      <Text
+                        key={obj.id}
+                        id={obj.id}
+                        x={animatedProps.x ?? obj.x}
+                        y={animatedProps.y ?? obj.y}
+                        text={obj.properties.alt || '❓'}
+                        fontSize={Math.max((obj.width || 80) * 0.9, 24)}
+                        rotation={obj.rotation || 0}
+                        scaleX={animatedProps.scaleX ?? 1}
+                        scaleY={animatedProps.scaleY ?? 1}
+                        opacity={animatedProps.opacity ?? 1}
+                        fill={isSelected ? '#4f46e5' : '#000000'}
+                        stroke={isSelected ? '#4f46e5' : 'transparent'}
+                        strokeWidth={isSelected ? 1 : 0}
+                        draggable={tool === 'select'}
+                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }}
+                        onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
+                        onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
+                      />
                     );
                   }
+
+                  // Render real image using Konva.Image
                   return (
-                    <Rect key={obj.id} id={obj.id} x={obj.x} y={obj.y} width={obj.width || 100} height={obj.height || 100} rotation={obj.rotation || 0}
-                      fill={isSelected ? '#e0e7ff' : '#f3f4f6'} stroke={isSelected ? '#4f46e5' : '#9ca3af'} strokeWidth={2} draggable={tool === 'select'}
-                      onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }} onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)} onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)} />
+                    <CanvasImage
+                      key={obj.id}
+                      id={obj.id}
+                      obj={obj}
+                      animatedProps={animatedProps}
+                      isSelected={isSelected}
+                      tool={tool}
+                      onClick={handleObjectClick}
+                      onDragEnd={handleObjectDrag}
+                      onTransformEnd={handleObjectTransform}
+                    />
                   );
                 }
 
@@ -1289,6 +1476,83 @@ const CanvasEditor: React.FC = () => {
 
       <CanvasSettings isOpen={showCanvasSettings} onClose={() => setShowCanvasSettings(false)} />
     </div>
+  );
+};
+
+// Lightweight image loader/renderer for Konva
+const CanvasImage: React.FC<{
+  id: string;
+  obj: any;
+  animatedProps: any;
+  isSelected: boolean;
+  tool: 'select' | 'pen';
+  onClick: (id: string, node: any) => void;
+  onDragEnd: (id: string, node: any) => void;
+  onTransformEnd: (id: string, node: any) => void;
+}> = ({ id, obj, animatedProps, isSelected, tool, onClick, onDragEnd, onTransformEnd }) => {
+  const [image, setImage] = React.useState<HTMLImageElement | null>(null);
+  const src = obj.properties?.src as string | undefined;
+
+  React.useEffect(() => {
+    if (!src) { setImage(null); return; }
+    const img = new window.Image();
+    img.crossOrigin = 'anonymous';
+    const handleLoad = () => setImage(img);
+    const handleError = () => setImage(null);
+    img.addEventListener('load', handleLoad);
+    img.addEventListener('error', handleError);
+    img.src = src;
+    return () => {
+      img.removeEventListener('load', handleLoad);
+      img.removeEventListener('error', handleError);
+    };
+  }, [src]);
+
+  // While loading, show a subtle placeholder rect
+  if (!image) {
+    return (
+      <Rect
+        key={id}
+        id={id}
+        x={animatedProps.x ?? obj.x}
+        y={animatedProps.y ?? obj.y}
+        width={obj.width || 100}
+        height={obj.height || 100}
+        rotation={obj.rotation || 0}
+        scaleX={animatedProps.scaleX ?? 1}
+        scaleY={animatedProps.scaleY ?? 1}
+        opacity={animatedProps.opacity ?? 1}
+        fill={isSelected ? '#e0e7ff' : '#f3f4f6'}
+        stroke={isSelected ? '#4f46e5' : '#9ca3af'}
+        strokeWidth={2}
+        draggable={tool === 'select'}
+        onClick={(e) => { e.cancelBubble = true; onClick(id, e.target); }}
+        onDragEnd={(e) => onDragEnd(id, e.currentTarget)}
+        onTransformEnd={(e) => onTransformEnd(id, e.currentTarget)}
+      />
+    );
+  }
+
+  return (
+    <KonvaImage
+      key={id}
+      id={id}
+      x={animatedProps.x ?? obj.x}
+      y={animatedProps.y ?? obj.y}
+      image={image}
+      width={obj.width || image.width}
+      height={obj.height || image.height}
+      rotation={obj.rotation || 0}
+      scaleX={animatedProps.scaleX ?? 1}
+      scaleY={animatedProps.scaleY ?? 1}
+      opacity={animatedProps.opacity ?? 1}
+      stroke={isSelected ? '#4f46e5' : undefined}
+      strokeWidth={isSelected ? 1 : 0}
+      draggable={tool === 'select'}
+      onClick={(e) => { e.cancelBubble = true; onClick(id, e.target); }}
+      onDragEnd={(e) => onDragEnd(id, e.currentTarget)}
+      onTransformEnd={(e) => onTransformEnd(id, e.currentTarget)}
+    />
   );
 };
 

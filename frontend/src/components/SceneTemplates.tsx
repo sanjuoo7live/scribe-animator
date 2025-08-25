@@ -283,6 +283,23 @@ const SceneTemplates: React.FC = () => {
         ))}
       </div>
 
+      {/* Scroll hint for large lists */}
+      {filteredTemplates.length > 6 && (
+        <div style={{ 
+          position: 'absolute', 
+          bottom: '10px', 
+          right: '20px', 
+          background: 'rgba(0,0,0,0.7)', 
+          color: 'white', 
+          padding: '4px 8px', 
+          borderRadius: '12px', 
+          fontSize: '11px',
+          pointerEvents: 'none'
+        }}>
+          ↕️ Scroll for more templates
+        </div>
+      )}
+
       {filteredTemplates.length === 0 && (
         <div className="no-templates">
           <div className="no-templates-icon">🔍</div>

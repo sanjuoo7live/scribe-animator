@@ -97,6 +97,7 @@
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 20px;
   overflow-y: auto;
+  min-height: 0; /* Allow flex shrinking */
 }
 
 .template-card {
@@ -515,24 +516,30 @@
   line-height: 1.4;
 }
 
-/* Scrollbar Styling */
+/* Enhanced Scrollbar Styling */
 .templates-grid::-webkit-scrollbar,
 .preview-modal-content::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
 }
 
 .templates-grid::-webkit-scrollbar-track,
 .preview-modal-content::-webkit-scrollbar-track {
-  background: #f1f1f1;
+  background: #f1f3f4;
+  border-radius: 4px;
 }
 
 .templates-grid::-webkit-scrollbar-thumb,
 .preview-modal-content::-webkit-scrollbar-thumb {
-  background: #c1c1c1;
-  border-radius: 3px;
+  background: #9aa0a6;
+  border-radius: 4px;
+  border: 1px solid #f1f3f4;
 }
 
 .templates-grid::-webkit-scrollbar-thumb:hover,
 .preview-modal-content::-webkit-scrollbar-thumb:hover {
-  background: #a8a8a8;
+  background: #5f6368;
+}
+
+.templates-grid::-webkit-scrollbar-corner {
+  background: #f1f3f4;
 }

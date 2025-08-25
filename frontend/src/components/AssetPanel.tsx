@@ -35,7 +35,11 @@ const AssetPanel: React.FC = () => {
     text: false,
     hands: false,
     characters: false,
-    props: false
+    props: false,
+    images: false,
+    templates: false,
+    sceneTemplates: false,
+    plugins: false
   });
   
   const { addObject, currentProject, currentTime } = useAppStore();
@@ -189,7 +193,7 @@ const AssetPanel: React.FC = () => {
           </div>
         </div>
 
-        <div className="max-h-80 overflow-y-auto px-4 pb-4">
+  <div className="max-h-80 overflow-y-auto px-4 pb-4">
           {activeCategory === 'text' ? (
             <div className="space-y-4">
               <button
@@ -344,14 +348,150 @@ const AssetPanel: React.FC = () => {
                 </div>
               </div>
             </div>
+          ) : activeCategory === 'images' ? (
+            <div className="space-y-4">
+              <button
+                onClick={() => openPopup('images')}
+                className="asset-button-text w-full p-6 rounded-lg transition-all transform hover:scale-105 shadow-lg font-semibold"
+                style={{ 
+                  background: 'linear-gradient(135deg, #4338CA, #6366F1)',
+                  color: 'white',
+                  border: '2px solid #374151'
+                }}
+              >
+                <div className="text-xl font-bold mb-2" style={{ color: 'white' }}>🖼️ Open Image Library</div>
+                <div className="text-sm mb-1" style={{ color: 'rgba(255, 255, 255, 0.9)' }}>Import images, manage uploads, and add to canvas</div>
+                <div className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.75)' }}>• Upload • Search • Delete • One-click Add</div>
+              </button>
+
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-3 bg-gray-700 rounded-lg border border-gray-600">
+                  <div className="text-white font-medium mb-2">📥 Supported</div>
+                  <div className="space-y-1 text-gray-300">
+                    <div>• JPG • PNG • GIF • SVG</div>
+                    <div>• Max size: 5MB</div>
+                    <div>• Local storage</div>
+                  </div>
+                </div>
+                <div className="p-3 bg-gray-700 rounded-lg border border-gray-600">
+                  <div className="text-white font-medium mb-2">✨ Tips</div>
+                  <div className="space-y-1 text-gray-300">
+                    <div>• Drag to canvas</div>
+                    <div>• Use search</div>
+                    <div>• Delete unused</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : activeCategory === 'templates' ? (
+            <div className="space-y-4">
+              <button
+                onClick={() => openPopup('templates')}
+                className="asset-button-text w-full p-6 rounded-lg transition-all transform hover:scale-105 shadow-lg font-semibold"
+                style={{ 
+                  background: 'linear-gradient(135deg, #D97706, #F59E0B)',
+                  color: 'white',
+                  border: '2px solid #374151'
+                }}
+              >
+                <div className="text-xl font-bold mb-2" style={{ color: 'white' }}>⚡ Open Animation Library</div>
+                <div className="text-sm mb-1" style={{ color: 'rgba(255, 255, 255, 0.9)' }}>Browse pre-built animation templates and effects</div>
+                <div className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.75)' }}>• Ready-to-Use • Professional • Multiple Categories</div>
+              </button>
+
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-3 bg-gray-700 rounded-lg border border-gray-600">
+                  <div className="text-white font-medium mb-2">🎬 Categories</div>
+                  <div className="space-y-1 text-gray-300">
+                    <div>• Intro & Outro</div>
+                    <div>• Transitions</div>
+                    <div>• Emphasis Effects</div>
+                  </div>
+                </div>
+                <div className="p-3 bg-gray-700 rounded-lg border border-gray-600">
+                  <div className="text-white font-medium mb-2">✨ Features</div>
+                  <div className="space-y-1 text-gray-300">
+                    <div>• One-click Apply</div>
+                    <div>• Customizable</div>
+                    <div>• Professional Quality</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : activeCategory === 'sceneTemplates' ? (
+            <div className="space-y-4">
+              <button
+                onClick={() => openPopup('sceneTemplates')}
+                className="asset-button-text w-full p-6 rounded-lg transition-all transform hover:scale-105 shadow-lg font-semibold"
+                style={{ 
+                  background: 'linear-gradient(135deg, #0891B2, #06B6D4)',
+                  color: 'white',
+                  border: '2px solid #374151'
+                }}
+              >
+                <div className="text-xl font-bold mb-2" style={{ color: 'white' }}>🎬 Open Scene Library</div>
+                <div className="text-sm mb-1" style={{ color: 'rgba(255, 255, 255, 0.9)' }}>Browse complete scene layouts and templates</div>
+                <div className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.75)' }}>• Business • Education • Marketing • Entertainment</div>
+              </button>
+
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-3 bg-gray-700 rounded-lg border border-gray-600">
+                  <div className="text-white font-medium mb-2">📋 Types</div>
+                  <div className="space-y-1 text-gray-300">
+                    <div>• Corporate Intro</div>
+                    <div>• Product Demo</div>
+                    <div>• Educational</div>
+                  </div>
+                </div>
+                <div className="p-3 bg-gray-700 rounded-lg border border-gray-600">
+                  <div className="text-white font-medium mb-2">⚡ Quick Start</div>
+                  <div className="space-y-1 text-gray-300">
+                    <div>• Pre-configured</div>
+                    <div>• Easy Customization</div>
+                    <div>• Multiple Durations</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : activeCategory === 'plugins' ? (
+            <div className="space-y-4">
+              <button
+                onClick={() => openPopup('plugins')}
+                className="asset-button-text w-full p-6 rounded-lg transition-all transform hover:scale-105 shadow-lg font-semibold"
+                style={{ 
+                  background: 'linear-gradient(135deg, #7C3AED, #A855F7)',
+                  color: 'white',
+                  border: '2px solid #374151'
+                }}
+              >
+                <div className="text-xl font-bold mb-2" style={{ color: 'white' }}>✨ Open Effects Library</div>
+                <div className="text-sm mb-1" style={{ color: 'rgba(255, 255, 255, 0.9)' }}>Browse visual effects, filters, and enhancements</div>
+                <div className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.75)' }}>• Visual Effects • Filters • Transitions • Particles</div>
+              </button>
+
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-3 bg-gray-700 rounded-lg border border-gray-600">
+                  <div className="text-white font-medium mb-2">🎨 Effects</div>
+                  <div className="space-y-1 text-gray-300">
+                    <div>• Particle Systems</div>
+                    <div>• Color Filters</div>
+                    <div>• Motion Blur</div>
+                  </div>
+                </div>
+                <div className="p-3 bg-gray-700 rounded-lg border border-gray-600">
+                  <div className="text-white font-medium mb-2">🔧 Tools</div>
+                  <div className="space-y-1 text-gray-300">
+                    <div>• Plugin Manager</div>
+                    <div>• Custom Effects</div>
+                    <div>• Real-time Preview</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           ) : (
             <div className="bg-gray-900 rounded-lg p-2">
-              {activeCategory === 'images' && <CustomAssets />}
               {activeCategory === 'audio' && <AudioManager />}
               {activeCategory === 'advancedAudio' && <AdvancedAudioEditor />}
-              {activeCategory === 'templates' && <AnimationTemplates />}
-              {activeCategory === 'sceneTemplates' && <SceneTemplates />}
-              {activeCategory === 'plugins' && <PluginSystem />}
               {activeCategory === 'collaborate' && <CollaborationSystem />}
               {activeCategory === 'analytics' && <PerformanceAnalytics />}
               {activeCategory === 'ai' && <AIAssistant />}
@@ -410,6 +550,48 @@ const AssetPanel: React.FC = () => {
         title="Props & Objects Library - Professional Assets"
       >
         <EnhancedPropsLibrary />
+      </AssetLibraryPopup>
+
+      <AssetLibraryPopup
+        isOpen={openPopups.images}
+        onClose={() => closePopup('images')}
+        title="Image Library - Import and Manage"
+      >
+        <div style={{ height: '100%', backgroundColor: '#111827', color: 'white' }}>
+          <div style={{ padding: 12, borderBottom: '1px solid #374151' }}>
+            <div style={{ fontWeight: 700 }}>🖼️ Image Library</div>
+            <div style={{ fontSize: 12, color: '#9CA3AF' }}>Upload, search, and add images to your canvas</div>
+          </div>
+          <div style={{ flex: 1, overflow: 'auto' }}>
+            <div className="p-3">
+              <CustomAssets />
+            </div>
+          </div>
+        </div>
+      </AssetLibraryPopup>
+
+      <AssetLibraryPopup
+        isOpen={openPopups.templates}
+        onClose={() => closePopup('templates')}
+        title="Animation Templates - Professional Effects"
+      >
+        <AnimationTemplates />
+      </AssetLibraryPopup>
+
+      <AssetLibraryPopup
+        isOpen={openPopups.sceneTemplates}
+        onClose={() => closePopup('sceneTemplates')}
+        title="Scene Templates - Complete Layouts"
+      >
+        <SceneTemplates />
+      </AssetLibraryPopup>
+
+      <AssetLibraryPopup
+        isOpen={openPopups.plugins}
+        onClose={() => closePopup('plugins')}
+        title="Effects & Plugins - Visual Enhancements"
+      >
+        <PluginSystem />
       </AssetLibraryPopup>
     </div>
   );

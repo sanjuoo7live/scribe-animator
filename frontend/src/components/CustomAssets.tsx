@@ -122,7 +122,7 @@ const CustomAssets: React.FC = () => {
       },
       animationStart: 0,
       animationDuration: 5,
-      animationType: 'fadeIn' as const,
+      animationType: 'none' as const,
       animationEasing: 'easeOut' as const
     };
 

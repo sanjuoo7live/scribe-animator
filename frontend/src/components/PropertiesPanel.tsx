@@ -277,7 +277,7 @@ const PropertiesPanel: React.FC = () => {
           <div>
             <label className="block text-xs text-gray-400 mb-1">Animation Type</label>
             <select
-              value={selectedObj.animationType || 'fadeIn'}
+              value={selectedObj.animationType || 'none'}
               onChange={(e) => updateObjectProperty('animationType', e.target.value)}
               className="w-full p-2 bg-gray-700 text-white rounded text-sm"
             >

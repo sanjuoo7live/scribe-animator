@@ -105,7 +105,7 @@ const AssetLibrary: React.FC<AssetLibraryProps> = ({ category }) => {
       },
       animationStart: currentTime, // Start at current timeline position
       animationDuration: 5,
-      animationType: 'fadeIn' as const,
+      animationType: 'none' as const,
       animationEasing: 'easeOut' as const
     };
 

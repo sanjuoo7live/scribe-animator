@@ -57,7 +57,7 @@ const Timeline: React.FC = () => {
   const [showCurveEditor, setShowCurveEditor] = React.useState(false);
   const [currentCurve, setCurrentCurve] = React.useState('ease-in-out');
   
-  const { currentTime, setCurrentTime, currentProject, updateObject, addObject, setPlaying, setCompactUIOnPlay, compactUIOnPlay, selectedObject } = useAppStore();
+  const { currentTime, setCurrentTime, currentProject, updateObject, addObject, setPlaying, setCompactUIOnPlay, compactUIOnPlay, selectedObject, moveObjectLayer, removeObject, selectObject } = useAppStore();
 
   // Cleanup animation frame on unmount
   React.useEffect(() => {
@@ -615,16 +615,29 @@ const Timeline: React.FC = () => {
                             currentTime <= ((obj.animationStart || 0) + (obj.animationDuration || 5));
             
             return (
-              <div key={obj.id} className="h-8 bg-gray-700 rounded px-2 flex items-center text-xs relative group border border-gray-600 hover:border-gray-500 transition-colors min-w-full">
+              <div key={obj.id} className="h-8 bg-gray-700 rounded px-2 flex items-center text-xs relative group border border-gray-600 hover:border-gray-500 transition-colors min-w-full"
+                onClick={() => selectObject(obj.id)}
+              >
                 {/* Visibility indicator */}
                 <div 
                   className={`w-2 h-2 mr-2 rounded-full flex-shrink-0 ${isVisible ? 'bg-green-500 shadow-sm' : 'bg-gray-500'}`}
                   title={isVisible ? 'Visible at current time' : 'Hidden at current time'}
                 />
                 
-                <span className="text-xs font-medium truncate w-24 flex-shrink-0 text-white">
+                {/* Layer order indicator */}
+                <div 
+                  className="text-xs text-gray-400 mr-2 font-mono w-4 flex-shrink-0 text-center"
+                  title={`Layer ${index + 1} of ${currentProject.objects.length}`}
+                >
+                  {index + 1}
+                </div>
+                
+                <span className="text-xs font-medium truncate w-20 flex-shrink-0 text-white"
+                  title={obj.type === 'shape' ? `${obj.properties.shapeType} ${index + 1}` : 
+                         obj.type === 'text' ? `Text: "${obj.properties.text || 'Text'}"` : 
+                         `${obj.type} ${index + 1}`}>
                   {obj.type === 'shape' ? `${obj.properties.shapeType} ${index + 1}` : 
-                   obj.type === 'text' ? `${(obj.properties.text || 'Text').substring(0, 8)}...` : 
+                   obj.type === 'text' ? `${(obj.properties.text || 'Text').substring(0, 6)}...` : 
                    `${obj.type} ${index + 1}`}
                 </span>
                 
@@ -680,11 +693,12 @@ const Timeline: React.FC = () => {
                           }
                         };
                         
-                        const onUp = () => {
+            const onUp = () => {
                           if (!hasDragged) {
                             // This was a click, not a drag - jump to object time
                             const objectStartTime = obj.animationStart || 0;
                             setCurrentTime(objectStartTime);
+              selectObject(obj.id);
                             console.log(`Clicked: Jumped to object "${obj.type}" at time ${objectStartTime}s`);
                           }
                           document.removeEventListener('mousemove', onMove);
@@ -813,16 +827,42 @@ const Timeline: React.FC = () => {
                 {/* Layer controls */}
                 <div className="ml-3 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
                   <button 
-                    className="w-6 h-6 text-xs bg-gray-600 hover:bg-gray-500 rounded border border-gray-500 hover:border-gray-400 transition-colors"
-                    title="Move layer up"
+                    className="w-6 h-6 text-xs bg-gray-600 hover:bg-gray-500 rounded border border-gray-500 hover:border-gray-400 transition-colors flex items-center justify-center"
+                    title="Move layer up (bring forward)"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      console.log(`Moving object ${obj.id} forward (up)`);
+                      moveObjectLayer(obj.id, 'forward');
+                    }}
                   >
                     ↑
                   </button>
                   <button 
-                    className="w-6 h-6 text-xs bg-gray-600 hover:bg-gray-500 rounded border border-gray-500 hover:border-gray-400 transition-colors"
-                    title="Move layer down"
+                    className="w-6 h-6 text-xs bg-gray-600 hover:bg-gray-500 rounded border border-gray-500 hover:border-gray-400 transition-colors flex items-center justify-center"
+                    title="Move layer down (send backward)"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      console.log(`Moving object ${obj.id} backward (down)`);
+                      moveObjectLayer(obj.id, 'backward');
+                    }}
                   >
                     ↓
+                  </button>
+                  <button 
+                    className="w-6 h-6 text-xs bg-red-600 hover:bg-red-500 rounded border border-red-500 hover:border-red-400 transition-colors flex items-center justify-center text-white"
+                    title="Delete object"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const objectName = obj.type === 'shape' ? `${obj.properties.shapeType} ${index + 1}` : 
+                                       obj.type === 'text' ? `Text: "${(obj.properties.text || 'Text').substring(0, 20)}..."` : 
+                                       `${obj.type} ${index + 1}`;
+                      if (window.confirm(`Delete "${objectName}"?`)) {
+                        console.log(`Deleting object ${obj.id} (${objectName})`);
+                        removeObject(obj.id);
+                      }
+                    }}
+                  >
+                    ✕
                   </button>
                 </div>
               </div>

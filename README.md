@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # 🎬 Scribe Animator - Professional Animation Studio
 
 A comprehensive, web-based animation platform for creating professional whiteboard animations, explainer videos, and interactive content with AI-powered assistance.
@@ -495,31 +494,3 @@ A minimal GitHub Actions workflow is included at `.github/workflows/ci.yml` to i
 - All data stored locally
 - Personal use only
 - Ready for further development and customization
-=======
-# scribe-animator
-
-## Quick Start (Frontend)
-
-Make sure you have Node.js 18+ and npm installed.
-
-```bash
-cd frontend
-npm ci
-npm start
-```
-
-To build for production:
-
-```bash
-cd frontend
-npm run build
-```
-
-## Release
-
-This repository was tagged `v0.1.0` for the initial feature release (timeline click-to-jump, animation system, timeline enhancements).
-
-## CI
-
-A minimal GitHub Actions workflow is included at `.github/workflows/ci.yml` to install dependencies, build the frontend, and run the frontend tests on pushes and PRs to `main`.
->>>>>>> 263fd10 (chore(ci): add GitHub Actions workflow and README run instructions)

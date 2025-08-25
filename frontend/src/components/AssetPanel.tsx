@@ -86,9 +86,9 @@ const AssetPanel: React.FC = () => {
         fill: '#000000',
         fontFamily: 'Arial'
       },
-      animationStart: currentTime,
+      animationStart: currentTime, // Start at current timeline position
       animationDuration: 5,
-      animationType: 'fadeIn' as const,
+      animationType: 'none' as const,
       animationEasing: 'easeOut' as const
     };
 

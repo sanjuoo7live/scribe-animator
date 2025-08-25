@@ -6,6 +6,7 @@ import PropertiesPanel from './components/PropertiesPanel';
 import ProjectTemplates from './components/ProjectTemplates';
 import ExportSystem from './components/ExportSystem';
 import AIAssistant from './components/AIAssistant';
+import KeyboardShortcuts from './components/KeyboardShortcuts';
 import { useAppStore, createDefaultProject } from './store/appStore';
 import './App.css';
 
@@ -18,6 +19,14 @@ const App: React.FC = () => {
   const [isResizingLeft, setIsResizingLeft] = useState(false);
   const [isResizingTimeline, setIsResizingTimeline] = useState(false);
   const [showRightPanel, setShowRightPanel] = useState(false); // Right panel is hidden by default
+  const { selectedObject } = useAppStore();
+
+  // Auto-open properties panel when an object is selected
+  React.useEffect(() => {
+    if (selectedObject) {
+      setShowRightPanel(true);
+    }
+  }, [selectedObject]);
 
   // Initialize default project if none exists
   React.useEffect(() => {
@@ -83,6 +92,7 @@ const App: React.FC = () => {
 
   return (
     <div className="app">
+      <KeyboardShortcuts />
       <header className="app-header">
         <div className="header-left">
           <h1>Scribe Animator</h1>

@@ -1,4 +1,5 @@
 import React from 'react';
+import { createPortal } from 'react-dom';
 import { useAppStore } from '../store/appStore';
 
 interface CanvasSettingsProps {
@@ -51,8 +52,10 @@ const CanvasSettings: React.FC<CanvasSettingsProps> = ({ isOpen, onClose }) => {
     });
   };
 
-  return (
-    <div className="fixed inset-0 z-50 pointer-events-none">
+  const portalTarget = typeof document !== 'undefined' ? document.body : null;
+
+  const panel = (
+    <div className="fixed inset-0 z-[1000] pointer-events-none">
       {/* Floating panel anchored to the right; doesn't block canvas interactions */}
       <div className="absolute top-14 right-6 bg-gray-800/98 text-white rounded-xl border border-gray-700 shadow-2xl p-6 w-[560px] max-w-[90vw] max-h-[80vh] overflow-y-auto pointer-events-auto backdrop-blur-sm">
         <div className="flex justify-between items-center mb-8">
@@ -183,6 +186,9 @@ const CanvasSettings: React.FC<CanvasSettingsProps> = ({ isOpen, onClose }) => {
       </div>
     </div>
   );
+
+  if (!portalTarget) return panel;
+  return createPortal(panel, portalTarget);
 };
 
 export default CanvasSettings;

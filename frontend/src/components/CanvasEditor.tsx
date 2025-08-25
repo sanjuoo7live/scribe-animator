@@ -43,6 +43,12 @@ const CanvasEditor: React.FC = () => {
   const [fitMode, setFitMode] = React.useState<'width' | 'contain'>('contain');
   const [canvasSize, setCanvasSize] = React.useState({ width: 800, height: 600 });
 
+  // Debug Settings visibility state
+  React.useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log('[CanvasEditor] showCanvasSettings =', showCanvasSettings);
+  }, [showCanvasSettings]);
+
   // Helper: finish current stroke (commit to objects or discard)
   const finishCurrentStroke = React.useCallback((commit: boolean) => {
     setIsDrawing(false);
@@ -426,7 +432,17 @@ const CanvasEditor: React.FC = () => {
           {selectedObject && (
             <button className="px-3 py-1 bg-red-600 rounded hover:bg-red-700 text-sm font-medium" onClick={() => { removeObject(selectedObject); selectObject(null); }}>🗑️ Delete</button>
           )}
-          <button className="px-3 py-1 bg-purple-600 rounded hover:bg-purple-700 text-sm font-medium" onClick={() => setShowCanvasSettings(true)}>⚙️ Settings</button>
+          <button
+            className="px-3 py-1 bg-purple-600 rounded hover:bg-purple-700 text-sm font-medium"
+            onClick={() => {
+              // Debug: trace settings toggle
+              // eslint-disable-next-line no-console
+              console.log('[CanvasEditor] Settings button clicked');
+              setShowCanvasSettings(true);
+            }}
+          >
+            ⚙️ Settings
+          </button>
           <div className="ml-2"><CameraControls /></div>
         </div>
       </div>

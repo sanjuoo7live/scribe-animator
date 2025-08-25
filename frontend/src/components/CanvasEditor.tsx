@@ -27,18 +27,81 @@ const CanvasEditor: React.FC = () => {
   const [tool, setTool] = React.useState<'select' | 'pen'>('select');
   const [strokeColor, setStrokeColor] = React.useState('#000000');
   const [strokeWidth, setStrokeWidth] = React.useState(2);
+  const [penType, setPenType] = React.useState<'brush' | 'highlighter' | 'dashed'>('brush');
   const [isDrawing, setIsDrawing] = React.useState(false);
-  const [lines, setLines] = React.useState<{ points: number[]; stroke: string; strokeWidth: number }[]>([]);
+  const [lines, setLines] = React.useState<{
+    points: number[];
+    stroke: string;
+    strokeWidth: number;
+    opacity?: number;
+    dash?: number[];
+    composite?: GlobalCompositeOperation | 'multiply';
+  }[]>([]);
   const [editingText, setEditingText] = React.useState<string | null>(null);
   const [editingValue, setEditingValue] = React.useState('');
   const [showCanvasSettings, setShowCanvasSettings] = React.useState(false);
   const [fitMode, setFitMode] = React.useState<'width' | 'contain'>('contain');
   const [canvasSize, setCanvasSize] = React.useState({ width: 800, height: 600 });
 
-  // Keyboard shortcuts: Escape to deselect, Delete/Backspace to remove selected
+  // Helper: finish current stroke (commit to objects or discard)
+  const finishCurrentStroke = React.useCallback((commit: boolean) => {
+    setIsDrawing(false);
+    setLines((prev) => {
+      const last = prev[prev.length - 1];
+      if (!last) return prev;
+      if (commit && last.points.length > 3) {
+        const pts: { x: number; y: number }[] = [];
+        for (let i = 0; i < last.points.length; i += 2) {
+          pts.push({ x: last.points[i], y: last.points[i + 1] });
+        }
+        addObject({
+          id: `draw-${Date.now()}`,
+          type: 'drawPath',
+          x: 0,
+          y: 0,
+          width: 0,
+          height: 0,
+          rotation: 0,
+          properties: { points: pts, strokeColor: last.stroke, strokeWidth: last.strokeWidth },
+          animationStart: 0,
+          animationDuration: currentProject?.duration || 5,
+          animationType: 'none',
+          animationEasing: 'easeOut',
+        });
+      }
+      // remove preview stroke either way
+      return prev.slice(0, -1);
+    });
+  }, [addObject, currentProject?.duration]);
+
+  // Keyboard shortcuts: Escape to stop drawing/deselect, D to toggle draw, V to select, Delete to remove selected
   React.useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
+        if (tool === 'pen') {
+          e.preventDefault();
+          // commit partial stroke then exit to select
+          finishCurrentStroke(true);
+          setTool('select');
+        } else {
+          selectObject(null);
+        }
+        return;
+      }
+      if ((e.key === 'd' || e.key === 'D') && !editingText) {
+        e.preventDefault();
+        if (tool === 'pen') {
+          finishCurrentStroke(true);
+          setTool('select');
+        } else {
+          setTool('pen');
+        }
+        return;
+      }
+      if ((e.key === 'v' || e.key === 'V') && !editingText) {
+        e.preventDefault();
+        if (tool === 'pen') finishCurrentStroke(true);
+        setTool('select');
         selectObject(null);
         return;
       }
@@ -50,7 +113,7 @@ const CanvasEditor: React.FC = () => {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [selectObject, removeObject, selectedObject, editingText]);
+  }, [tool, finishCurrentStroke, selectObject, removeObject, selectedObject, editingText]);
 
   React.useEffect(() => {
     const updateSize = () => {
@@ -83,15 +146,32 @@ const CanvasEditor: React.FC = () => {
   const getPointer = () => {
     const stage = stageRef.current;
     if (!stage) return { x: 0, y: 0 };
-    const p = stage.getPointerPosition();
-    return p || { x: 0, y: 0 };
+    const pos = stage.getPointerPosition();
+    if (!pos) return { x: 0, y: 0 };
+    // convert screen coords to stage (content) coords accounting for scale and pan
+    const transform = stage.getAbsoluteTransform().copy();
+    transform.invert();
+    const scenePos = transform.point(pos);
+    return { x: scenePos.x, y: scenePos.y };
   };
 
   const handleMouseDown = () => {
     if (tool !== 'pen') return;
+    // derive style from pen type
+    const style = (() => {
+      switch (penType) {
+        case 'highlighter':
+          return { opacity: 0.35, dash: undefined as number[] | undefined, composite: 'multiply' as const };
+        case 'dashed':
+          return { opacity: 1, dash: [strokeWidth * 2, Math.max(4, Math.round(strokeWidth * 1.2))], composite: 'source-over' as const };
+        case 'brush':
+        default:
+          return { opacity: 1, dash: undefined as number[] | undefined, composite: 'source-over' as const };
+      }
+    })();
     setIsDrawing(true);
     const pos = getPointer();
-    setLines((prev) => prev.concat([{ points: [pos.x, pos.y], stroke: strokeColor, strokeWidth }]));
+    setLines((prev) => prev.concat([{ points: [pos.x, pos.y], stroke: strokeColor, strokeWidth, opacity: style.opacity, dash: style.dash, composite: style.composite }]));
   };
 
   const handleMouseMove = () => {
@@ -122,12 +202,31 @@ const CanvasEditor: React.FC = () => {
       width: 0,
       height: 0,
       rotation: 0,
-      properties: { points, strokeColor: last.stroke, strokeWidth: last.strokeWidth },
+      properties: {
+        points,
+        strokeColor: last.stroke,
+        strokeWidth: last.strokeWidth,
+        penType,
+        opacity: last.opacity ?? 1,
+        dash: last.dash,
+        composite: last.composite,
+      },
       animationStart: 0,
       animationDuration: currentProject?.duration || 5,
       animationType: 'none',
       animationEasing: 'easeOut',
     });
+  // remove the preview line that was just committed
+  setLines((prev) => prev.slice(0, -1));
+  };
+  const handleToggleDrawClick = () => {
+    if (tool === 'pen') {
+      // stopping draw: commit current stroke if any and switch to select
+      finishCurrentStroke(true);
+      setTool('select');
+    } else {
+      setTool('pen');
+    }
   };
 
   const handleObjectDrag = (id: string, node: any) => {
@@ -270,7 +369,13 @@ const CanvasEditor: React.FC = () => {
     <div className="h-full flex flex-col">
       <div className="bg-gray-800 border-b border-gray-600 p-2 flex justify-between items-center">
         <div className="flex gap-2 items-center">
-          <button className={`px-3 py-1 rounded text-sm font-medium transition-colors ${tool === 'pen' ? 'bg-blue-600 text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'}`} onClick={() => setTool('pen')}>✏️ Draw</button>
+          <button
+            className={`px-3 py-1 rounded text-sm font-medium transition-colors ${tool === 'pen' ? 'bg-blue-600 text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'}`}
+            onClick={handleToggleDrawClick}
+            title={tool === 'pen' ? 'Stop Drawing (Esc or D)' : 'Start Drawing (D)'}
+          >
+            ✏️ {tool === 'pen' ? 'Stop' : 'Draw'}
+          </button>
           <button className={`px-3 py-1 rounded text-sm font-medium transition-colors ${tool === 'select' ? 'bg-blue-600 text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'}`} onClick={() => setTool('select')}>👆 Select</button>
           <button className="px-3 py-1 bg-blue-600 rounded hover:bg-blue-700 text-sm font-medium" onClick={addText}>📝 Text</button>
           <button className={`px-3 py-1 rounded text-sm font-medium transition-colors ${fitMode === 'width' ? 'bg-green-600 text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'}`} onClick={() => setFitMode(fitMode === 'width' ? 'contain' : 'width')} title={fitMode === 'width' ? 'Fit Mode: Width (click to switch to Contain)' : 'Fit Mode: Contain (click to switch to Width)'}>
@@ -284,6 +389,16 @@ const CanvasEditor: React.FC = () => {
             <input type="color" value={strokeColor} onChange={(e) => setStrokeColor(e.target.value)} className="w-8 h-8 rounded border border-gray-600" />
             <input type="range" min="1" max="20" value={strokeWidth} onChange={(e) => setStrokeWidth(Number(e.target.value))} className="w-20" />
             <span className="text-xs text-gray-300 w-6 text-center">{strokeWidth}</span>
+            <select
+              value={penType}
+              onChange={(e) => setPenType(e.target.value as any)}
+              className="bg-gray-700 text-gray-200 text-xs px-2 py-1 rounded border border-gray-600"
+              title="Pen Type"
+            >
+              <option value="brush">Brush</option>
+              <option value="highlighter">Highlighter</option>
+              <option value="dashed">Dashed</option>
+            </select>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -308,9 +423,7 @@ const CanvasEditor: React.FC = () => {
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
-            onClick={handleMouseDown}
-            onTap={handleMouseDown}
-            style={{ background: getBoardBackground(currentProject?.boardStyle || 'whiteboard') }}
+            style={{ background: getBoardBackground(currentProject?.boardStyle || 'whiteboard'), cursor: tool === 'pen' ? 'crosshair' : 'default' }}
             scaleX={(currentProject?.cameraPosition?.zoom || 1) * (canvasSize.width / (currentProject?.width || 800))}
             scaleY={(currentProject?.cameraPosition?.zoom || 1) * (canvasSize.height / (currentProject?.height || 600))}
             x={currentProject?.cameraPosition?.x || 0}
@@ -333,7 +446,18 @@ const CanvasEditor: React.FC = () => {
               <Text text="Scribe Animator Canvas" x={50} y={50} fontSize={24} fill="gray" />
 
               {lines.map((line, i) => (
-                <Line key={i} points={line.points} stroke={line.stroke} strokeWidth={line.strokeWidth} tension={0.5} lineCap="round" lineJoin="round" />
+                <Line
+                  key={i}
+                  points={line.points}
+                  stroke={line.stroke}
+                  strokeWidth={line.strokeWidth}
+                  tension={0.5}
+                  lineCap="round"
+                  lineJoin="round"
+                  opacity={line.opacity ?? 1}
+                  dash={line.dash}
+                  globalCompositeOperation={line.composite as any}
+                />
               ))}
 
               {currentProject?.objects.map((obj) => {
@@ -618,10 +742,27 @@ const CanvasEditor: React.FC = () => {
                   const flat = pts.reduce((acc: number[], p: { x: number; y: number }) => acc.concat([p.x + obj.x, p.y + obj.y]), [] as number[]);
                   if (flat.length > 3) {
                     return (
-                      <Line key={obj.id} id={obj.id} points={flat} rotation={obj.rotation || 0}
-                        stroke={isSelected ? '#4f46e5' : obj.properties.strokeColor || '#000'} strokeWidth={(obj.properties.strokeWidth || 2) + (isSelected ? 1 : 0)}
-                        lineCap="round" lineJoin="round" draggable={tool === 'select'}
-                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }} onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)} onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)} />
+                      <Line
+                        key={obj.id}
+                        id={obj.id}
+                        points={flat}
+                        rotation={obj.rotation || 0}
+                        stroke={isSelected ? '#4f46e5' : obj.properties.strokeColor || '#000'}
+                        strokeWidth={(obj.properties.strokeWidth || 2) + (isSelected ? 1 : 0)}
+                        opacity={obj.properties.opacity ?? 1}
+                        dash={obj.properties.dash}
+                        lineCap="round"
+                        lineJoin="round"
+                        draggable={tool === 'select'}
+                        hitStrokeWidth={Math.max(12, (obj.properties.strokeWidth || 2) * 3)}
+                        perfectDrawEnabled={false}
+                        shadowForStrokeEnabled={false}
+                        onMouseEnter={(e) => { if (tool === 'select') (e.target.getStage() as any)?.container().style.setProperty('cursor', 'pointer'); }}
+                        onMouseLeave={(e) => { (e.target.getStage() as any)?.container().style.removeProperty('cursor'); }}
+                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }}
+                        onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
+                        onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
+                      />
                     );
                   }
                 }

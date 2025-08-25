@@ -376,7 +376,6 @@ const CanvasEditor: React.FC = () => {
           >
             ✏️ {tool === 'pen' ? 'Stop' : 'Draw'}
           </button>
-          <button className={`px-3 py-1 rounded text-sm font-medium transition-colors ${tool === 'select' ? 'bg-blue-600 text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'}`} onClick={() => setTool('select')}>👆 Select</button>
           <button className="px-3 py-1 bg-blue-600 rounded hover:bg-blue-700 text-sm font-medium" onClick={addText}>📝 Text</button>
           <button className={`px-3 py-1 rounded text-sm font-medium transition-colors ${fitMode === 'width' ? 'bg-green-600 text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'}`} onClick={() => setFitMode(fitMode === 'width' ? 'contain' : 'width')} title={fitMode === 'width' ? 'Fit Mode: Width (click to switch to Contain)' : 'Fit Mode: Contain (click to switch to Width)'}>
             {fitMode === 'width' ? '↔️ Fit Width' : '🧩 Fit Contain'}

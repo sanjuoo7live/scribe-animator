@@ -217,10 +217,10 @@ const CanvasEditor: React.FC = () => {
       type: 'text',
       x: 150,
       y: 150,
-      width: 200,
-      height: 50,
+  width: 300,
+  height: 0,
       rotation: 0,
-      properties: { text: 'Text', fontSize: 24, fill: '#000' },
+  properties: { text: 'Text', fontSize: 28, fill: '#111' },
       animationStart: 0,
       animationDuration: currentProject?.duration || 5,
       animationType: 'none',
@@ -585,8 +585,8 @@ const CanvasEditor: React.FC = () => {
 
         if (obj.type === 'text') {
                   return (
-          <Text key={obj.id} id={obj.id} x={animatedProps.x ?? obj.x} y={animatedProps.y ?? obj.y}
-      text={obj.properties.text || 'Text'} fontSize={obj.properties.fontSize || 16} width={obj.width ?? undefined} rotation={obj.rotation || 0}
+                    <Text key={obj.id} id={obj.id} x={animatedProps.x ?? obj.x} y={animatedProps.y ?? obj.y}
+          text={obj.properties.text || 'Text'} fontSize={obj.properties.fontSize || 16} width={obj.width && obj.width > 1 ? obj.width : undefined} rotation={obj.rotation || 0}
                       scaleX={animatedProps.scaleX ?? 1} scaleY={animatedProps.scaleY ?? 1} opacity={animatedProps.opacity ?? 1}
                       fill={isSelected ? '#4f46e5' : obj.properties.fill || '#000'} draggable={tool === 'select'}
                       onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }} onDblClick={() => handleTextDoubleClick(obj.id)}

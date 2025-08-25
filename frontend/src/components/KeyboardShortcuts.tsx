@@ -24,9 +24,16 @@ const KeyboardShortcuts: React.FC = () => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Check for modifier keys (Cmd on Mac, Ctrl on Windows/Linux)
+      // Always handle Delete/Backspace for deleting selected object
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedObject) {
+        e.preventDefault();
+        removeObject(selectedObject);
+        showNotification('Object deleted', 'success');
+        return;
+      }
+
+      // Below require modifier keys (Cmd on Mac, Ctrl on Windows/Linux)
       const isModifierPressed = e.metaKey || e.ctrlKey;
-      
       if (!isModifierPressed) return;
 
       switch (e.key.toLowerCase()) {
@@ -57,15 +64,7 @@ const KeyboardShortcuts: React.FC = () => {
           }
           break;
           
-        case 'delete':
-        case 'backspace':
-          // Delete selected object
-          if (selectedObject) {
-            e.preventDefault();
-            removeObject(selectedObject);
-            showNotification('Object deleted', 'success');
-          }
-          break;
+  // Delete handled above without modifiers
       }
     };
 

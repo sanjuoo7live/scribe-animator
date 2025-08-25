@@ -78,12 +78,14 @@ const AssetPanel: React.FC = () => {
     const textObj = {
       id: `text-${Date.now()}`,
       type: 'text' as const,
-      x: 250,
-      y: 250,
+      x: 200,
+      y: 200,
+      width: 320,
+      height: 0,
       properties: {
         text: 'Sample Text',
-        fontSize: 24,
-        fill: '#000000',
+        fontSize: 28,
+        fill: '#111111',
         fontFamily: 'Arial'
       },
       animationStart: currentTime, // Start at current timeline position

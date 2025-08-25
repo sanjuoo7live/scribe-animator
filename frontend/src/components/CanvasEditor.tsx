@@ -333,10 +333,7 @@ const CanvasEditor: React.FC = () => {
               {currentProject?.objects.map((obj) => {
                 const animStart = obj.animationStart || 0;
                 const animDuration = obj.animationDuration || 5;
-                const animEnd = animStart + animDuration;
-                const isVisible = currentTime >= animStart && currentTime <= animEnd;
-                if (!isVisible) return null;
-
+                // Show objects at all times; clamp animation progression 0..1
                 const progress = Math.min(Math.max((currentTime - animStart) / animDuration, 0), 1);
                 const easing = obj.animationEasing || 'easeOut';
                 const ease = (p: number) => {
@@ -359,93 +356,161 @@ const CanvasEditor: React.FC = () => {
 
                 if (obj.type === 'shape') {
                   const props = obj.properties;
+                  // Rectangle (draw directly, not grouped)
                   if (props.shapeType === 'rectangle') {
                     return (
-                      <Rect key={obj.id} id={obj.id} x={animatedProps.x ?? obj.x} y={animatedProps.y ?? obj.y}
-                        width={obj.width || 100} height={obj.height || 100} rotation={obj.rotation || 0}
-                        scaleX={animatedProps.scaleX ?? 1} scaleY={animatedProps.scaleY ?? 1} opacity={animatedProps.opacity ?? 1}
-                        fill={props.fill || 'transparent'} stroke={isSelected ? '#4f46e5' : props.stroke || '#000'} strokeWidth={(props.strokeWidth || 2) + (isSelected ? 1 : 0)}
-                        draggable={tool === 'select'} onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }}
-                        onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)} onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)} />
+                      <Rect
+                        key={obj.id}
+                        id={obj.id}
+                        x={animatedProps.x ?? obj.x}
+                        y={animatedProps.y ?? obj.y}
+                        width={obj.width || 100}
+                        height={obj.height || 100}
+                        rotation={obj.rotation || 0}
+                        scaleX={animatedProps.scaleX ?? 1}
+                        scaleY={animatedProps.scaleY ?? 1}
+                        opacity={animatedProps.opacity ?? 1}
+                        fill={props.fill || 'transparent'}
+                        stroke={isSelected ? '#4f46e5' : props.stroke || '#000'}
+                        strokeWidth={(props.strokeWidth || 2) + (isSelected ? 1 : 0)}
+                        draggable={tool === 'select'}
+                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }}
+                        onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
+                        onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
+                      />
                     );
                   }
+
+                  // Circle
                   if (props.shapeType === 'circle') {
-                    const w = obj.width || 100; const h = obj.height || 100;
+                    const w = obj.width || 100;
+                    const h = obj.height || 100;
                     return (
-                      <Group key={obj.id} id={obj.id} 
-                        x={animatedProps.x ?? obj.x} 
-                        y={animatedProps.y ?? obj.y} 
+                      <Group
+                        key={obj.id}
+                        id={obj.id}
+                        x={animatedProps.x ?? obj.x}
+                        y={animatedProps.y ?? obj.y}
                         rotation={obj.rotation || 0}
                         scaleX={animatedProps.scaleX ?? 1}
                         scaleY={animatedProps.scaleY ?? 1}
                         opacity={animatedProps.opacity ?? 1}
                         draggable={tool === 'select'}
                         onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
-                        onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)} onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}>
-                        <Circle x={w / 2} y={h / 2} radius={Math.min(w, h) / 2}
-                          fill={props.fill || 'transparent'} stroke={isSelected ? '#4f46e5' : props.stroke || '#000'} strokeWidth={(props.strokeWidth || 2) + (isSelected ? 1 : 0)} />
+                        onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
+                        onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
+                      >
+                        <Circle
+                          x={w / 2}
+                          y={h / 2}
+                          radius={Math.min(w, h) / 2}
+                          fill={props.fill || 'transparent'}
+                          stroke={isSelected ? '#4f46e5' : props.stroke || '#000'}
+                          strokeWidth={(props.strokeWidth || 2) + (isSelected ? 1 : 0)}
+                        />
                       </Group>
                     );
                   }
+
+                  // Triangle
                   if (props.shapeType === 'triangle') {
-                    const w = obj.width || 100; const h = obj.height || 100; const trianglePoints = [w / 2, 0, 0, h, w, h];
+                    const w = obj.width || 100;
+                    const h = obj.height || 100;
+                    const trianglePoints = [w / 2, 0, 0, h, w, h];
                     return (
-                      <Group key={obj.id} id={obj.id} 
-                        x={animatedProps.x ?? obj.x} 
-                        y={animatedProps.y ?? obj.y} 
+                      <Group
+                        key={obj.id}
+                        id={obj.id}
+                        x={animatedProps.x ?? obj.x}
+                        y={animatedProps.y ?? obj.y}
                         rotation={obj.rotation || 0}
                         scaleX={animatedProps.scaleX ?? 1}
                         scaleY={animatedProps.scaleY ?? 1}
                         opacity={animatedProps.opacity ?? 1}
                         draggable={tool === 'select'}
                         onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
-                        onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)} onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}>
-                        <Line points={trianglePoints} closed
-                          fill={props.fill || 'transparent'} stroke={isSelected ? '#4f46e5' : props.stroke || '#000'} strokeWidth={(props.strokeWidth || 2) + (isSelected ? 1 : 0)} />
+                        onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
+                        onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
+                      >
+                        <Line
+                          points={trianglePoints}
+                          closed
+                          fill={props.fill || 'transparent'}
+                          stroke={isSelected ? '#4f46e5' : props.stroke || '#000'}
+                          strokeWidth={(props.strokeWidth || 2) + (isSelected ? 1 : 0)}
+                        />
                       </Group>
                     );
                   }
+
+                  // Star
                   if (props.shapeType === 'star') {
-                    const w = obj.width || 100; const h = obj.height || 100;
+                    const w = obj.width || 100;
+                    const h = obj.height || 100;
                     return (
-                      <Group key={obj.id} id={obj.id} 
-                        x={animatedProps.x ?? obj.x} 
-                        y={animatedProps.y ?? obj.y} 
+                      <Group
+                        key={obj.id}
+                        id={obj.id}
+                        x={animatedProps.x ?? obj.x}
+                        y={animatedProps.y ?? obj.y}
                         rotation={obj.rotation || 0}
                         scaleX={animatedProps.scaleX ?? 1}
                         scaleY={animatedProps.scaleY ?? 1}
                         opacity={animatedProps.opacity ?? 1}
                         draggable={tool === 'select'}
                         onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
-                        onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)} onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}>
-                        <Star x={w / 2} y={h / 2} numPoints={5} innerRadius={Math.min(w, h) / 4} outerRadius={Math.min(w, h) / 2}
-                          fill={props.fill || 'transparent'} stroke={isSelected ? '#4f46e5' : props.stroke || '#000'} strokeWidth={(props.strokeWidth || 2) + (isSelected ? 1 : 0)} />
+                        onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
+                        onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
+                      >
+                        <Star
+                          x={w / 2}
+                          y={h / 2}
+                          numPoints={5}
+                          innerRadius={Math.min(w, h) / 4}
+                          outerRadius={Math.min(w, h) / 2}
+                          fill={props.fill || 'transparent'}
+                          stroke={isSelected ? '#4f46e5' : props.stroke || '#000'}
+                          strokeWidth={(props.strokeWidth || 2) + (isSelected ? 1 : 0)}
+                        />
                       </Group>
                     );
                   }
+
+                  // Heart
                   if (props.shapeType === 'heart') {
-                    const w = obj.width || 100; const h = obj.height || 100;
+                    const w = obj.width || 100;
+                    const h = obj.height || 100;
                     const heartPoints = [w / 2, h * 0.3, w * 0.8, 0, w, h * 0.3, w / 2, h, 0, h * 0.3, w * 0.2, 0];
                     return (
-                      <Group key={obj.id} id={obj.id} 
-                        x={animatedProps.x ?? obj.x} 
-                        y={animatedProps.y ?? obj.y} 
+                      <Group
+                        key={obj.id}
+                        id={obj.id}
+                        x={animatedProps.x ?? obj.x}
+                        y={animatedProps.y ?? obj.y}
                         rotation={obj.rotation || 0}
                         scaleX={animatedProps.scaleX ?? 1}
                         scaleY={animatedProps.scaleY ?? 1}
                         opacity={animatedProps.opacity ?? 1}
                         draggable={tool === 'select'}
                         onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
-                        onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)} onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}>
-                        <Line points={heartPoints} closed
-                          fill={props.fill || 'transparent'} stroke={isSelected ? '#4f46e5' : props.stroke || '#000'} strokeWidth={(props.strokeWidth || 2) + (isSelected ? 1 : 0)} />
+                        onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
+                        onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
+                      >
+                        <Line
+                          points={heartPoints}
+                          closed
+                          fill={props.fill || 'transparent'}
+                          stroke={isSelected ? '#4f46e5' : props.stroke || '#000'}
+                          strokeWidth={(props.strokeWidth || 2) + (isSelected ? 1 : 0)}
+                        />
                       </Group>
                     );
                   }
+
+                  // Arrow
                   if (props.shapeType === 'arrow') {
                     const w = Math.max(2, obj.width || 100);
-                    const thickness = Math.max(2, obj.height || 8); // treat height as thickness
-                    // Apply slideIn animation to position, others to Group properties
+                    const thickness = Math.max(2, obj.height || 8);
                     const groupX = animatedProps.x ?? obj.x;
                     const groupY = animatedProps.y ?? obj.y;
                     return (
@@ -477,14 +542,36 @@ const CanvasEditor: React.FC = () => {
                       </Group>
                     );
                   }
+
+                  // Polygon (hexagon example)
                   if (props.shapeType === 'polygon') {
-                    const w = obj.width || 100; const h = obj.height || 100; const radius = Math.min(w, h) / 2;
+                    const w = obj.width || 100;
+                    const h = obj.height || 100;
+                    const radius = Math.min(w, h) / 2;
                     return (
-                      <Group key={obj.id} id={obj.id} x={obj.x} y={obj.y} rotation={obj.rotation || 0} draggable={tool === 'select'}
+                      <Group
+                        key={obj.id}
+                        id={obj.id}
+                        x={animatedProps.x ?? obj.x}
+                        y={animatedProps.y ?? obj.y}
+                        rotation={obj.rotation || 0}
+                        scaleX={animatedProps.scaleX ?? 1}
+                        scaleY={animatedProps.scaleY ?? 1}
+                        opacity={animatedProps.opacity ?? 1}
+                        draggable={tool === 'select'}
                         onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
-                        onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)} onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}>
-                        <RegularPolygon x={w / 2} y={h / 2} sides={6} radius={radius}
-                          fill={props.fill || 'transparent'} stroke={isSelected ? '#4f46e5' : props.stroke || '#000'} strokeWidth={(props.strokeWidth || 2) + (isSelected ? 1 : 0)} />
+                        onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
+                        onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
+                      >
+                        <RegularPolygon
+                          x={w / 2}
+                          y={h / 2}
+                          sides={6}
+                          radius={radius}
+                          fill={props.fill || 'transparent'}
+                          stroke={isSelected ? '#4f46e5' : props.stroke || '#000'}
+                          strokeWidth={(props.strokeWidth || 2) + (isSelected ? 1 : 0)}
+                        />
                       </Group>
                     );
                   }
@@ -492,8 +579,8 @@ const CanvasEditor: React.FC = () => {
 
         if (obj.type === 'text') {
                   return (
-                    <Text key={obj.id} id={obj.id} x={animatedProps.x ?? obj.x} y={animatedProps.y ?? obj.y}
-          text={obj.properties.text || 'Text'} fontSize={obj.properties.fontSize || 16} width={obj.width || undefined} rotation={obj.rotation || 0}
+          <Text key={obj.id} id={obj.id} x={animatedProps.x ?? obj.x} y={animatedProps.y ?? obj.y}
+      text={obj.properties.text || 'Text'} fontSize={obj.properties.fontSize || 16} width={obj.width || 1} rotation={obj.rotation || 0}
                       scaleX={animatedProps.scaleX ?? 1} scaleY={animatedProps.scaleY ?? 1} opacity={animatedProps.opacity ?? 1}
                       fill={isSelected ? '#4f46e5' : obj.properties.fill || '#000'} draggable={tool === 'select'}
                       onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }} onDblClick={() => handleTextDoubleClick(obj.id)}

@@ -50,6 +50,8 @@ const Timeline: React.FC = () => {
   const [autoSave, setAutoSave] = React.useState(true);
   const [showMarkerLabels, setShowMarkerLabels] = React.useState(false);
   const animationFrameRef = React.useRef<number | null>(null);
+  // Slider scrubbing state
+  const [preScrubPlaying, setPreScrubPlaying] = React.useState(false);
   
   // Advanced timeline features state
   const [showEnhancements, setShowEnhancements] = React.useState(false);
@@ -266,6 +268,25 @@ const Timeline: React.FC = () => {
     }
   };
 
+  // Slider handlers for scrubbing
+  const handleSliderChange = (val: number) => {
+    const clamped = Math.max(0, Math.min(duration, val));
+    setCurrentTime(clamped);
+  };
+  const beginScrub = () => {
+    setPreScrubPlaying(isPlaying);
+    if (isPlaying) {
+      setIsPlaying(false);
+      setPlaying(false);
+    }
+  };
+  const endScrub = () => {
+    if (preScrubPlaying) {
+      setIsPlaying(true);
+      setPlaying(true);
+    }
+  };
+
   // Stop animation when component unmounts or isPlaying changes to false
   React.useEffect(() => {
     if (!isPlaying && animationFrameRef.current) {
@@ -402,6 +423,24 @@ const Timeline: React.FC = () => {
               </span>
             )}
           </div>
+      </div>
+
+      {/* Draggable timeline slider */}
+      <div className="mb-4 bg-gray-800 p-3 rounded-lg border border-gray-700">
+        <input
+          type="range"
+          min={0}
+          max={duration}
+          step={0.01}
+          value={Math.min(duration, Math.max(0, currentTime))}
+          onChange={(e) => handleSliderChange(Number(e.target.value))}
+          onMouseDown={beginScrub}
+          onMouseUp={endScrub}
+          onTouchStart={beginScrub}
+          onTouchEnd={endScrub}
+          className="w-full"
+          aria-label="Timeline position"
+        />
       </div>
 
       {/* Main Timeline Scrubber */}

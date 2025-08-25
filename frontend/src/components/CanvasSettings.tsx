@@ -18,6 +18,16 @@ const CanvasSettings: React.FC<CanvasSettingsProps> = ({ isOpen, onClose }) => {
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
 
+  // Debug: mount lifecycle
+  React.useEffect(() => {
+    // eslint-disable-next-line no-console
+    console.log('[CanvasSettings] useEffect mount');
+    return () => {
+      // eslint-disable-next-line no-console
+      console.log('[CanvasSettings] useEffect unmount');
+    };
+  }, []);
+
   if (!isOpen) return null;
 
   const boardStyles = [
@@ -53,11 +63,14 @@ const CanvasSettings: React.FC<CanvasSettingsProps> = ({ isOpen, onClose }) => {
   };
 
   const portalTarget = typeof document !== 'undefined' ? document.body : null;
+  // Debug: render trace
+  // eslint-disable-next-line no-console
+  console.log('[CanvasSettings] render isOpen=', isOpen);
 
   const panel = (
-    <div className="fixed inset-0 z-[1000] pointer-events-none">
+    <div className="fixed inset-0 z-[99999] pointer-events-none" style={{ zIndex: 99999 }}>
       {/* Floating panel anchored to the right; doesn't block canvas interactions */}
-      <div className="absolute top-14 right-6 bg-gray-800/98 text-white rounded-xl border border-gray-700 shadow-2xl p-6 w-[560px] max-w-[90vw] max-h-[80vh] overflow-y-auto pointer-events-auto backdrop-blur-sm">
+      <div className="absolute top-14 right-6 bg-gray-800/98 text-white rounded-xl border border-gray-700 shadow-2xl ring-1 ring-white/10 p-6 w-[560px] max-w-[95vw] max-h-[80vh] overflow-y-auto pointer-events-auto backdrop-blur-sm">
         <div className="flex justify-between items-center mb-8">
           <h2 className="text-2xl font-bold text-white">Canvas Settings</h2>
           <button 

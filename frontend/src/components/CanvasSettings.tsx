@@ -9,14 +9,90 @@ interface CanvasSettingsProps {
 
 const CanvasSettings: React.FC<CanvasSettingsProps> = ({ isOpen, onClose }) => {
   const { currentProject, updateProject } = useAppStore();
-  // Close on Esc
+  // Draggable panel state (stable, pointer-relative)
+  const panelRef = React.useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = React.useState<{ top: number; left: number } | null>(null);
+  const posRef = React.useRef<{ top: number; left: number }>({ top: 56, left: 0 });
+  const dragStartRef = React.useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const draggingRef = React.useRef(false);
+
+  // Set initial position when opened (top-right by default)
+  React.useLayoutEffect(() => {
+    if (!isOpen) return;
+    // place at top-right with 24px margin
+    const w = panelRef.current?.offsetWidth || 560;
+    const left = Math.max(0, (window.innerWidth - w) - 24);
+    const top = 56; // matches toolbar spacing
+    posRef.current = { top, left };
+    setPos({ top, left });
+  }, [isOpen]);
+
+  const handleDragStart = (e: React.MouseEvent) => {
+    if (e.button !== 0) return; // left click only
+    e.preventDefault();
+    draggingRef.current = true;
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    // Ensure we start from actual on-screen coordinates
+    if (panelRef.current) {
+      const rect = panelRef.current.getBoundingClientRect();
+      posRef.current = { top: rect.top, left: rect.left };
+      setPos({ top: rect.top, left: rect.left });
+    }
+    // UX: indicate dragging & avoid accidental text selection
+    document.body.style.cursor = 'grabbing';
+    (document.body.style as any).userSelect = 'none';
+    window.addEventListener('mousemove', handleDragMove);
+    window.addEventListener('mouseup', handleDragEnd);
+  };
+
+  const handleDragMove = (e: MouseEvent) => {
+    if (!draggingRef.current) return;
+    const dx = e.clientX - dragStartRef.current.x;
+    const dy = e.clientY - dragStartRef.current.y;
+    const next = { top: posRef.current.top + dy, left: posRef.current.left + dx };
+    // Clamp to viewport
+    const w = panelRef.current?.offsetWidth || 0;
+    const h = panelRef.current?.offsetHeight || 0;
+    const maxLeft = Math.max(0, window.innerWidth - w);
+    const maxTop = Math.max(0, window.innerHeight - h);
+    const clamped = { top: Math.min(Math.max(0, next.top), maxTop), left: Math.min(Math.max(0, next.left), maxLeft) };
+    setPos(clamped);
+  };
+
+  const handleDragEnd = () => {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    if (pos) posRef.current = { ...pos };
+    window.removeEventListener('mousemove', handleDragMove);
+    window.removeEventListener('mouseup', handleDragEnd);
+    document.body.style.cursor = '';
+    (document.body.style as any).userSelect = '';
+  };
+
+  // Cleanup listeners on unmount just in case
   React.useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+    return () => {
+      window.removeEventListener('mousemove', handleDragMove);
+      window.removeEventListener('mouseup', handleDragEnd);
     };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Close on Esc (only when open). Use capture to ensure we get the event first.
+  React.useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        try { e.preventDefault(); } catch {}
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', onKey, { capture: true });
+    window.addEventListener('keyup', onKey, { capture: true });
+    return () => {
+      window.removeEventListener('keydown', onKey, { capture: true } as any);
+      window.removeEventListener('keyup', onKey, { capture: true } as any);
+    };
+  }, [isOpen, onClose]);
 
   // Debug: mount lifecycle
   React.useEffect(() => {
@@ -68,14 +144,48 @@ const CanvasSettings: React.FC<CanvasSettingsProps> = ({ isOpen, onClose }) => {
   console.log('[CanvasSettings] render isOpen=', isOpen);
 
   const panel = (
-    <div className="fixed inset-0 z-[99999] pointer-events-none" style={{ zIndex: 99999 }}>
+    <div
+      className="fixed inset-0 z-[99999] pointer-events-none"
+      style={{
+        position: 'fixed',
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
+        pointerEvents: 'none',
+        zIndex: 99999
+      }}
+    >
       {/* Floating panel anchored to the right; doesn't block canvas interactions */}
-      <div className="absolute top-14 right-6 bg-gray-800/98 text-white rounded-xl border border-gray-700 shadow-2xl ring-1 ring-white/10 p-6 w-[560px] max-w-[95vw] max-h-[80vh] overflow-y-auto pointer-events-auto backdrop-blur-sm">
-        <div className="flex justify-between items-center mb-8">
+      <div
+        className="absolute top-14 right-6 bg-gray-800/98 text-white rounded-xl border border-gray-700 shadow-2xl ring-1 ring-white/10 p-6 w-[560px] max-w-[95vw] max-h-[80vh] overflow-y-auto pointer-events-auto backdrop-blur-sm"
+        style={{
+          position: 'fixed',
+          top: pos?.top ?? 56,
+          left: pos?.left ?? Math.max(0, (typeof window !== 'undefined' ? window.innerWidth : 1000) - 560 - 24),
+          width: 560,
+          maxWidth: '95vw',
+          maxHeight: '80vh',
+          overflowY: 'auto',
+          pointerEvents: 'auto',
+          background: 'rgba(31,41,55,0.98)', // gray-800/98 fallback
+          color: '#fff',
+          borderRadius: 12,
+          border: '1px solid #374151',
+          boxShadow: '0 20px 80px rgba(0,0,0,0.5)',
+          padding: 24
+        }}
+        ref={panelRef}
+      >
+        <div
+          className="flex justify-between items-center mb-8 cursor-move select-none"
+          onMouseDown={handleDragStart}
+        >
           <h2 className="text-2xl font-bold text-white">Canvas Settings</h2>
           <button 
             onClick={onClose}
             className="text-gray-400 hover:text-white text-2xl font-bold w-9 h-9 flex items-center justify-center rounded-lg hover:bg-gray-700 transition-colors"
+            onMouseDown={(e) => e.stopPropagation()}
           >
             ×
           </button>
@@ -181,21 +291,7 @@ const CanvasSettings: React.FC<CanvasSettingsProps> = ({ isOpen, onClose }) => {
           )}
         </div>
 
-        {/* Apply Button */}
-        <div className="flex justify-end gap-3 pt-5 border-t border-gray-600 sticky bottom-0 bg-gray-800/98 pb-4">
-          <button
-            onClick={onClose}
-            className="px-5 py-3 bg-gray-600 text-white rounded-lg hover:bg-gray-500 transition-colors text-sm font-medium"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onClose}
-            className="px-5 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-500 transition-colors font-semibold text-sm shadow-lg"
-          >
-            Apply Settings
-          </button>
-        </div>
+  {/* Footer removed: settings apply instantly; use the × button or Esc to close */}
       </div>
     </div>
   );

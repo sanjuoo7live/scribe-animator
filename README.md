@@ -1,6 +1,6 @@
-# 🎬 Scribe Animator - Professional Animation Studio
+# 🎬 Scribe Animator - Professional Desktop Animation Studio
 
-A comprehensive, web-based animation platform for creating professional whiteboard animations, explainer videos, and interactive content with AI-powered assistance.
+A comprehensive, desktop-based animation platform for creating professional whiteboard animations, explainer videos, and interactive content with AI-powered assistance. Designed for precision video editing with full desktop capabilities.
 
 ## 🌟 Current Status: PROFESSIONAL VIDEO EDITING PLATFORM
 

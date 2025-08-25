@@ -357,7 +357,7 @@ const CanvasEditor: React.FC = () => {
     }
   }, [selectedObject, currentProject?.objects]);
 
-  const getBoardBackground = (boardStyle: string): string => {
+  const getBoardBackground = (boardStyle: string, customColor?: string): string => {
     switch (boardStyle) {
       case 'chalkboard-dark':
         return '#2d3748';
@@ -365,6 +365,8 @@ const CanvasEditor: React.FC = () => {
         return '#2f855a';
       case 'glassboard':
         return 'linear-gradient(135deg, #f7fafc 0%, #e2e8f0 100%)';
+      case 'custom':
+        return customColor || '#e2e8f0';
       case 'whiteboard':
       default:
         return '#ffffff';
@@ -460,7 +462,7 @@ const CanvasEditor: React.FC = () => {
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
-            style={{ background: getBoardBackground(currentProject?.boardStyle || 'whiteboard'), cursor: tool === 'pen' ? 'crosshair' : 'default' }}
+            style={{ background: getBoardBackground(currentProject?.boardStyle || 'whiteboard', currentProject?.backgroundColor), cursor: tool === 'pen' ? 'crosshair' : 'default' }}
             scaleX={(currentProject?.cameraPosition?.zoom || 1) * (canvasSize.width / (currentProject?.width || 800))}
             scaleY={(currentProject?.cameraPosition?.zoom || 1) * (canvasSize.height / (currentProject?.height || 600))}
             x={currentProject?.cameraPosition?.x || 0}

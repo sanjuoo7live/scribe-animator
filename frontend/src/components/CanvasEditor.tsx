@@ -39,6 +39,35 @@ const CanvasEditor: React.FC = () => {
   }[]>([]);
   const [editingText, setEditingText] = React.useState<string | null>(null);
   const [editingValue, setEditingValue] = React.useState('');
+  const [editingTextProps, setEditingTextProps] = React.useState<{
+    fontFamily: string;
+    fontSize: number;
+    fill: string;
+    fontStyle: string;
+    textDecoration: string;
+    align: string;
+    lineHeight: number;
+    letterSpacing: number;
+    strokeWidth: number;
+    stroke: string;
+  }>({
+    fontFamily: 'Arial',
+    fontSize: 28,
+    fill: '#000000',
+    fontStyle: 'normal',
+    textDecoration: 'none',
+    align: 'left',
+    lineHeight: 1.2,
+    letterSpacing: 0,
+    strokeWidth: 0,
+    stroke: '#000000'
+  });
+  // Text editor draggable state
+  const textEditorRef = React.useRef<HTMLDivElement | null>(null);
+  const [textEditorPos, setTextEditorPos] = React.useState<{ top: number; left: number } | null>(null);
+  const textEditorPosRef = React.useRef<{ top: number; left: number }>({ top: 100, left: 100 });
+  const textEditorDragStartRef = React.useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const textEditorDraggingRef = React.useRef(false);
   const [showCanvasSettings, setShowCanvasSettings] = React.useState(false);
   const [fitMode, setFitMode] = React.useState<'width' | 'contain'>('contain');
   const [canvasSize, setCanvasSize] = React.useState({ width: 800, height: 600 });
@@ -48,6 +77,70 @@ const CanvasEditor: React.FC = () => {
     // eslint-disable-next-line no-console
     console.log('[CanvasEditor] showCanvasSettings =', showCanvasSettings);
   }, [showCanvasSettings]);
+
+  // Set initial position for text editor when opened
+  React.useLayoutEffect(() => {
+    if (!editingText) return;
+    // place at center-left
+    const w = textEditorRef.current?.offsetWidth || 700;
+    const h = textEditorRef.current?.offsetHeight || 600;
+    const left = Math.max(20, (window.innerWidth - w) / 2 - 100);
+    const top = Math.max(20, (window.innerHeight - h) / 2);
+    textEditorPosRef.current = { top, left };
+    setTextEditorPos({ top, left });
+  }, [editingText]);
+
+  // Text editor drag handlers
+  const handleTextEditorDragStart = (e: React.MouseEvent) => {
+    if (e.button !== 0) return; // left click only
+    e.preventDefault();
+    textEditorDraggingRef.current = true;
+    textEditorDragStartRef.current = { x: e.clientX, y: e.clientY };
+    // Ensure we start from actual on-screen coordinates
+    if (textEditorRef.current) {
+      const rect = textEditorRef.current.getBoundingClientRect();
+      textEditorPosRef.current = { top: rect.top, left: rect.left };
+      setTextEditorPos({ top: rect.top, left: rect.left });
+    }
+    // UX: indicate dragging & avoid accidental text selection
+    document.body.style.cursor = 'grabbing';
+    (document.body.style as any).userSelect = 'none';
+    window.addEventListener('mousemove', handleTextEditorDragMove);
+    window.addEventListener('mouseup', handleTextEditorDragEnd);
+  };
+
+  const handleTextEditorDragMove = (e: MouseEvent) => {
+    if (!textEditorDraggingRef.current) return;
+    const dx = e.clientX - textEditorDragStartRef.current.x;
+    const dy = e.clientY - textEditorDragStartRef.current.y;
+    const next = { top: textEditorPosRef.current.top + dy, left: textEditorPosRef.current.left + dx };
+    // Clamp to viewport
+    const w = textEditorRef.current?.offsetWidth || 0;
+    const h = textEditorRef.current?.offsetHeight || 0;
+    const maxLeft = Math.max(0, window.innerWidth - w);
+    const maxTop = Math.max(0, window.innerHeight - h);
+    const clamped = { top: Math.min(Math.max(0, next.top), maxTop), left: Math.min(Math.max(0, next.left), maxLeft) };
+    setTextEditorPos(clamped);
+  };
+
+  const handleTextEditorDragEnd = () => {
+    if (!textEditorDraggingRef.current) return;
+    textEditorDraggingRef.current = false;
+    if (textEditorPos) textEditorPosRef.current = { ...textEditorPos };
+    window.removeEventListener('mousemove', handleTextEditorDragMove);
+    window.removeEventListener('mouseup', handleTextEditorDragEnd);
+    document.body.style.cursor = '';
+    (document.body.style as any).userSelect = '';
+  };
+
+  // Cleanup text editor listeners on unmount
+  React.useEffect(() => {
+    return () => {
+      window.removeEventListener('mousemove', handleTextEditorDragMove);
+      window.removeEventListener('mouseup', handleTextEditorDragEnd);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Helper: finish current stroke (commit to objects or discard)
   const finishCurrentStroke = React.useCallback((commit: boolean) => {
@@ -299,13 +392,32 @@ const CanvasEditor: React.FC = () => {
     if (textObj && textObj.type === 'text') {
       setEditingText(id);
       setEditingValue(textObj.properties.text || '');
+      // Load existing text properties
+      setEditingTextProps({
+        fontFamily: textObj.properties.fontFamily || 'Arial',
+        fontSize: textObj.properties.fontSize || 28,
+        fill: textObj.properties.fill || '#000000',
+        fontStyle: textObj.properties.fontStyle || 'normal',
+        textDecoration: textObj.properties.textDecoration || 'none',
+        align: textObj.properties.align || 'left',
+        lineHeight: textObj.properties.lineHeight || 1.2,
+        letterSpacing: textObj.properties.letterSpacing || 0,
+        strokeWidth: textObj.properties.strokeWidth || 0,
+        stroke: textObj.properties.stroke || '#000000'
+      });
     }
   };
 
   const saveTextEdit = () => {
     if (editingText && editingValue.trim()) {
       const prev = currentProject?.objects.find((o) => o.id === editingText);
-      updateObject(editingText, { properties: { ...prev?.properties, text: editingValue } });
+      updateObject(editingText, { 
+        properties: { 
+          ...prev?.properties, 
+          text: editingValue,
+          ...editingTextProps
+        } 
+      });
     }
     setEditingText(null);
     setEditingValue('');
@@ -322,10 +434,22 @@ const CanvasEditor: React.FC = () => {
       type: 'text',
       x: 150,
       y: 150,
-  width: 300,
-  height: 0,
+      width: 300,
+      height: 0,
       rotation: 0,
-  properties: { text: 'Text', fontSize: 28, fill: '#111' },
+      properties: { 
+        text: 'Text', 
+        fontSize: 28, 
+        fill: '#111',
+        fontFamily: 'Arial',
+        fontStyle: 'normal',
+        textDecoration: 'none',
+        align: 'left',
+        lineHeight: 1.2,
+        letterSpacing: 0,
+        strokeWidth: 0,
+        stroke: '#000000'
+      },
       animationStart: 0,
       animationDuration: currentProject?.duration || 5,
       animationType: 'none',
@@ -747,13 +871,35 @@ const CanvasEditor: React.FC = () => {
                 }
 
         if (obj.type === 'text') {
+                  const props = obj.properties;
                   return (
-                    <Text key={obj.id} id={obj.id} x={animatedProps.x ?? obj.x} y={animatedProps.y ?? obj.y}
-          text={obj.properties.text || 'Text'} fontSize={obj.properties.fontSize || 16} width={obj.width && obj.width > 1 ? obj.width : undefined} rotation={obj.rotation || 0}
-                      scaleX={animatedProps.scaleX ?? 1} scaleY={animatedProps.scaleY ?? 1} opacity={animatedProps.opacity ?? 1}
-                      fill={isSelected ? '#4f46e5' : obj.properties.fill || '#000'} draggable={tool === 'select'}
-                      onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }} onDblClick={() => handleTextDoubleClick(obj.id)}
-                      onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)} onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)} />
+                    <Text 
+                      key={obj.id} 
+                      id={obj.id} 
+                      x={animatedProps.x ?? obj.x} 
+                      y={animatedProps.y ?? obj.y}
+                      text={props.text || 'Text'} 
+                      fontSize={props.fontSize || 16} 
+                      fontFamily={props.fontFamily || 'Arial'}
+                      fontStyle={props.fontStyle || 'normal'}
+                      textDecoration={props.textDecoration || 'none'}
+                      align={props.align || 'left'}
+                      lineHeight={props.lineHeight || 1.2}
+                      letterSpacing={props.letterSpacing || 0}
+                      width={obj.width && obj.width > 1 ? obj.width : undefined} 
+                      rotation={obj.rotation || 0}
+                      scaleX={animatedProps.scaleX ?? 1} 
+                      scaleY={animatedProps.scaleY ?? 1} 
+                      opacity={animatedProps.opacity ?? 1}
+                      fill={isSelected ? '#4f46e5' : props.fill || '#000'} 
+                      stroke={props.strokeWidth > 0 ? (isSelected ? '#4f46e5' : props.stroke || '#000') : undefined}
+                      strokeWidth={props.strokeWidth || 0}
+                      draggable={tool === 'select'}
+                      onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }} 
+                      onDblClick={() => handleTextDoubleClick(obj.id)}
+                      onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)} 
+                      onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)} 
+                    />
                   );
                 }
 
@@ -819,13 +965,323 @@ const CanvasEditor: React.FC = () => {
       </div>
 
       {editingText && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-gray-800 border border-gray-700 p-6 rounded-xl shadow-2xl w-[480px] max-w-[90vw]">
-            <h3 className="text-lg font-semibold mb-4 text-white">Edit Text</h3>
-            <input type="text" value={editingValue} onChange={(e) => setEditingValue(e.target.value)} className="w-full p-3 bg-gray-700 border border-gray-600 rounded mb-4 text-white placeholder-gray-400 focus:outline-none focus:border-blue-500" placeholder="Enter text..." autoFocus onKeyDown={(e) => { if (e.key === 'Enter') saveTextEdit(); if (e.key === 'Escape') cancelTextEdit(); }} />
-            <div className="flex gap-2 justify-end">
-              <button onClick={cancelTextEdit} className="px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-600 border border-gray-600">Cancel</button>
-              <button onClick={saveTextEdit} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-500 border border-blue-500">Save</button>
+        <div
+          className="fixed inset-0 z-[99998] pointer-events-none"
+          style={{
+            position: 'fixed',
+            top: 0,
+            right: 0,
+            bottom: 0,
+            left: 0,
+            pointerEvents: 'none',
+            zIndex: 99998
+          }}
+        >
+          {/* Text Editor Popup */}
+          <div
+            ref={textEditorRef}
+            className="absolute bg-gray-800/98 text-white rounded-xl border border-gray-700 shadow-2xl ring-1 ring-white/10 p-6 w-[700px] max-w-[95vw] max-h-[90vh] overflow-y-auto pointer-events-auto backdrop-blur-sm"
+            style={{
+              position: 'fixed',
+              top: textEditorPos?.top ?? 100,
+              left: textEditorPos?.left ?? Math.max(0, (typeof window !== 'undefined' ? window.innerWidth : 1000) - 700 - 50),
+              width: 700,
+              maxWidth: '95vw',
+              maxHeight: '90vh',
+              overflowY: 'auto',
+              pointerEvents: 'auto',
+              background: 'rgba(31,41,55,0.98)',
+              color: '#fff',
+              borderRadius: 12,
+              border: '1px solid #374151',
+              boxShadow: '0 20px 80px rgba(0,0,0,0.5)',
+              padding: 24
+            }}
+          >
+            {/* Draggable Header */}
+            <div
+              className="flex justify-between items-center mb-6 cursor-move select-none"
+              onMouseDown={handleTextEditorDragStart}
+            >
+              <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+                <span>📝</span> Edit Text
+              </h3>
+              <button 
+                onClick={cancelTextEdit}
+                className="text-gray-400 hover:text-white text-2xl font-bold w-9 h-9 flex items-center justify-center rounded-lg hover:bg-gray-700 transition-colors"
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                ×
+              </button>
+            </div>
+            
+            {/* Text Input */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-300 mb-2">Text Content</label>
+              <textarea 
+                value={editingValue} 
+                onChange={(e) => setEditingValue(e.target.value)} 
+                className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 resize-none" 
+                placeholder="Enter your text..." 
+                rows={3}
+                autoFocus 
+                onKeyDown={(e) => { 
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) saveTextEdit(); 
+                  if (e.key === 'Escape') cancelTextEdit(); 
+                }} 
+              />
+              <div className="text-xs text-gray-400 mt-1">Press Ctrl+Enter to save, Esc to cancel</div>
+            </div>
+
+            {/* Text Styling Options */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+              
+              {/* Font Family */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Font Family</label>
+                <select 
+                  value={editingTextProps.fontFamily} 
+                  onChange={(e) => setEditingTextProps(prev => ({ ...prev, fontFamily: e.target.value }))}
+                  className="w-full p-2 bg-gray-700 border border-gray-600 rounded text-white text-sm focus:border-blue-500 focus:outline-none"
+                >
+                  <option value="Arial">Arial</option>
+                  <option value="Helvetica">Helvetica</option>
+                  <option value="Times New Roman">Times New Roman</option>
+                  <option value="Georgia">Georgia</option>
+                  <option value="Verdana">Verdana</option>
+                  <option value="Courier New">Courier New</option>
+                  <option value="Impact">Impact</option>
+                  <option value="Comic Sans MS">Comic Sans MS</option>
+                  <option value="Trebuchet MS">Trebuchet MS</option>
+                  <option value="Palatino">Palatino</option>
+                </select>
+              </div>
+
+              {/* Font Size */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Font Size</label>
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="range" 
+                    min="8" 
+                    max="120" 
+                    value={editingTextProps.fontSize} 
+                    onChange={(e) => setEditingTextProps(prev => ({ ...prev, fontSize: Number(e.target.value) }))}
+                    className="flex-1"
+                  />
+                  <input 
+                    type="number" 
+                    min="8" 
+                    max="120" 
+                    value={editingTextProps.fontSize} 
+                    onChange={(e) => setEditingTextProps(prev => ({ ...prev, fontSize: Number(e.target.value) }))}
+                    className="w-16 p-2 bg-gray-700 border border-gray-600 rounded text-white text-sm focus:border-blue-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Text Color */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Text Color</label>
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="color" 
+                    value={editingTextProps.fill} 
+                    onChange={(e) => setEditingTextProps(prev => ({ ...prev, fill: e.target.value }))}
+                    className="w-12 h-10 rounded border border-gray-600 cursor-pointer"
+                  />
+                  <input 
+                    type="text" 
+                    value={editingTextProps.fill} 
+                    onChange={(e) => setEditingTextProps(prev => ({ ...prev, fill: e.target.value }))}
+                    className="flex-1 p-2 bg-gray-700 border border-gray-600 rounded text-white text-sm focus:border-blue-500 focus:outline-none"
+                    placeholder="#000000"
+                  />
+                </div>
+              </div>
+
+              {/* Text Alignment */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Text Alignment</label>
+                <div className="flex gap-1">
+                  {['left', 'center', 'right', 'justify'].map(align => (
+                    <button
+                      key={align}
+                      onClick={() => setEditingTextProps(prev => ({ ...prev, align }))}
+                      className={`px-3 py-2 rounded text-sm font-medium transition-colors ${
+                        editingTextProps.align === align 
+                          ? 'bg-blue-600 text-white' 
+                          : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                      }`}
+                      title={`Align ${align}`}
+                    >
+                      {align === 'left' && '⬅️'}
+                      {align === 'center' && '↔️'}
+                      {align === 'right' && '➡️'}
+                      {align === 'justify' && '📏'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Style Options */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-300 mb-2">Text Style</label>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setEditingTextProps(prev => ({ 
+                    ...prev, 
+                    fontStyle: prev.fontStyle.includes('bold') ? prev.fontStyle.replace(' bold', '').replace('bold', '') : `${prev.fontStyle} bold`.trim()
+                  }))}
+                  className={`px-3 py-2 rounded text-sm font-bold transition-colors ${
+                    editingTextProps.fontStyle.includes('bold') 
+                      ? 'bg-blue-600 text-white' 
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  B
+                </button>
+                <button
+                  onClick={() => setEditingTextProps(prev => ({ 
+                    ...prev, 
+                    fontStyle: prev.fontStyle.includes('italic') ? prev.fontStyle.replace(' italic', '').replace('italic', '') : `${prev.fontStyle} italic`.trim()
+                  }))}
+                  className={`px-3 py-2 rounded text-sm italic transition-colors ${
+                    editingTextProps.fontStyle.includes('italic') 
+                      ? 'bg-blue-600 text-white' 
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  I
+                </button>
+                <button
+                  onClick={() => setEditingTextProps(prev => ({ 
+                    ...prev, 
+                    textDecoration: prev.textDecoration === 'underline' ? 'none' : 'underline'
+                  }))}
+                  className={`px-3 py-2 rounded text-sm underline transition-colors ${
+                    editingTextProps.textDecoration === 'underline' 
+                      ? 'bg-blue-600 text-white' 
+                      : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                  }`}
+                >
+                  U
+                </button>
+              </div>
+            </div>
+
+            {/* Advanced Options */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+              {/* Line Height */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Line Height</label>
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="range" 
+                    min="0.8" 
+                    max="3" 
+                    step="0.1" 
+                    value={editingTextProps.lineHeight} 
+                    onChange={(e) => setEditingTextProps(prev => ({ ...prev, lineHeight: Number(e.target.value) }))}
+                    className="flex-1"
+                  />
+                  <span className="w-12 text-xs text-gray-300 text-center">{editingTextProps.lineHeight.toFixed(1)}</span>
+                </div>
+              </div>
+
+              {/* Letter Spacing */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Letter Spacing</label>
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="range" 
+                    min="-2" 
+                    max="10" 
+                    step="0.5" 
+                    value={editingTextProps.letterSpacing} 
+                    onChange={(e) => setEditingTextProps(prev => ({ ...prev, letterSpacing: Number(e.target.value) }))}
+                    className="flex-1"
+                  />
+                  <span className="w-12 text-xs text-gray-300 text-center">{editingTextProps.letterSpacing}px</span>
+                </div>
+              </div>
+
+              {/* Stroke Width */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Outline Width</label>
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="range" 
+                    min="0" 
+                    max="10" 
+                    value={editingTextProps.strokeWidth} 
+                    onChange={(e) => setEditingTextProps(prev => ({ ...prev, strokeWidth: Number(e.target.value) }))}
+                    className="flex-1"
+                  />
+                  <span className="w-12 text-xs text-gray-300 text-center">{editingTextProps.strokeWidth}px</span>
+                </div>
+              </div>
+
+              {/* Stroke Color */}
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Outline Color</label>
+                <div className="flex items-center gap-2">
+                  <input 
+                    type="color" 
+                    value={editingTextProps.stroke} 
+                    onChange={(e) => setEditingTextProps(prev => ({ ...prev, stroke: e.target.value }))}
+                    className="w-12 h-8 rounded border border-gray-600 cursor-pointer"
+                    disabled={editingTextProps.strokeWidth === 0}
+                  />
+                  <input 
+                    type="text" 
+                    value={editingTextProps.stroke} 
+                    onChange={(e) => setEditingTextProps(prev => ({ ...prev, stroke: e.target.value }))}
+                    className="flex-1 p-2 bg-gray-700 border border-gray-600 rounded text-white text-sm focus:border-blue-500 focus:outline-none"
+                    placeholder="#000000"
+                    disabled={editingTextProps.strokeWidth === 0}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Preview */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-300 mb-2">Preview</label>
+              <div 
+                className="p-4 bg-gray-900 border border-gray-600 rounded-lg min-h-[60px] flex items-center"
+                style={{
+                  fontFamily: editingTextProps.fontFamily,
+                  fontSize: `${Math.min(editingTextProps.fontSize, 24)}px`,
+                  color: editingTextProps.fill,
+                  fontWeight: editingTextProps.fontStyle.includes('bold') ? 'bold' : 'normal',
+                  fontStyle: editingTextProps.fontStyle.includes('italic') ? 'italic' : 'normal',
+                  textDecoration: editingTextProps.textDecoration,
+                  textAlign: editingTextProps.align as any,
+                  lineHeight: editingTextProps.lineHeight,
+                  letterSpacing: `${editingTextProps.letterSpacing}px`,
+                  WebkitTextStroke: editingTextProps.strokeWidth > 0 ? `${Math.min(editingTextProps.strokeWidth, 2)}px ${editingTextProps.stroke}` : 'none'
+                }}
+              >
+                {editingValue || 'Preview text...'}
+              </div>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex gap-3 justify-end pt-4 border-t border-gray-600">
+              <button 
+                onClick={cancelTextEdit} 
+                className="px-6 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 border border-gray-600 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={saveTextEdit} 
+                className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 border border-blue-500 transition-colors font-medium"
+              >
+                Save Changes
+              </button>
             </div>
           </div>
         </div>

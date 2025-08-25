@@ -1,6 +1,11 @@
 import React from 'react';
 import { useAppStore } from '../store/appStore';
-import AssetLibrary from './AssetLibrary';
+import EnhancedShapeLibrary from './EnhancedShapeLibrary';
+import EnhancedIconLibrary from './EnhancedIconLibrary';
+import EnhancedHandLibrary from './EnhancedHandLibrary';
+import EnhancedCharacterLibrary from './EnhancedCharacterLibrary';
+import EnhancedPropsLibrary from './EnhancedPropsLibrary';
+import EnhancedTextLibrary from './EnhancedTextLibrary';
 import CustomAssets from './CustomAssets';
 import AudioManager from './AudioManager';
 import AdvancedAudioEditor from './AdvancedAudioEditor';
@@ -10,6 +15,8 @@ import PluginSystem from './PluginSystem';
 import CollaborationSystem from './CollaborationSystem';
 import PerformanceAnalytics from './PerformanceAnalytics';
 import AIAssistant from './AIAssistant';
+import AssetLibraryPopup from './AssetLibraryPopup';
+import { IconDefinition } from '../data/iconLibrary';
 
 interface AssetCategory {
   id: string;
@@ -22,12 +29,21 @@ interface AssetCategory {
 const AssetPanel: React.FC = () => {
   const [activeCategory, setActiveCategory] = React.useState<string>('shapes');
   const [expandedSections, setExpandedSections] = React.useState<Set<string>>(new Set(['basics']));
+  const [openPopups, setOpenPopups] = React.useState<{[key: string]: boolean}>({
+    shapes: false,
+    icons: false,
+    text: false,
+    hands: false,
+    characters: false,
+    props: false
+  });
   
   const { addObject, currentProject, currentTime } = useAppStore();
 
   const assetCategories: AssetCategory[] = [
     // Basic Tools
     { id: 'shapes', name: 'Shapes', icon: '⬛', color: 'bg-blue-500', description: 'Basic geometric shapes' },
+    { id: 'icons', name: 'Icons', icon: '😊', color: 'bg-yellow-500', description: 'Unicode icons & symbols' },
     { id: 'text', name: 'Text', icon: 'T', color: 'bg-green-500', description: 'Text and typography' },
     
     // Visual Assets
@@ -52,7 +68,7 @@ const AssetPanel: React.FC = () => {
   ];
 
   const categoryGroups = {
-    basics: { name: 'Basic Tools', categories: ['shapes', 'text'] },
+    basics: { name: 'Basic Tools', categories: ['shapes', 'icons', 'text'] },
     assets: { name: 'Visual Assets', categories: ['hands', 'characters', 'props', 'images'] },
     audio: { name: 'Audio Tools', categories: ['audio', 'advancedAudio'] },
     templates: { name: 'Templates & Effects', categories: ['templates', 'sceneTemplates', 'plugins'] },
@@ -69,32 +85,40 @@ const AssetPanel: React.FC = () => {
     setExpandedSections(newExpanded);
   };
 
-  const addTextToCanvas = () => {
+  const addIconToCanvas = (icon: IconDefinition) => {
     if (!currentProject) {
       alert('Please create a project first');
       return;
     }
 
-    const textObj = {
-      id: `text-${Date.now()}`,
-      type: 'text' as const,
+    const iconObj = {
+      id: `icon-${Date.now()}`,
+      type: 'text' as const, // Icons are rendered as text with unicode
       x: 200,
       y: 200,
-      width: 320,
-      height: 0,
+      width: 100,
+      height: 100,
       properties: {
-        text: 'Sample Text',
-        fontSize: 28,
-        fill: '#111111',
+        text: icon.unicode,
+        fontSize: 48,
+        fill: '#333333',
         fontFamily: 'Arial'
       },
-      animationStart: currentTime, // Start at current timeline position
+      animationStart: currentTime,
       animationDuration: 5,
       animationType: 'none' as const,
       animationEasing: 'easeOut' as const
     };
 
-    addObject(textObj);
+    addObject(iconObj);
+  };
+
+  const openPopup = (category: string) => {
+    setOpenPopups(prev => ({ ...prev, [category]: true }));
+  };
+
+  const closePopup = (category: string) => {
+    setOpenPopups(prev => ({ ...prev, [category]: false }));
   };
 
   const activeAssetCategory = assetCategories.find(cat => cat.id === activeCategory);
@@ -169,38 +193,159 @@ const AssetPanel: React.FC = () => {
           {activeCategory === 'text' ? (
             <div className="space-y-4">
               <button
-                onClick={addTextToCanvas}
-                className="w-full p-4 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-lg hover:from-green-700 hover:to-green-800 transition-all transform hover:scale-105 shadow-lg font-semibold"
+                onClick={() => openPopup('text')}
+                className="asset-button-text w-full p-6 rounded-lg transition-all transform hover:scale-105 shadow-lg font-semibold"
+                style={{ 
+                  background: 'linear-gradient(135deg, #059669, #10B981)',
+                  color: 'white',
+                  border: '2px solid #374151'
+                }}
               >
-                <div className="text-lg font-bold">+ Add Text</div>
-                <div className="text-sm opacity-90">Click to add text to your animation</div>
+                <div className="text-xl font-bold mb-2" style={{ color: 'white !important' }}>📝 Open Text Library</div>
+                <div className="text-sm mb-1" style={{ color: 'rgba(255, 255, 255, 0.9) !important' }}>Browse professional text styles and typography templates</div>
+                <div className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.75) !important' }}>• Professional Quality • Easy Integration • Instant Preview</div>
               </button>
               
               <div className="grid grid-cols-1 gap-3">
                 <div className="p-3 bg-gray-700 rounded-lg border border-gray-600">
-                  <div className="text-sm font-medium text-white mb-2">Font Styles</div>
+                  <div className="text-sm font-medium text-white mb-2">Text Styles</div>
                   <div className="space-y-1 text-xs text-gray-300">
                     <div>• Headings & Titles</div>
-                    <div>• Body Text</div>
-                    <div>• Captions</div>
+                    <div>• Body & Paragraph</div>
+                    <div>• Emphasis & Highlights</div>
                   </div>
                 </div>
                 <div className="p-3 bg-gray-700 rounded-lg border border-gray-600">
-                  <div className="text-sm font-medium text-white mb-2">Text Effects</div>
+                  <div className="text-sm font-medium text-white mb-2">Special Types</div>
                   <div className="space-y-1 text-xs text-gray-300">
-                    <div>• Fade In/Out</div>
-                    <div>• Slide In</div>
-                    <div>• Typewriter</div>
+                    <div>• Interactive & CTAs</div>
+                    <div>• Quotes & Testimonials</div>
+                    <div>• Numbers & Statistics</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : activeCategory === 'shapes' ? (
+            <div className="space-y-4">
+              <button
+                onClick={() => openPopup('shapes')}
+                className="asset-button-text w-full p-6 rounded-lg transition-all transform hover:scale-105 shadow-lg font-semibold"
+                style={{ 
+                  background: 'linear-gradient(135deg, #1E40AF, #3B82F6)',
+                  color: 'white !important',
+                  border: '2px solid #374151'
+                }}
+              >
+                <div className="text-xl font-bold mb-2" style={{ color: 'white !important' }}>🔷 Open Shape Library</div>
+                <div className="text-sm mb-1" style={{ color: 'rgba(255, 255, 255, 0.9) !important' }}>Browse 70+ geometric shapes, symbols, and more</div>
+                <div className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.75) !important' }}>• 6 Collections • Search & Filter • Professional Tools</div>
+              </button>
+              
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-3 bg-gray-700 rounded-lg border border-gray-600">
+                  <div className="text-white font-medium mb-2">✨ Collections</div>
+                  <div className="space-y-1 text-gray-300">
+                    <div>• Basic Shapes</div>
+                    <div>• Advanced Forms</div>
+                    <div>• Arrow Symbols</div>
+                  </div>
+                </div>
+                <div className="p-3 bg-gray-700 rounded-lg border border-gray-600">
+                  <div className="text-white font-medium mb-2">🎯 Features</div>
+                  <div className="space-y-1 text-gray-300">
+                    <div>• Instant Search</div>
+                    <div>• Grid/List View</div>
+                    <div>• One-Click Add</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : activeCategory === 'icons' ? (
+            <div className="space-y-4">
+              <button
+                onClick={() => openPopup('icons')}
+                className="asset-button-text w-full p-6 rounded-lg transition-all transform hover:scale-105 shadow-lg font-semibold"
+                style={{ 
+                  background: 'linear-gradient(135deg, #D97706, #F59E0B)',
+                  color: 'white !important',
+                  border: '2px solid #374151'
+                }}
+              >
+                <div className="text-xl font-bold mb-2" style={{ color: 'white !important' }}>😊 Open Icon Library</div>
+                <div className="text-sm mb-1" style={{ color: 'rgba(255, 255, 255, 0.9) !important' }}>Browse 100+ Unicode icons, emojis, and symbols</div>
+                <div className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.75) !important' }}>• 3 Collections • Perfect Scaling • Universal Support</div>
+              </button>
+              
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-3 bg-gray-700 rounded-lg border border-gray-600">
+                  <div className="text-white font-medium mb-2">🎭 Categories</div>
+                  <div className="space-y-1 text-gray-300">
+                    <div>• Emojis & Faces</div>
+                    <div>• Geometric Symbols</div>
+                    <div>• Technical Icons</div>
+                  </div>
+                </div>
+                <div className="p-3 bg-gray-700 rounded-lg border border-gray-600">
+                  <div className="text-white font-medium mb-2">⚡ Benefits</div>
+                  <div className="space-y-1 text-gray-300">
+                    <div>• Scalable Quality</div>
+                    <div>• Fast Loading</div>
+                    <div>• Cross-Platform</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : activeCategory === 'hands' || activeCategory === 'characters' || activeCategory === 'props' ? (
+            <div className="space-y-4">
+              <button
+                onClick={() => openPopup(activeCategory)}
+                className={`asset-button-text w-full p-6 rounded-lg transition-all transform hover:scale-105 shadow-lg font-semibold`}
+                style={{ 
+                  background: (
+                    activeCategory === 'hands'
+                      ? 'linear-gradient(135deg, #EA580C, #F97316)'
+                      : activeCategory === 'characters'
+                      ? 'linear-gradient(135deg, #7C3AED, #8B5CF6)'
+                      : 'linear-gradient(135deg, #BE185D, #DB2777)'
+                  ),
+                  color: 'white',
+                  border: '2px solid #374151'
+                }}
+              >
+                <div className="text-xl font-bold mb-2" style={{ color: 'white !important' }}>
+                  {activeCategory === 'hands' ? '✋ Open Hand Library' :
+                   activeCategory === 'characters' ? '👤 Open Character Library' :
+                   '🎭 Open Props Library'}
+                </div>
+                <div className="text-sm mb-1" style={{ color: 'rgba(255, 255, 255, 0.9) !important' }}>
+                  {activeCategory === 'hands' ? 'Browse hand gestures and poses for your animations' :
+                   activeCategory === 'characters' ? 'Browse people, avatars, and character assets' :
+                   'Browse objects, icons, and decorative elements'}
+                </div>
+                <div className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.75) !important' }}>• Professional Quality • Easy Integration • Instant Preview</div>
+              </button>
+              
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-3 bg-gray-700 rounded-lg border border-gray-600">
+                  <div className="text-white font-medium mb-2">📚 Content</div>
+                  <div className="space-y-1 text-gray-300">
+                    <div>• High Quality Assets</div>
+                    <div>• Multiple Styles</div>
+                    <div>• Ready to Use</div>
+                  </div>
+                </div>
+                <div className="p-3 bg-gray-700 rounded-lg border border-gray-600">
+                  <div className="text-white font-medium mb-2">⚡ Features</div>
+                  <div className="space-y-1 text-gray-300">
+                    <div>• Large Preview</div>
+                    <div>• Easy Browse</div>
+                    <div>• Quick Add</div>
                   </div>
                 </div>
               </div>
             </div>
           ) : (
             <div className="bg-gray-900 rounded-lg p-2">
-              {activeCategory === 'shapes' && <AssetLibrary category="shapes" />}
-              {activeCategory === 'hands' && <AssetLibrary category="hands" />}
-              {activeCategory === 'characters' && <AssetLibrary category="characters" />}
-              {activeCategory === 'props' && <AssetLibrary category="props" />}
               {activeCategory === 'images' && <CustomAssets />}
               {activeCategory === 'audio' && <AudioManager />}
               {activeCategory === 'advancedAudio' && <AdvancedAudioEditor />}
@@ -214,6 +359,58 @@ const AssetPanel: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Popups */}
+      <AssetLibraryPopup
+        isOpen={openPopups.shapes}
+        onClose={() => closePopup('shapes')}
+        title="Shape Library - 70+ Professional Shapes"
+      >
+        <EnhancedShapeLibrary />
+      </AssetLibraryPopup>
+
+      <AssetLibraryPopup
+        isOpen={openPopups.icons}
+        onClose={() => closePopup('icons')}
+        title="Icon Library - 100+ Unicode Symbols"
+      >
+        <EnhancedIconLibrary onIconSelect={(icon) => {
+          addIconToCanvas(icon);
+          closePopup('icons');
+        }} />
+      </AssetLibraryPopup>
+
+      <AssetLibraryPopup
+        isOpen={openPopups.text}
+        onClose={() => closePopup('text')}
+        title="Text Templates - Professional Typography"
+      >
+        <EnhancedTextLibrary />
+      </AssetLibraryPopup>
+
+      <AssetLibraryPopup
+        isOpen={openPopups.hands}
+        onClose={() => closePopup('hands')}
+        title="Hand Gestures Library - Multiple Skin Tones"
+      >
+        <EnhancedHandLibrary />
+      </AssetLibraryPopup>
+
+      <AssetLibraryPopup
+        isOpen={openPopups.characters}
+        onClose={() => closePopup('characters')}
+        title="Character & People Library - Diverse Assets"
+      >
+        <EnhancedCharacterLibrary />
+      </AssetLibraryPopup>
+
+      <AssetLibraryPopup
+        isOpen={openPopups.props}
+        onClose={() => closePopup('props')}
+        title="Props & Objects Library - Professional Assets"
+      >
+        <EnhancedPropsLibrary />
+      </AssetLibraryPopup>
     </div>
   );
 };

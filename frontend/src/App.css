@@ -8,6 +8,26 @@
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
 }
 
+/* Force white text for asset buttons */
+.asset-button-text {
+  color: white !important;
+}
+
+.asset-button-text * {
+  color: inherit !important;
+}
+
+.asset-button-text div {
+  color: white !important;
+}
+
+/* Override any potential Tailwind or other CSS conflicts */
+button.asset-button-text,
+button.asset-button-text *,
+button.asset-button-text div {
+  color: white !important;
+}
+
 /* Header Styles */
 .app-header {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);

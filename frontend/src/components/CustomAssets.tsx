@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import { useAppStore } from '../store/appStore';
 import ProDrawEditor from './ProDrawEditor';
 
@@ -23,6 +22,10 @@ const CustomAssets: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [embedUrl, setEmbedUrl] = useState('');
   const [embedError, setEmbedError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
+    const saved = localStorage.getItem('customAssets.viewMode');
+    return saved === 'list' ? 'list' : 'grid';
+  });
 
   // Dynamic backend URL based on current frontend port
   const getBackendUrl = () => {
@@ -31,13 +34,27 @@ const CustomAssets: React.FC = () => {
     return `${window.location.protocol}//${window.location.hostname}:${backendPort}`;
   };
 
+  // Local name map to persist renames client-side
+  const getNameMap = (): Record<string, string> => {
+    try {
+      return JSON.parse(localStorage.getItem('customAssets.nameMap') || '{}');
+    } catch {
+      return {};
+    }
+  };
+  const setNameMap = (map: Record<string, string>) => {
+    localStorage.setItem('customAssets.nameMap', JSON.stringify(map));
+  };
+
   // Load custom assets from backend (repo baseline)
   const loadAssets = async () => {
     try {
       const response = await fetch(`${getBackendUrl()}/api/assets`);
       if (response.ok) {
-        const data = await response.json();
-        setAssets(data);
+        const data: CustomAsset[] = await response.json();
+        const nameMap = getNameMap();
+        const mapped = data.map(a => ({ ...a, originalName: nameMap[a.id] || a.originalName }));
+        setAssets(mapped);
       }
     } catch (error) {
       console.error('Failed to load custom assets:', error);
@@ -140,6 +157,11 @@ const CustomAssets: React.FC = () => {
 
       if (response.ok) {
         setAssets(prev => prev.filter(a => a.id !== asset.id));
+        const nameMap = getNameMap();
+        if (nameMap[asset.id]) {
+          delete nameMap[asset.id];
+          setNameMap(nameMap);
+        }
       } else {
         alert('Failed to delete asset');
       }
@@ -147,6 +169,27 @@ const CustomAssets: React.FC = () => {
       console.error('Delete error:', error);
       alert('Error deleting asset');
     }
+  };
+
+  // Rename custom asset (client-persisted + backend notify)
+  const renameAsset = async (asset: CustomAsset) => {
+    const current = asset.originalName || '';
+    const name = prompt('Rename asset', current)?.trim();
+    if (!name || name === current) return;
+    try {
+      await fetch(`${getBackendUrl()}/api/assets/${asset.id}/rename`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+    } catch (e) {
+      // Best-effort: backend doesn't persist; continue with client-side map
+      console.warn('Rename notify failed, using client-side map only');
+    }
+    setAssets(prev => prev.map(a => a.id === asset.id ? { ...a, originalName: name } : a));
+    const nameMap = getNameMap();
+    nameMap[asset.id] = name;
+    setNameMap(nameMap);
   };
 
   // Helpers to build embed URLs (repo baseline)
@@ -240,16 +283,34 @@ const CustomAssets: React.FC = () => {
   );
 
   return (
-    <div className="h-full">
+    <div className="h-full flex flex-col">
       <div className="flex items-center justify-between mb-3">
         <h4 className="text-sm font-semibold text-gray-300">Custom Assets</h4>
-        <button
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
-          className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white text-xs rounded transition-colors"
-        >
-          {uploading ? 'Uploading...' : 'Upload'}
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex rounded overflow-hidden border border-gray-700">
+            <button
+              className={`px-2 py-1 text-xs ${viewMode === 'grid' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-300'}`}
+              title="Grid view"
+              onClick={() => { setViewMode('grid'); localStorage.setItem('customAssets.viewMode', 'grid'); }}
+            >
+              ⬚
+            </button>
+            <button
+              className={`px-2 py-1 text-xs ${viewMode === 'list' ? 'bg-gray-700 text-white' : 'bg-gray-800 text-gray-300'}`}
+              title="List view"
+              onClick={() => { setViewMode('list'); localStorage.setItem('customAssets.viewMode', 'list'); }}
+            >
+              ☰
+            </button>
+          </div>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white text-xs rounded transition-colors"
+          >
+            {uploading ? 'Uploading...' : 'Upload'}
+          </button>
+        </div>
       </div>
 
       {/* URL Embeds (YouTube / Instagram) */}
@@ -295,10 +356,10 @@ const CustomAssets: React.FC = () => {
         />
       </div>
 
-      {/* Asset Grid */}
-      <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
+      {/* Asset List/Grid */}
+      <div className={`flex-1 min-h-0 overflow-auto ${viewMode === 'grid' ? '' : ''}`}>
         {filteredAssets.length === 0 ? (
-          <div className="col-span-2 text-center text-gray-400 py-8">
+          <div className="text-center text-gray-400 py-8">
             {assets.length === 0 ? (
               <div>
                 <div className="text-2xl mb-2">📂</div>
@@ -313,57 +374,92 @@ const CustomAssets: React.FC = () => {
               </div>
             )}
           </div>
-        ) : (
-          filteredAssets.map((asset) => (
-            <div
-              key={asset.id}
-              className="relative bg-gray-700 hover:bg-gray-600 rounded-lg p-2 transition-colors group"
-            >
-              <button
-                onClick={() => addCustomAssetToCanvas(asset)}
-                className="w-full"
-                title={`Add ${asset.originalName} to canvas`}
+        ) : viewMode === 'grid' ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+            {filteredAssets.map((asset) => (
+              <div
+                key={asset.id}
+                className="relative bg-gray-700 hover:bg-gray-600 rounded-lg p-2 transition-colors group"
               >
-                <div className="aspect-square bg-gray-600 rounded mb-2 flex items-center justify-center overflow-hidden">
+                <button
+                  onClick={() => addCustomAssetToCanvas(asset)}
+                  className="w-full"
+                  title={`Add ${asset.originalName} to canvas`}
+                >
+                  <div className="aspect-square bg-gray-600 rounded mb-2 flex items-center justify-center overflow-hidden">
+                    <img
+                      src={`${getBackendUrl()}${asset.path}`}
+                      alt={asset.originalName}
+                      className="w-full h-full object-contain"
+                      loading="lazy"
+                    />
+                  </div>
+                  <div className="text-xs text-gray-300 group-hover:text-white truncate">
+                    {asset.originalName}
+                  </div>
+                  <div className="text-[10px] text-gray-400">
+                    {formatFileSize(asset.size)}
+                  </div>
+                </button>
+
+                {/* Actions */}
+                <div className="absolute top-1 right-1 flex gap-1">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); openProEditor(asset); }}
+                    className="px-1.5 h-6 bg-blue-600 hover:bg-blue-700 text-white text-[10px] rounded"
+                    title="Open in Pro Editor"
+                  >Pro</button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); renameAsset(asset); }}
+                    className="px-1.5 h-6 bg-gray-600 hover:bg-gray-500 text-white text-[10px] rounded"
+                    title="Rename"
+                  >Ren</button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); deleteAsset(asset); }}
+                    className="px-1.5 h-6 bg-red-600 hover:bg-red-700 text-white text-[10px] rounded"
+                    title="Delete"
+                  >Del</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-700">
+            {filteredAssets.map((asset) => (
+              <div key={asset.id} className="flex items-center gap-3 py-2">
+                <button
+                  onClick={() => addCustomAssetToCanvas(asset)}
+                  className="w-16 h-16 bg-gray-700 rounded flex items-center justify-center overflow-hidden flex-shrink-0"
+                  title={`Add ${asset.originalName} to canvas`}
+                >
                   <img
                     src={`${getBackendUrl()}${asset.path}`}
                     alt={asset.originalName}
-                    className="max-w-full max-h-full object-contain"
+                    className="w-full h-full object-contain"
                     loading="lazy"
                   />
+                </button>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-gray-200 truncate">{asset.originalName}</div>
+                  <div className="text-xs text-gray-400">{formatFileSize(asset.size)}</div>
                 </div>
-                <div className="text-xs text-gray-300 group-hover:text-white truncate">
-                  {asset.originalName}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => openProEditor(asset)}
+                    className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded"
+                  >Pro Edit</button>
+                  <button
+                    onClick={() => renameAsset(asset)}
+                    className="px-2 py-1 bg-gray-600 hover:bg-gray-500 text-white text-xs rounded"
+                  >Rename</button>
+                  <button
+                    onClick={() => deleteAsset(asset)}
+                    className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white text-xs rounded"
+                  >Delete</button>
                 </div>
-                <div className="text-xs text-gray-500">
-                  {formatFileSize(asset.size)}
-                </div>
-              </button>
-              
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  deleteAsset(asset);
-                }}
-                className="absolute top-1 right-1 w-5 h-5 bg-red-600 hover:bg-red-700 text-white text-xs rounded-full shadow flex items-center justify-center"
-                title="Delete asset"
-              >
-                ×
-              </button>
-
-              {/* Open Pro Editor (replaces old DrawPathEditor button) */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  openProEditor(asset);
-                }}
-                className="absolute top-1 right-7 w-5 h-5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-full opacity-100 transition-opacity flex items-center justify-center"
-                title="Edit with Pro Draw Editor"
-              >
-                ✏️
-              </button>
-            </div>
-          ))
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
@@ -381,13 +477,11 @@ const CustomAssets: React.FC = () => {
         );
       })()}
 
-      {/* Upload Info */}
-      <div className="mt-4 pt-4 border-t border-gray-600">
-        <div className="text-xs text-gray-400">
-          <div>Supported: JPG, PNG, GIF, SVG</div>
-          <div>Max size: 5MB per file</div>
-          <div className="mt-1">Total assets: {assets.length}</div>
-        </div>
+      {/* Footer Info (compact) */}
+      <div className="pt-2 text-[11px] text-gray-400">
+        <span className="mr-2">Supported: JPG, PNG, GIF, SVG</span>
+        <span className="mr-2">Max: 5MB</span>
+        <span>Total: {assets.length}</span>
       </div>
     </div>
   );

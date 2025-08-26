@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Stage, Layer, Group, Image as KonvaImage, Line, Circle, Text } from 'react-konva';
 import { useAppStore } from '../store/appStore';
@@ -113,12 +113,45 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
   const containerRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [stageSize, setStageSize] = useState({ width: 960, height: 620 });
+  
+  // Batch rendering to prevent layout thrashing
+  const [pendingUpdates, setPendingUpdates] = useState<(() => void)[]>([]);
+  const [isInteracting, setIsInteracting] = useState(false);
+  const batchUpdateRef = useRef<number | null>(null);
+  
+  // Process batched updates asynchronously to prevent UI thread blocking
+  useEffect(() => {
+    if (pendingUpdates.length === 0) return;
+    
+    if (batchUpdateRef.current) {
+      cancelAnimationFrame(batchUpdateRef.current);
+    }
+    
+    batchUpdateRef.current = requestAnimationFrame(() => {
+      // Process all pending updates in a single frame
+      pendingUpdates.forEach(update => update());
+      setPendingUpdates([]);
+      batchUpdateRef.current = null;
+    });
+    
+    return () => {
+      if (batchUpdateRef.current) {
+        cancelAnimationFrame(batchUpdateRef.current);
+      }
+    };
+  }, [pendingUpdates]);
+
+  // Batched state update to prevent layout thrashing
+  const batchStateUpdate = useCallback((update: () => void) => {
+    setPendingUpdates(prev => [...prev, update]);
+  }, []);
+  
   // Floating window position & size
   const [winPos, setWinPos] = useState<{ top: number; left: number }>({ 
     top: 64, 
     left: typeof window !== 'undefined' ? Math.max(20, (window.innerWidth - 720) / 2) : 100 
   });
-  const [winSize, setWinSize] = useState<{ width: number; height: number }>({ width: 720, height: 600 });
+  const [winSize] = useState<{ width: number; height: number }>({ width: 1200, height: 700 }); // Fixed size, no setter needed
   const draggingRef = useRef<{ dx: number; dy: number; active: boolean }>({ dx: 0, dy: 0, active: false });
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
@@ -143,6 +176,43 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
   const [panMode, setPanMode] = useState(false);
   const [spaceDown, setSpaceDown] = useState(false);
   const [isDraggingView, setIsDraggingView] = useState(false);
+  // Allow collapsing the right-side tools when space is tight
+  const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  // Resizable right pane width (split-pane)
+  const [rightPanelWidth, setRightPanelWidth] = useState<number>(340);
+  const dividerDragRef = useRef<{ startX: number; startW: number; dragging: boolean }>({ startX: 0, startW: 340, dragging: false });
+
+  // Persist panel state across sessions
+  useEffect(() => {
+    try {
+      const w = localStorage.getItem('prodraw.rightPanelWidth');
+      const o = localStorage.getItem('prodraw.rightPanelOpen');
+      if (w) {
+        const n = Number(w);
+        if (!Number.isNaN(n)) setRightPanelWidth(clamp(n, 260, 560));
+      }
+      if (o) setRightPanelOpen(o === '1');
+    } catch {}
+  }, []);
+  useEffect(() => {
+    try {
+      localStorage.setItem('prodraw.rightPanelWidth', String(rightPanelWidth));
+      localStorage.setItem('prodraw.rightPanelOpen', rightPanelOpen ? '1' : '0');
+    } catch {}
+  }, [rightPanelWidth, rightPanelOpen]);
+
+  // Optional keyboard nudge for panel width
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === '[') {
+        setRightPanelWidth((w) => clamp(w - 20, 260, 560));
+      } else if (e.key === ']') {
+        setRightPanelWidth((w) => clamp(w + 20, 260, 560));
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
   const [hand, setHand] = useState<'none' | 'pencil' | 'marker' | 'brush'>('pencil');
   const [handVariant, setHandVariant] = useState<'right-light'|'right-medium'|'right-dark'|'left-light'|'left-medium'|'left-dark'>('right-light');
   const [handOffset, setHandOffset] = useState<{x:number;y:number}>({ x: 16, y: 8 });
@@ -151,6 +221,23 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
   const [penScale, setPenScale] = useState<number>(1);
   const [strokeWidth, setStrokeWidth] = useState(3);
   const [strokeColor, setStrokeColor] = useState('#ffffff');
+
+  // Utility: fit current image area entirely into view by adjusting stage zoom and offset
+  const fitImageToView = useCallback(() => {
+    if (!stageRef.current || !image) return;
+    const W = (variant === 'floating') ? (winSize.width - (rightPanelOpen ? rightPanelWidth : 0)) : stageSize.width; // visible viewport width
+    const H = stageSize.height;
+    const margin = 24;
+    const targetW = Math.max(1, W - margin * 2);
+    const targetH = Math.max(1, H - margin * 2);
+    const s = Math.min(targetW / imgRect.w, targetH / imgRect.h);
+    const cx = imgRect.x + imgRect.w / 2;
+    const cy = imgRect.y + imgRect.h / 2;
+    const newX = W / 2 - s * cx;
+    const newY = H / 2 - s * cy;
+    setZoom(clamp(s, 0.1, 8));
+    setOffset({ x: newX, y: newY });
+  }, [image, imgRect, stageSize.width, stageSize.height, variant, winSize.width, rightPanelOpen, rightPanelWidth]);
 
   // Reset everything back to initial defaults
   const resetAll = () => {
@@ -177,27 +264,59 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
   // Fit image when loaded or modal opens
   useEffect(() => {
     if (!isOpen) return;
-  // Lock background scroll while editor is open
-  const prevOverflow = document.body.style.overflow;
-  document.body.style.overflow = 'hidden';
+    
+    // Lock background scroll while editor is open
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    
     const calcStage = () => {
+      // COMPLETELY DISABLE stage size recalculation in floating mode
+      if (variant === 'floating') {
+        // Use larger fixed size for floating mode to prevent any layout changes
+        setStageSize({ width: 1200, height: 700 }); // Match the fixed window size
+        return;
+      }
+      
+      // Don't recalculate during interactions to prevent drift
+      if (isInteracting || positionLockRef.current.locked) return;
+      
       const el = containerRef.current;
       if (!el) return;
       const pad = 24;
       const w = Math.max(480, el.clientWidth - pad);
       const h = Math.max(360, el.clientHeight - pad);
-      setStageSize({ width: w, height: h });
+      
+      // Only update if significantly different to avoid micro-adjustments
+      const currentSize = { width: w, height: h };
+      setStageSize(prev => {
+        if (Math.abs(prev.width - w) < 10 && Math.abs(prev.height - h) < 10) {
+          return prev; // Don't update for small changes
+        }
+        return currentSize;
+      });
     };
     calcStage();
+    
+    // Only listen to window resize, not container resize
     window.addEventListener('resize', calcStage);
-    // Track wrapper size changes (for floating resize)
-    let ro: ResizeObserver | null = null;
-    if ('ResizeObserver' in window && wrapperRef.current) {
-      ro = new ResizeObserver(() => calcStage());
-      ro.observe(wrapperRef.current);
-    }
+    
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space') { e.preventDefault(); setSpaceDown(true); }
+      // Quick helpers: R to reset view, P to toggle pan
+      if (e.code === 'KeyR') {
+        e.preventDefault();
+        setZoom(1);
+        setOffset({ x: 0, y: 0 });
+        setPanMode(false);
+      }
+      if (e.code === 'KeyP') {
+        e.preventDefault();
+        setPanMode((v) => !v);
+      }
+      if (e.code === 'KeyT') {
+        e.preventDefault();
+        setRightPanelOpen((v) => !v);
+      }
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.code === 'Space') { e.preventDefault(); setSpaceDown(false); setIsDraggingView(false); }
@@ -208,28 +327,68 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
       window.removeEventListener('resize', calcStage);
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
-      if (ro) ro.disconnect();
   // restore body scroll
   document.body.style.overflow = prevOverflow;
     };
-  }, [isOpen]);
+  }, [isOpen, isInteracting, variant]);
 
   useEffect(() => {
     if (!image) return;
-    // If editing existing object, respect its rect
+    
+    // Don't recalculate image rect during interactions or when position is locked
+    if (isInteracting || positionLockRef.current.locked) return;
+    
+    // In floating mode, use full available space to prevent clipping
+    if (variant === 'floating') {
+      // Use larger, centered positioning that utilizes the full stage
+      const stageWidth = 1200; // Fixed stage width (matches window)
+      const stageHeight = 700; // Fixed stage height (matches window)
+      const padding = 20;
+      const rpw = rightPanelOpen ? rightPanelWidth : 0; // Account for right panel only when open
+      
+      const availableWidth = stageWidth - rpw - (padding * 2);
+      const availableHeight = stageHeight - (padding * 2);
+      
+      let imgWidth = availableWidth;
+      let imgHeight = availableHeight;
+      
+      // Scale to maintain aspect ratio
+      if (editTarget) {
+        const aspectRatio = editTarget.rect.w / editTarget.rect.h;
+        if (aspectRatio > availableWidth / availableHeight) {
+          imgHeight = availableWidth / aspectRatio;
+        } else {
+          imgWidth = availableHeight * aspectRatio;
+        }
+      } else if (image) {
+        const aspectRatio = image.width / image.height;
+        if (aspectRatio > availableWidth / availableHeight) {
+          imgHeight = availableWidth / aspectRatio;
+        } else {
+          imgWidth = availableHeight * aspectRatio;
+        }
+      }
+      
+      // Center the image in available space
+      const imgX = padding + (availableWidth - imgWidth) / 2;
+      const imgY = padding + (availableHeight - imgHeight) / 2;
+      
+  const fixedRect = { x: imgX, y: imgY, w: imgWidth, h: imgHeight };
+      setImgRect(fixedRect);
+      return;
+    }
+    
+    // Original logic for non-floating mode
     if (editTarget) {
       originalRectRef.current = { x: editTarget.rect.x, y: editTarget.rect.y, w: editTarget.rect.w, h: editTarget.rect.h };
-      // Place locally within editor with small padding; keep size same as canvas object
       const pad = 12;
       const w = editTarget.rect.w; const h = editTarget.rect.h;
-      // If too large for stage, scale down to fit while preserving aspect
       const maxW = Math.max(200, stageSize.width - 240 - pad * 2);
       const maxH = Math.max(160, stageSize.height - 32 - pad * 2);
       const scale = Math.min(1, Math.min(maxW / w, maxH / h));
       setImgRect({ x: pad, y: pad, w: Math.round(w * scale), h: Math.round(h * scale) });
       return;
     }
-    // If launched from an image on canvas, respect its rect too
     if (sourceImage) {
       originalRectRef.current = { x: sourceImage.rect.x, y: sourceImage.rect.y, w: sourceImage.rect.w, h: sourceImage.rect.h };
       const pad = 12;
@@ -240,7 +399,7 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
       setImgRect({ x: pad, y: pad, w: Math.round(w * scale), h: Math.round(h * scale) });
       return;
     }
-    const maxW = stageSize.width - 240; // leave room for right panel
+    const maxW = stageSize.width - 240;
     const maxH = stageSize.height - 32;
     const scale = Math.min(maxW / image.width, maxH / image.height);
     const w = Math.round(image.width * scale);
@@ -248,7 +407,7 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
     const x = Math.round((maxW - w) / 2) + 12;
     const y = Math.round((maxH - h) / 2) + 12;
     setImgRect({ x, y, w, h });
-  }, [image, stageSize, editTarget, sourceImage]);
+  }, [image, stageSize, editTarget, sourceImage, isInteracting, variant, rightPanelOpen, rightPanelWidth]);
 
   // If editing, seed paths and tool settings from existing points/properties
   useEffect(() => {
@@ -308,28 +467,79 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
 
   const activePath = useMemo(() => paths.find(p => p.id === activePathId) || null, [paths, activePathId]);
 
+  // Position lock to prevent drift in floating mode
+  const positionLockRef = useRef({ locked: false, imgRect: null as any });
+  
+  // Safe interaction wrapper that locks positions during interactions
+  const safeInteraction = useCallback((callback: () => void) => {
+    // Lock current positions before interaction
+    if (variant === 'floating' && !positionLockRef.current.locked) {
+      positionLockRef.current.locked = true;
+      positionLockRef.current.imgRect = { ...imgRect };
+      console.log('🔒 Position locked during interaction');
+    }
+    
+    setIsInteracting(true);
+    try {
+      callback();
+    } finally {
+      // Keep positions locked during interaction
+      setTimeout(() => {
+        setIsInteracting(false);
+        // Release position lock after interaction completes
+        setTimeout(() => {
+          positionLockRef.current.locked = false;
+          positionLockRef.current.imgRect = null;
+          console.log('🔓 Position lock released');
+        }, 100);
+      }, 50);
+    }
+  }, [variant, imgRect]);
+
   // Create and select a new empty path immediately
   const createNewPath = () => {
-    const id = `path-${Date.now()}`;
-    const newPath: PathData = {
-      id,
-      name: `Path ${paths.length + 1}`,
-      nodes: [],
-      closed: false,
-      strokeWidth,
-      strokeColor,
-    };
-    setPaths(prev => [...prev, newPath]);
-    setActivePathId(id);
-    setTool('add');
+    safeInteraction(() => {
+      const id = `path-${Date.now()}`;
+      const newPath: PathData = {
+        id,
+        name: `Path ${paths.length + 1}`,
+        nodes: [],
+        closed: false,
+        strokeWidth,
+        strokeColor,
+      };
+      setPaths(prev => [...prev, newPath]);
+      setActivePathId(id);
+      setTool('add');
+    });
   };
+
+  // Stable coordinate system to prevent drift during rapid interactions
+  const stableCoordinatesRef = useRef({ imgRect: { x: 50, y: 50, w: 400, h: 300 } });
+  
+  // Initialize stable coordinates for floating mode
+  useEffect(() => {
+    if (variant === 'floating') {
+      // Updated for larger fixed window size
+      stableCoordinatesRef.current.imgRect = { x: 50, y: 50, w: 600, h: 400 };
+      // Set initial stable coordinates
+      setImgRect(stableCoordinatesRef.current.imgRect);
+    }
+  }, [variant]);
 
   // Tools handlers
   // Convert a point from stage coordinates into image-local coordinates
-  const stageToImage = (pt: Point): Point => ({
-    x: clamp(pt.x - imgRect.x, 0, imgRect.w),
-    y: clamp(pt.y - imgRect.y, 0, imgRect.h),
-  });
+  // Use stable coordinates during interactions to prevent drift
+  const stageToImage = (pt: Point): Point => {
+    const currentImgRect = (variant === 'floating' && isInteracting) 
+      ? stableCoordinatesRef.current.imgRect 
+      : imgRect;
+    
+    return {
+      x: clamp(pt.x - currentImgRect.x, 0, currentImgRect.w),
+      y: clamp(pt.y - currentImgRect.y, 0, currentImgRect.h),
+    };
+  };
 
   // Get pointer position in stage coordinates (accounting for stage scale/translation)
   const getStagePointer = (e: any): Point | null => {
@@ -344,19 +554,22 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
   };
 
   const handleClickAdd = (pos: Point) => {
-    const p = stageToImage(pos);
-    if (!activePath) {
-      const id = `path-${Date.now()}`;
-      const newPath: PathData = {
-        id, name: `Path ${paths.length + 1}`, nodes: [{ id: `n-${Date.now()}`, p, type: 'corner' }],
-        closed: false, strokeWidth, strokeColor,
-      };
-      setPaths(prev => [...prev, newPath]);
-      setActivePathId(id);
-    } else {
-      const node: PathNode = { id: `n-${Date.now()}`, p, type: 'corner' };
-      setPaths(prev => prev.map(path => path.id === activePath.id ? { ...path, nodes: [...path.nodes, node] } : path));
-    }
+    // Prevent layout thrashing by batching this update
+    batchStateUpdate(() => {
+      const p = stageToImage(pos);
+      if (!activePath) {
+        const id = `path-${Date.now()}`;
+        const newPath: PathData = {
+          id, name: `Path ${paths.length + 1}`, nodes: [{ id: `n-${Date.now()}`, p, type: 'corner' }],
+          closed: false, strokeWidth, strokeColor,
+        };
+        setPaths(prev => [...prev, newPath]);
+        setActivePathId(id);
+      } else {
+        const node: PathNode = { id: `n-${Date.now()}`, p, type: 'corner' };
+        setPaths(prev => prev.map(path => path.id === activePath.id ? { ...path, nodes: [...path.nodes, node] } : path));
+      }
+    });
   };
 
   // Insert node on nearest segment for active path
@@ -414,7 +627,7 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
     setActivePathId(id);
   };
 
-  // Stage mouse events for tools
+  // Stage mouse events for tools - ASYNC to prevent UI thread blocking
   const drawingRef = useRef<Point[] | null>(null);
   const onStageMouseDown = (e: any) => {
     if (!image) return;
@@ -422,13 +635,27 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
     if (e.evt && e.evt.button !== 0) return;
     // If panning, do not handle drawing
     if (panMode || spaceDown) { setIsDraggingView(true); return; }
-    const pos = getStagePointer(e);
-    if (!pos) return;
-    if (tool === 'add') {
-      if (insertMode) insertNodeOnSegment(pos);
-      else handleClickAdd(pos);
-    }
-    if (tool === 'free') drawingRef.current = [pos];
+    
+    // Mark as interacting IMMEDIATELY to lock coordinates
+    setIsInteracting(true);
+    
+    // Process click asynchronously to prevent UI blocking
+    requestAnimationFrame(() => {
+      const pos = getStagePointer(e);
+      if (!pos) {
+        setIsInteracting(false);
+        return;
+      }
+      
+      if (tool === 'add') {
+        if (insertMode) insertNodeOnSegment(pos);
+        else handleClickAdd(pos);
+      }
+      if (tool === 'free') drawingRef.current = [pos];
+      
+      // Release interaction lock after a brief delay
+      setTimeout(() => setIsInteracting(false), 50);
+    });
   };
   const onStageMouseMove = (e: any) => {
     if (tool !== 'free' || !drawingRef.current) return;
@@ -436,16 +663,21 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
     if (!pos) return;
     drawingRef.current.push(pos);
   };
-  const onStageMouseUpGlobal = () => setIsDraggingView(false);
+  const onStageMouseUpGlobal = useCallback(() => {
+    safeInteraction(() => setIsDraggingView(false));
+  }, [safeInteraction]);
+  
   useEffect(() => {
     window.addEventListener('mouseup', onStageMouseUpGlobal);
     return () => window.removeEventListener('mouseup', onStageMouseUpGlobal);
-  }, []);
+  }, [onStageMouseUpGlobal]);
   const onStageMouseUp = () => {
     if (tool !== 'free' || !drawingRef.current) return;
-    const pts = drawingRef.current.map(p => stageToImage(p));
-    drawingRef.current = null;
-    if (pts.length > 3) handleFreehand(pts);
+    safeInteraction(() => {
+      const pts = drawingRef.current!.map(p => stageToImage(p));
+      drawingRef.current = null;
+      if (pts.length > 3) handleFreehand(pts);
+    });
   };
 
   // Path ordering
@@ -554,27 +786,60 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
 
   // Common header with drag support when floating
   const Header = (
-    <div
-      className="flex items-center justify-between px-3 py-2 bg-gray-800 border-b border-gray-700 select-none"
-      style={{ cursor: variant === 'floating' ? 'move' : 'default' }}
-      onMouseDown={(e) => {
-        if (variant !== 'floating') return;
-        draggingRef.current = { dx: e.clientX - winPos.left, dy: e.clientY - winPos.top, active: true };
-        const onMove = (ev: MouseEvent) => {
-          if (!draggingRef.current.active) return;
-          setWinPos({ top: Math.max(8, ev.clientY - draggingRef.current.dy), left: Math.max(8, ev.clientX - draggingRef.current.dx) });
-        };
-        const onUp = () => {
-          draggingRef.current.active = false;
-          window.removeEventListener('mousemove', onMove);
-          window.removeEventListener('mouseup', onUp);
-        };
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
-      }}
-    >
-      <div className="font-semibold">Pro Draw Editor</div>
-      <button onClick={onClose} className="text-gray-300 hover:text-white text-lg">✕</button>
+    <div className="flex items-center justify-between px-3 py-2 bg-gray-800 border-b border-gray-700 select-none">
+      <div 
+        className="font-semibold cursor-move flex-1"
+        onMouseDown={(e) => {
+          if (variant !== 'floating') return;
+          // Prevent text selection
+          e.preventDefault();
+          setIsInteracting(true);
+          
+          draggingRef.current = { dx: e.clientX - winPos.left, dy: e.clientY - winPos.top, active: true };
+          const onMove = (ev: MouseEvent) => {
+            if (!draggingRef.current.active) return;
+            ev.preventDefault();
+            
+            // Use requestAnimationFrame to prevent layout thrashing during drag
+            requestAnimationFrame(() => {
+              if (draggingRef.current.active) {
+                setWinPos({ 
+                  top: Math.max(8, ev.clientY - draggingRef.current.dy), 
+                  left: Math.max(8, ev.clientX - draggingRef.current.dx) 
+                });
+              }
+            });
+          };
+          const onUp = () => {
+            draggingRef.current.active = false;
+            // Delay interaction end to ensure stability
+            setTimeout(() => setIsInteracting(false), 100);
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+          };
+          window.addEventListener('mousemove', onMove);
+          window.addEventListener('mouseup', onUp);
+        }}
+      >
+        Pro Draw Editor
+      </div>
+      {/* Always-visible Tools toggle */}
+      <button
+        onClick={(e) => { e.stopPropagation(); setRightPanelOpen(v => !v); }}
+        className="text-gray-300 hover:text-white text-sm mr-2 px-2 py-1 bg-gray-700 rounded"
+        title="Toggle tools sidebar (T)"
+      >
+        {rightPanelOpen ? 'Hide Tools' : 'Show Tools'}
+      </button>
+      <button 
+        onClick={(e) => {
+          e.stopPropagation();
+          safeInteraction(() => onClose());
+        }} 
+        className="text-gray-300 hover:text-white text-lg ml-2"
+      >
+        ✕
+      </button>
     </div>
   );
 
@@ -582,9 +847,9 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
   const editorBody = (
     <div className="flex-1 overflow-hidden flex">
       {/* Left: Editor */}
-      <div ref={containerRef} className="flex-1 relative min-w-[320px]">
+    <div ref={containerRef} className="flex-1 relative min-w-[320px] overflow-hidden">
         <Stage
-          width={stageSize.width}
+      width={variant === 'floating' ? (winSize.width - (rightPanelOpen ? rightPanelWidth : 0)) : stageSize.width}
           height={stageSize.height}
           scaleX={zoom}
           scaleY={zoom}
@@ -592,8 +857,21 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
           y={offset.y}
           ref={stageRef}
           draggable={panMode || spaceDown}
-          onDragMove={(e) => { setOffset({ x: e.target.x(), y: e.target.y() }); setIsDraggingView(true); }}
-          onDragEnd={(e) => { setOffset({ x: e.target.x(), y: e.target.y() }); setIsDraggingView(false); }}
+          onDragMove={(e) => {
+            // Only respond to drag events when the Stage itself is being dragged
+            if (e.target !== stageRef.current) return;
+            safeInteraction(() => {
+              setOffset({ x: e.target.x(), y: e.target.y() });
+              setIsDraggingView(true);
+            });
+          }}
+          onDragEnd={(e) => {
+            if (e.target !== stageRef.current) return;
+            safeInteraction(() => {
+              setOffset({ x: e.target.x(), y: e.target.y() });
+              setIsDraggingView(false);
+            });
+          }}
           onMouseDown={onStageMouseDown}
           onMouseMove={onStageMouseMove}
           onMouseUp={onStageMouseUp}
@@ -632,15 +910,43 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
                     radius={6}
                     fill={selectedNodeId === n.id ? '#a78bfa' : (n.type === 'smooth' ? '#34d399' : '#22d3ee')}
                     draggable
-                    onDragMove={(e) => handleNodeDrag(p.id, n.id, { x: e.target.x(), y: e.target.y() })}
-                    onClick={(e) => {
-                      setActivePathId(p.id);
-                      setSelectedNodeId(n.id);
-                      if (e.evt.shiftKey) {
-                        setPaths(prev => prev.map(x => x.id === p.id ? { ...x, nodes: x.nodes.map(nn => nn.id === n.id ? { ...nn, type: nn.type==='corner'?'smooth':'corner' } : nn) } : x));
-                      }
+                    onDragMove={(e) => {
+                      // Stop Konva bubbling so Stage onDrag* doesn't execute
+                      (e as any).cancelBubble = true;
+                      if (e.evt && e.evt.stopPropagation) e.evt.stopPropagation();
+                      // Prevent canvas panning during node drag
+                      safeInteraction(() => handleNodeDrag(p.id, n.id, { x: e.target.x(), y: e.target.y() }));
                     }}
-                    onDblClick={() => handleDeleteNode(p.id, n.id)}
+                    onDragStart={(e) => {
+                      (e as any).cancelBubble = true;
+                      if (e.evt && e.evt.stopPropagation) e.evt.stopPropagation();
+                      // Prevent canvas panning when drag starts
+                      setIsInteracting(true);
+                    }}
+                    onDragEnd={(e) => {
+                      (e as any).cancelBubble = true;
+                      if (e.evt && e.evt.stopPropagation) e.evt.stopPropagation();
+                      // Prevent canvas panning when drag ends
+                      setIsInteracting(false);
+                    }}
+                    onClick={(e) => {
+                      (e as any).cancelBubble = true;
+                      if (e.evt && e.evt.stopPropagation) e.evt.stopPropagation();
+                      // Prevent canvas click handling
+                      safeInteraction(() => {
+                        setActivePathId(p.id);
+                        setSelectedNodeId(n.id);
+                        if (e.evt.shiftKey) {
+                          setPaths(prev => prev.map(x => x.id === p.id ? { ...x, nodes: x.nodes.map(nn => nn.id === n.id ? { ...nn, type: nn.type==='corner'?'smooth':'corner' } : nn) } : x));
+                        }
+                      });
+                    }}
+                    onDblClick={(e) => {
+                      (e as any).cancelBubble = true;
+                      if (e.evt && e.evt.stopPropagation) e.evt.stopPropagation();
+                      // Prevent canvas double-click handling
+                      safeInteraction(() => handleDeleteNode(p.id, n.id));
+                    }}
                   />
                 ))}
               </Group>
@@ -660,43 +966,228 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
 
         {/* Top overlay controls */}
         <div className="absolute top-2 left-2 flex gap-2">
-          <button className="px-2 py-1 bg-gray-700 rounded" onClick={() => setTool('add')}>Add Nodes</button>
-          <button className="px-2 py-1 bg-gray-700 rounded" onClick={createNewPath}>New Path</button>
-          <button className="px-2 py-1 bg-gray-700 rounded" onClick={() => setTool('free')}>Freehand</button>
-          <button className="px-2 py-1 bg-gray-700 rounded" onClick={() => setPreview(p => !p)}>{preview ? 'Hide Preview' : 'Live Preview'}</button>
+          <button 
+            className="px-2 py-1 bg-gray-700 rounded" 
+            onClick={(e) => {
+              e.stopPropagation();
+              safeInteraction(() => setTool('add'));
+            }}
+          >
+            Add Nodes
+          </button>
+          <button 
+            className="px-2 py-1 bg-gray-700 rounded" 
+            onClick={(e) => {
+              e.stopPropagation();
+              safeInteraction(() => createNewPath());
+            }}
+          >
+            New Path
+          </button>
+          <button 
+            className="px-2 py-1 bg-gray-700 rounded" 
+            onClick={(e) => {
+              e.stopPropagation();
+              safeInteraction(() => setTool('free'));
+            }}
+          >
+            Freehand
+          </button>
+          <button
+            className="px-2 py-1 bg-gray-700 rounded"
+            onClick={(e) => {
+              e.stopPropagation();
+              safeInteraction(() => { setZoom(1); setOffset({ x: 0, y: 0 }); });
+            }}
+          >
+            Reset View
+          </button>
+          <button 
+            className="px-2 py-1 bg-gray-700 rounded" 
+            onClick={(e) => {
+              e.stopPropagation();
+              safeInteraction(() => setPreview(p => !p));
+            }}
+          >
+            {preview ? 'Hide Preview' : 'Live Preview'}
+          </button>
           <label className="px-2 py-1 bg-gray-800 rounded inline-flex items-center gap-1 text-xs">
-            <input type="checkbox" checked={insertMode} onChange={(e) => setInsertMode(e.target.checked)} /> Insert Node
+            <input 
+              type="checkbox" 
+              checked={insertMode} 
+              onChange={(e) => {
+                e.stopPropagation();
+                safeInteraction(() => setInsertMode(e.target.checked));
+              }} 
+            /> Insert Node
           </label>
           <label className="px-2 py-1 bg-gray-800 rounded inline-flex items-center gap-1 text-xs" title="Hold Space to pan temporarily">
-            <input type="checkbox" checked={panMode} onChange={(e) => setPanMode(e.target.checked)} /> Pan
+            <input 
+              type="checkbox" 
+              checked={panMode} 
+              onChange={(e) => {
+                e.stopPropagation();
+                safeInteraction(() => setPanMode(e.target.checked));
+              }} 
+            /> Pan
           </label>
+        </div>
+
+        {/* Sticky Tools toggle at top-right so it's always reachable */}
+        <div className="absolute top-2 right-2 flex gap-2">
+          <button
+            className="px-2 py-1 bg-gray-700 rounded"
+            onClick={(e) => {
+              e.stopPropagation();
+              setRightPanelOpen((v) => !v);
+            }}
+            title="Toggle tools sidebar (or press T)"
+          >
+            {rightPanelOpen ? 'Hide Tools' : 'Show Tools'}
+          </button>
+        </div>
+      </div>
+
+      {/* Vertical divider for split pane */}
+      {/* Always render divider so it's discoverable even when panel is collapsed */}
+      <div
+          role="separator"
+          aria-orientation="vertical"
+        className={`relative z-20 cursor-col-resize transition-colors ${rightPanelOpen ? 'bg-gray-700/50 hover:bg-gray-500/70' : 'bg-gray-700/30 hover:bg-gray-500/50'}`}
+        style={{ width: rightPanelOpen ? 6 : 8, userSelect: 'none' }}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          // If collapsed, open before dragging so width changes are visible
+          if (!rightPanelOpen) setRightPanelOpen(true);
+          dividerDragRef.current = { startX: e.clientX, startW: rightPanelWidth, dragging: true };
+          const onMove = (ev: MouseEvent) => {
+            if (!dividerDragRef.current.dragging) return;
+            const dx = dividerDragRef.current.startX - ev.clientX; // drag left => wider
+            const next = clamp(dividerDragRef.current.startW + dx, 260, 560);
+            requestAnimationFrame(() => setRightPanelWidth(next));
+          };
+          const onUp = () => {
+            dividerDragRef.current.dragging = false;
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+          };
+          window.addEventListener('mousemove', onMove);
+          window.addEventListener('mouseup', onUp);
+        }}
+      >
+        {/* grab handle */}
+        <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 bg-gray-300/60"></div>
+        <div className="absolute top-1/2 -translate-y-1/2 left-1/2 -translate-x-1/2 space-y-1">
+          <div className="w-2 h-0.5 bg-gray-200/80 rounded" />
+          <div className="w-2 h-0.5 bg-gray-200/80 rounded" />
+          <div className="w-2 h-0.5 bg-gray-200/80 rounded" />
         </div>
       </div>
 
       {/* Right: Inspector */}
-      <div className={`${variant === 'floating' ? 'w-[340px]' : 'w-[280px]'} shrink-0 border-l border-gray-700 p-3 overflow-y-auto bg-gray-800`}>
+      <div
+        className={`shrink-0 border-l border-gray-700 bg-gray-800 z-10 transition-all duration-200 ease-out`}
+        style={{
+          width: variant === 'floating' ? (rightPanelOpen ? rightPanelWidth : 0) : (rightPanelOpen ? Math.max(280, rightPanelWidth) : 0),
+          padding: rightPanelOpen ? '0.75rem' : '0rem',
+          pointerEvents: rightPanelOpen ? 'auto' : 'none',
+          borderLeftColor: rightPanelOpen ? '#374151' : 'transparent',
+          transform: rightPanelOpen ? 'translateX(0)' : 'translateX(8px)',
+          overflowY: rightPanelOpen ? 'auto' : 'hidden',
+          overflowX: rightPanelOpen ? 'auto' : 'hidden'
+        }}
+      >
         {/* Tools (mirrors top overlay) */}
         <div>
           <div className="text-xs text-gray-400 mb-1">Tools</div>
           <div className="flex flex-wrap gap-2">
-            <button className={`px-2 py-1 rounded ${tool==='add'?'bg-emerald-600':'bg-gray-700'}`} onClick={() => setTool('add')}>Add Nodes</button>
-            <button className={`px-2 py-1 rounded ${tool==='free'?'bg-emerald-600':'bg-gray-700'}`} onClick={() => setTool('free')}>Freehand</button>
+            <button 
+              className={`px-2 py-1 rounded ${tool==='add'?'bg-emerald-600':'bg-gray-700'}`} 
+              onClick={(e) => {
+                e.stopPropagation();
+                safeInteraction(() => setTool('add'));
+              }}
+            >
+              Add Nodes
+            </button>
+            <button 
+              className={`px-2 py-1 rounded ${tool==='free'?'bg-emerald-600':'bg-gray-700'}`} 
+              onClick={(e) => {
+                e.stopPropagation();
+                safeInteraction(() => setTool('free'));
+              }}
+            >
+              Freehand
+            </button>
             <label className="px-2 py-1 bg-gray-700 rounded inline-flex items-center gap-1 text-xs">
-              <input type="checkbox" checked={insertMode} onChange={(e) => setInsertMode(e.target.checked)} /> Insert Node
+              <input 
+                type="checkbox" 
+                checked={insertMode} 
+                onChange={(e) => {
+                  e.stopPropagation();
+                  safeInteraction(() => setInsertMode(e.target.checked));
+                }} 
+              /> Insert Node
             </label>
             <label className="px-2 py-1 bg-gray-700 rounded inline-flex items-center gap-1 text-xs" title="Hold Space to pan temporarily">
-              <input type="checkbox" checked={panMode} onChange={(e) => setPanMode(e.target.checked)} /> Pan
+              <input 
+                type="checkbox" 
+                checked={panMode} 
+                onChange={(e) => {
+                  e.stopPropagation();
+                  safeInteraction(() => setPanMode(e.target.checked));
+                }} 
+              /> Pan
             </label>
           </div>
-          <div className="text-[10px] text-gray-400 mt-1">Tip: Hold Space to pan; use New Path for each letter.</div>
+          <div className="text-[10px] text-gray-400 mt-1 space-y-0.5">
+            <div>Tip: Hold Space to pan; use New Path for each letter.</div>
+            <div>Tip: Drag the vertical divider to resize Tools; press [ and ] to nudge width.</div>
+          </div>
         </div>
         {/* Zoom */}
         <div className="mt-2">
           <div className="text-xs text-gray-400 mb-1">View</div>
           <div className="flex gap-2">
-            <button className="px-2 py-1 bg-gray-700 rounded" onClick={() => setZoom(z => clamp(z*1.2, 0.25, 4))}>Zoom +</button>
-            <button className="px-2 py-1 bg-gray-700 rounded" onClick={() => setZoom(z => clamp(z/1.2, 0.25, 4))}>Zoom -</button>
-            <button className="px-2 py-1 bg-gray-700 rounded" onClick={() => { setZoom(1); setOffset({ x: 0, y: 0 }); }}>Reset</button>
+            <button 
+              className="px-2 py-1 bg-gray-700 rounded" 
+              onClick={(e) => {
+                e.stopPropagation();
+                safeInteraction(() => setZoom(z => clamp(z*1.2, 0.25, 4)));
+              }}
+            >
+              Zoom +
+            </button>
+            <button 
+              className="px-2 py-1 bg-gray-700 rounded" 
+              onClick={(e) => {
+                e.stopPropagation();
+                safeInteraction(() => setZoom(z => clamp(z/1.2, 0.25, 4)));
+              }}
+            >
+              Zoom -
+            </button>
+            <button 
+              className="px-2 py-1 bg-gray-700 rounded" 
+              onClick={(e) => {
+                e.stopPropagation();
+                safeInteraction(() => fitImageToView());
+              }}
+            >
+              Fit Image
+            </button>
+            <button 
+              className="px-2 py-1 bg-gray-700 rounded" 
+              onClick={(e) => {
+                e.stopPropagation();
+                safeInteraction(() => { 
+                  setZoom(1); 
+                  setOffset({ x: 0, y: 0 }); 
+                });
+              }}
+            >
+              Reset
+            </button>
           </div>
         </div>
 
@@ -704,59 +1195,169 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
         <div className="mt-2">
           <div className="flex items-center justify-between mb-1">
             <div className="text-xs text-gray-400">Paths ({paths.length})</div>
-            <button className="px-2 py-0.5 bg-gray-700 rounded text-xs" onClick={createNewPath}>＋ New</button>
+            <button 
+              className="px-2 py-0.5 bg-gray-700 rounded text-xs" 
+              onClick={(e) => {
+                e.stopPropagation();
+                safeInteraction(() => createNewPath());
+              }}
+            >
+              ＋ New
+            </button>
           </div>
           <div className="space-y-2">
             {paths.map((p) => (
               <div key={p.id} className={`p-2 rounded bg-gray-700 ${activePathId === p.id ? 'ring-2 ring-emerald-500' : ''}`}>
                 <div className="flex items-center justify-between">
-                  <input className="bg-transparent text-sm flex-1 mr-2" value={p.name}
-                         onChange={(e) => setPaths(prev => prev.map(x => x.id === p.id ? { ...x, name: e.target.value } : x))} />
+                  <input 
+                    className="bg-transparent text-sm flex-1 mr-2" 
+                    value={p.name}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      safeInteraction(() => setPaths(prev => prev.map(x => x.id === p.id ? { ...x, name: e.target.value } : x)));
+                    }} 
+                  />
                   <div className="flex gap-1">
-                    <button className="px-1 bg-gray-600 rounded" onClick={() => movePath(p.id, -1)}>↑</button>
-                    <button className="px-1 bg-gray-600 rounded" onClick={() => movePath(p.id, +1)}>↓</button>
-                    <button className="px-1 bg-red-600 rounded" onClick={() => setPaths(prev => prev.filter(x => x.id !== p.id))}>🗑</button>
+                    <button 
+                      className="px-1 bg-gray-600 rounded" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        safeInteraction(() => movePath(p.id, -1));
+                      }}
+                    >
+                      ↑
+                    </button>
+                    <button 
+                      className="px-1 bg-gray-600 rounded" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        safeInteraction(() => movePath(p.id, +1));
+                      }}
+                    >
+                      ↓
+                    </button>
+                    <button 
+                      className="px-1 bg-red-600 rounded" 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        safeInteraction(() => setPaths(prev => prev.filter(x => x.id !== p.id)));
+                      }}
+                    >
+                      🗑
+                    </button>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mt-2 text-xs">
-                  <label className="flex items-center gap-1"><input type="checkbox" checked={p.closed} onChange={(e) => setPaths(prev => prev.map(x => x.id === p.id ? { ...x, closed: e.target.checked } : x))} /> Close</label>
-                  <label className="flex items-center gap-1"><input type="checkbox" checked={!!p.bezier} onChange={(e) => setPaths(prev => prev.map(x => x.id === p.id ? { ...x, bezier: e.target.checked } : x))} /> Bezier</label>
-                  <label>Width <input type="number" className="w-12 bg-gray-600 rounded px-1" value={p.strokeWidth} min={1} max={20} onChange={(e) => setPaths(prev => prev.map(x => x.id === p.id ? { ...x, strokeWidth: Number(e.target.value) } : x))} /></label>
-                  <input type="color" value={p.strokeColor} onChange={(e) => setPaths(prev => prev.map(x => x.id === p.id ? { ...x, strokeColor: e.target.value } : x))} />
+                  <label className="flex items-center gap-1">
+                    <input 
+                      type="checkbox" 
+                      checked={p.closed} 
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        safeInteraction(() => setPaths(prev => prev.map(x => x.id === p.id ? { ...x, closed: e.target.checked } : x)));
+                      }} 
+                    /> Close
+                  </label>
+                  <label className="flex items-center gap-1">
+                    <input 
+                      type="checkbox" 
+                      checked={!!p.bezier} 
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        safeInteraction(() => setPaths(prev => prev.map(x => x.id === p.id ? { ...x, bezier: e.target.checked } : x)));
+                      }} 
+                    /> Bezier
+                  </label>
+                  <label>
+                    Width <input 
+                      type="number" 
+                      className="w-12 bg-gray-600 rounded px-1" 
+                      value={p.strokeWidth} 
+                      min={1} 
+                      max={20} 
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        safeInteraction(() => setPaths(prev => prev.map(x => x.id === p.id ? { ...x, strokeWidth: Number(e.target.value) } : x)));
+                      }} 
+                    />
+                  </label>
+                  <input 
+                    type="color" 
+                    value={p.strokeColor} 
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      safeInteraction(() => setPaths(prev => prev.map(x => x.id === p.id ? { ...x, strokeColor: e.target.value } : x)));
+                    }} 
+                  />
                 </div>
                 <div className="flex items-center gap-2 mt-2 text-xs">
-                  <button className="px-2 py-1 bg-gray-600 rounded" onClick={() => {
-                    // Delete selected segment (remove node after selected)
-                    if (!selectedNodeId) return;
-                    setPaths(prev => prev.map(x => {
-                      if (x.id !== p.id) return x;
-                      const idx = x.nodes.findIndex(n => n.id === selectedNodeId);
-                      if (idx >= 0 && idx < x.nodes.length - 1) {
-                        const nodes = [...x.nodes];
-                        nodes.splice(idx + 1, 1);
-                        return { ...x, nodes };
-                      }
-                      return x;
-                    }));
-                  }}>Delete Segment</button>
-                  <button className="px-2 py-1 bg-gray-600 rounded" onClick={() => {
-                    // Merge with next (remove current if not first/last)
-                    if (!selectedNodeId) return;
-                    setPaths(prev => prev.map(x => {
-                      if (x.id !== p.id) return x;
-                      const idx = x.nodes.findIndex(n => n.id === selectedNodeId);
-                      if (idx > 0 && idx < x.nodes.length - 1) {
-                        const nodes = [...x.nodes];
-                        nodes.splice(idx, 1);
-                        return { ...x, nodes };
-                      }
-                      return x;
-                    }));
-                  }}>Merge</button>
+                  <button 
+                    className="px-2 py-1 bg-gray-600 rounded" 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      safeInteraction(() => {
+                        // Delete selected segment (remove node after selected)
+                        if (!selectedNodeId) return;
+                        setPaths(prev => prev.map(x => {
+                          if (x.id !== p.id) return x;
+                          const idx = x.nodes.findIndex(n => n.id === selectedNodeId);
+                          if (idx >= 0 && idx < x.nodes.length - 1) {
+                            const nodes = [...x.nodes];
+                            nodes.splice(idx + 1, 1);
+                            return { ...x, nodes };
+                          }
+                          return x;
+                        }));
+                      });
+                    }}
+                  >
+                    Delete Segment
+                  </button>
+                  <button 
+                    className="px-2 py-1 bg-gray-600 rounded" 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      safeInteraction(() => {
+                        // Merge with next (remove current if not first/last)
+                        if (!selectedNodeId) return;
+                        setPaths(prev => prev.map(x => {
+                          if (x.id !== p.id) return x;
+                          const idx = x.nodes.findIndex(n => n.id === selectedNodeId);
+                          if (idx > 0 && idx < x.nodes.length - 1) {
+                            const nodes = [...x.nodes];
+                            nodes.splice(idx, 1);
+                            return { ...x, nodes };
+                          }
+                          return x;
+                        }));
+                      });
+                    }}
+                  >
+                    Merge
+                  </button>
                 </div>
                 <div className="mt-2">
-                  <button className="text-xs px-2 py-1 bg-gray-600 rounded mr-2" onClick={() => { setActivePathId(p.id); setTool('add'); }}>Edit</button>
-                  <button className="text-xs px-2 py-1 bg-gray-600 rounded" onClick={() => setActivePathId(p.id)}>Select</button>
+                  <button 
+                    className="text-xs px-2 py-1 bg-gray-600 rounded mr-2" 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      safeInteraction(() => { 
+                        setActivePathId(p.id); 
+                        setTool('add'); 
+                      });
+                    }}
+                  >
+                    Edit
+                  </button>
+                  <button 
+                    className="text-xs px-2 py-1 bg-gray-600 rounded" 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      safeInteraction(() => setActivePathId(p.id));
+                    }}
+                  >
+                    Select
+                  </button>
                 </div>
               </div>
             ))}
@@ -770,23 +1371,65 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
         <div className="mt-3">
           <div className="text-xs text-gray-400 mb-1">Global</div>
           <div className="flex items-center gap-2 mb-2">
-            <label>Width <input type="number" className="w-14 bg-gray-700 rounded px-1" value={strokeWidth} min={1} max={20} onChange={(e) => setStrokeWidth(Number(e.target.value))} /></label>
-            <input type="color" value={strokeColor} onChange={(e) => setStrokeColor(e.target.value)} />
+            <label>
+              Width <input 
+                type="number" 
+                className="w-14 bg-gray-700 rounded px-1" 
+                value={strokeWidth} 
+                min={1} 
+                max={20} 
+                onChange={(e) => {
+                  e.stopPropagation();
+                  safeInteraction(() => setStrokeWidth(Number(e.target.value)));
+                }} 
+              />
+            </label>
+            <input 
+              type="color" 
+              value={strokeColor} 
+              onChange={(e) => {
+                e.stopPropagation();
+                safeInteraction(() => setStrokeColor(e.target.value));
+              }} 
+            />
           </div>
           <div className="flex items-center gap-2 mb-2">
             <label className="text-xs">Smoothing</label>
-            <input type="range" min={0} max={0.9} step={0.1} value={tension} onChange={(e) => setTension(Number(e.target.value))} />
+            <input 
+              type="range" 
+              min={0} 
+              max={0.9} 
+              step={0.1} 
+              value={tension} 
+              onChange={(e) => {
+                e.stopPropagation();
+                safeInteraction(() => setTension(Number(e.target.value)));
+              }} 
+            />
             <div className="text-xs w-8 text-right">{tension.toFixed(1)}</div>
           </div>
           <div className="text-xs text-gray-400 mb-1">Hand / Pen</div>
           <div className="grid grid-cols-3 gap-2">
             {(['pencil','marker','brush'] as const).map(k => (
-              <button key={k} className={`p-2 rounded ${hand===k?'bg-emerald-600':'bg-gray-700'}`} onClick={() => setHand(k)}>
+              <button 
+                key={k} 
+                className={`p-2 rounded ${hand===k?'bg-emerald-600':'bg-gray-700'}`} 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  safeInteraction(() => setHand(k));
+                }}
+              >
                 <div className="text-lg">{k==='pencil'?'✏️':k==='marker'?'🖍️':'🖌️'}</div>
                 <div className="text-[10px] capitalize">{k}</div>
               </button>
             ))}
-            <button className={`p-2 rounded ${hand==='none'?'bg-emerald-600':'bg-gray-700'}`} onClick={() => setHand('none')}>
+            <button 
+              className={`p-2 rounded ${hand==='none'?'bg-emerald-600':'bg-gray-700'}`} 
+              onClick={(e) => {
+                e.stopPropagation();
+                safeInteraction(() => setHand('none'));
+              }}
+            >
               <div className="text-lg">🚫</div>
               <div className="text-[10px]">none</div>
             </button>
@@ -797,7 +1440,14 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
             <div className="text-xs text-gray-400 mb-1">Hand Variant</div>
             <div className="grid grid-cols-3 gap-2 text-xs">
               {(['right-light','right-medium','right-dark','left-light','left-medium','left-dark'] as const).map(v => (
-                <button key={v} className={`px-2 py-1 rounded ${handVariant===v?'bg-emerald-600':'bg-gray-700'}`} onClick={() => setHandVariant(v)}>
+                <button 
+                  key={v} 
+                  className={`px-2 py-1 rounded ${handVariant===v?'bg-emerald-600':'bg-gray-700'}`} 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    safeInteraction(() => setHandVariant(v));
+                  }}
+                >
                   {v.replace('-', ' ')}
                 </button>
               ))}
@@ -825,9 +1475,33 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
           </div>
 
           <div className="pt-2 mt-3 border-t border-gray-700 flex gap-2">
-            <button className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 rounded" onClick={applyToCanvas}>Save & Apply</button>
-            <button className="px-3 py-2 bg-red-600 hover:bg-red-700 rounded" onClick={resetAll}>Reset All</button>
-            <button className="px-3 py-2 bg-gray-700 rounded" onClick={onClose}>Close</button>
+            <button 
+              className="flex-1 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 rounded" 
+              onClick={(e) => {
+                e.stopPropagation();
+                safeInteraction(() => applyToCanvas());
+              }}
+            >
+              Save & Apply
+            </button>
+            <button 
+              className="px-3 py-2 bg-red-600 hover:bg-red-700 rounded" 
+              onClick={(e) => {
+                e.stopPropagation();
+                safeInteraction(() => resetAll());
+              }}
+            >
+              Reset All
+            </button>
+            <button 
+              className="px-3 py-2 bg-gray-700 rounded" 
+              onClick={(e) => {
+                e.stopPropagation();
+                safeInteraction(() => onClose());
+              }}
+            >
+              Close
+            </button>
           </div>
         </div>
       </div>
@@ -841,10 +1515,15 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
         ref={wrapperRef}
         style={{ 
           position: 'fixed',
-          top: winPos.top, 
-          left: winPos.left, 
-          width: winSize.width, 
-          height: winSize.height,
+          top: 64, // Fixed initial position
+          left: 100, // Fixed initial position
+          transform: `translate(${winPos.left - 100}px, ${winPos.top - 64}px)`, // Use transform instead of top/left
+          width: '1200px', // FIXED width to prevent expansion
+          height: '700px', // FIXED height to prevent expansion
+          minWidth: '1200px', // Prevent shrinking
+          minHeight: '700px', // Prevent shrinking
+          maxWidth: '1200px', // Prevent growing
+          maxHeight: '700px', // Prevent growing
           backgroundColor: '#1f2937',
           color: 'white',
           borderRadius: '8px',
@@ -852,18 +1531,17 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
           border: '1px solid #374151',
           overflow: 'hidden',
           zIndex: 999999,
-          resize: 'both'
+          resize: 'none', // DISABLE resize to prevent user-induced expansion
+          willChange: 'transform', // Optimize for transform changes
+          contain: 'layout style paint', // Isolate layout calculations
         }}
-        onMouseUp={() => {
-          // Capture size after manual resize via CSS handle
-          if (wrapperRef.current) {
-            const rect = wrapperRef.current.getBoundingClientRect();
-            setWinSize({ width: rect.width, height: rect.height });
-          }
+        onMouseUp={(e) => {
+          // Completely disable resize handling to prevent size changes
+          return;
         }}
       >
         {Header}
-        <div style={{ width: '100%', height: 'calc(100% - 40px)', overflow: 'hidden', display: 'flex' }}>
+  <div style={{ width: '100%', height: 'calc(100% - 40px)', overflow: 'hidden', display: 'flex' }}>
           {editorBody}
         </div>
       </div>

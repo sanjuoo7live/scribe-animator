@@ -557,12 +557,12 @@ const AssetPanel: React.FC = () => {
         onClose={() => closePopup('images')}
         title="Image Library - Import and Manage"
       >
-        <div style={{ height: '100%', backgroundColor: '#111827', color: 'white' }}>
-          <div style={{ padding: 12, borderBottom: '1px solid #374151' }}>
+        <div style={{ height: '100%', backgroundColor: '#111827', color: 'white', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ padding: 12, borderBottom: '1px solid #374151', flexShrink: 0 }}>
             <div style={{ fontWeight: 700 }}>🖼️ Image Library</div>
             <div style={{ fontSize: 12, color: '#9CA3AF' }}>Upload, search, and add images to your canvas</div>
           </div>
-          <div style={{ flex: 1, overflow: 'auto' }}>
+          <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
             <div className="p-3">
               <CustomAssets />
             </div>

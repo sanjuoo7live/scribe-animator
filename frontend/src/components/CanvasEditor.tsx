@@ -883,6 +883,14 @@ const CanvasEditor: React.FC = () => {
                     }
                     break;
                   }
+                  case 'drawIn': {
+                    // drawPath: we'll compute reveal later at render stage
+                    break;
+                  }
+                  case 'typewriter': {
+                    // handled within text rendering; keep ep for usage
+                    break;
+                  }
                 }
 
                 const isSelected = selectedObject === obj.id;
@@ -1175,33 +1183,73 @@ const CanvasEditor: React.FC = () => {
 
         if (obj.type === 'text') {
                   const props = obj.properties;
+                  const textString: string = props.text || 'Text';
+                  const isTypewriter = obj.animationType === 'typewriter';
+                  if (!isTypewriter) {
+                    return (
+                      <Text 
+                        key={obj.id} 
+                        id={obj.id} 
+                        x={animatedProps.x ?? obj.x} 
+                        y={animatedProps.y ?? obj.y}
+                        text={textString} 
+                        fontSize={props.fontSize || 16} 
+                        fontFamily={props.fontFamily || 'Arial'}
+                        fontStyle={props.fontStyle || 'normal'}
+                        textDecoration={props.textDecoration || 'none'}
+                        align={props.align || 'left'}
+                        lineHeight={props.lineHeight || 1.2}
+                        letterSpacing={props.letterSpacing || 0}
+                        width={obj.width && obj.width > 1 ? obj.width : undefined} 
+                        rotation={obj.rotation || 0}
+                        scaleX={animatedProps.scaleX ?? 1} 
+                        scaleY={animatedProps.scaleY ?? 1} 
+                        opacity={animatedProps.opacity ?? 1}
+                        fill={isSelected ? '#4f46e5' : props.fill || '#000'} 
+                        stroke={props.strokeWidth > 0 ? (isSelected ? '#4f46e5' : props.stroke || '#000') : undefined}
+                        strokeWidth={props.strokeWidth || 0}
+                        draggable={tool === 'select'}
+                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }} 
+                        onDblClick={() => handleTextDoubleClick(obj.id)}
+                        onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)} 
+                        onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)} 
+                      />
+                    );
+                  }
+                  // Typewriter: render per character progressively
+                  const animStart = obj.animationStart || 0;
+                  const animDuration = obj.animationDuration || 2;
+                  const p = Math.min(Math.max((currentTime - animStart) / animDuration, 0), 1);
+                  const total = textString.length;
+                  const visibleCount = Math.max(0, Math.floor(p * total + 0.00001));
+                  const visibleText = textString.slice(0, visibleCount);
                   return (
                     <Text 
-                      key={obj.id} 
-                      id={obj.id} 
-                      x={animatedProps.x ?? obj.x} 
+                      key={obj.id}
+                      id={obj.id}
+                      x={animatedProps.x ?? obj.x}
                       y={animatedProps.y ?? obj.y}
-                      text={props.text || 'Text'} 
-                      fontSize={props.fontSize || 16} 
+                      text={visibleText}
+                      fontSize={props.fontSize || 16}
                       fontFamily={props.fontFamily || 'Arial'}
                       fontStyle={props.fontStyle || 'normal'}
                       textDecoration={props.textDecoration || 'none'}
                       align={props.align || 'left'}
                       lineHeight={props.lineHeight || 1.2}
                       letterSpacing={props.letterSpacing || 0}
-                      width={obj.width && obj.width > 1 ? obj.width : undefined} 
+                      width={obj.width && obj.width > 1 ? obj.width : undefined}
                       rotation={obj.rotation || 0}
-                      scaleX={animatedProps.scaleX ?? 1} 
-                      scaleY={animatedProps.scaleY ?? 1} 
+                      scaleX={animatedProps.scaleX ?? 1}
+                      scaleY={animatedProps.scaleY ?? 1}
                       opacity={animatedProps.opacity ?? 1}
-                      fill={isSelected ? '#4f46e5' : props.fill || '#000'} 
+                      fill={isSelected ? '#4f46e5' : props.fill || '#000'}
                       stroke={props.strokeWidth > 0 ? (isSelected ? '#4f46e5' : props.stroke || '#000') : undefined}
                       strokeWidth={props.strokeWidth || 0}
                       draggable={tool === 'select'}
-                      onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }} 
+                      onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }}
                       onDblClick={() => handleTextDoubleClick(obj.id)}
-                      onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)} 
-                      onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)} 
+                      onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
+                      onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
                     />
                   );
                 }
@@ -1400,10 +1448,13 @@ const CanvasEditor: React.FC = () => {
                 return null;
               })}
 
-              <Transformer ref={transformerRef} boundBoxFunc={(oldBox, newBox) => {
-                if (newBox.width < 5 || newBox.height < 5) return oldBox;
-                return newBox;
-              }} />
+              <Transformer ref={transformerRef}
+                        keepRatio
+                        boundBoxFunc={(oldBox, newBox) => {
+                          // Lock aspect ratio by default to avoid text distortion; allow tiny sizes prevention
+                          if (newBox.width < 5 || newBox.height < 5) return oldBox;
+                          return newBox;
+                        }} />
             </Layer>
           </Stage>
         </div>

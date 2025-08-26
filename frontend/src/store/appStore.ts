@@ -11,7 +11,7 @@ export interface SceneObject {
   properties: any;
   animationStart?: number;
   animationDuration?: number;
-  animationType?: 'fadeIn' | 'slideIn' | 'scaleIn' | 'drawIn' | 'pathFollow' | 'none';
+  animationType?: 'fadeIn' | 'slideIn' | 'scaleIn' | 'drawIn' | 'pathFollow' | 'typewriter' | 'none';
   animationEasing?: 'linear' | 'easeIn' | 'easeOut' | 'easeInOut';
 }
 

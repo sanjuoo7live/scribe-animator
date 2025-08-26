@@ -3,7 +3,93 @@ import { Stage, Layer, Line, Text, Rect, Circle, Star, RegularPolygon, Arrow, Tr
 import Konva from 'konva';
 import { useAppStore } from '../store/appStore';
 import CanvasSettings from './CanvasSettings';
+// ProDrawEditor is launched from Assets panel only
 import CameraControls from './CameraControls';
+
+// Helper functions for pen and hand assets (image paths)
+const getPenAsset = (penType: string): string => {
+  switch (penType) {
+    case 'pencil': return '/assets/tools/pencil.svg';
+    case 'marker': return '/assets/tools/marker.svg';
+    case 'brush': return '/assets/tools/brush.svg';
+    default: return '/assets/tools/pen.svg';
+  }
+};
+
+type HandVariant = 'right-light'|'right-medium'|'right-dark'|'left-light'|'left-medium'|'left-dark';
+const getHandAsset = (handAsset: string | undefined): string | null => {
+  if (!handAsset || handAsset === 'none') return null;
+  const map: Record<HandVariant, string> = {
+    'right-light': '/assets/tools/hand-right-light.svg',
+    'right-medium': '/assets/tools/hand-right-medium.svg',
+    'right-dark': '/assets/tools/hand-right-dark.svg',
+    'left-light': '/assets/tools/hand-left-light.svg',
+    'left-medium': '/assets/tools/hand-left-medium.svg',
+    'left-dark': '/assets/tools/hand-left-dark.svg',
+  };
+  // fallback to right-light
+  const key = (handAsset as HandVariant) in map ? (handAsset as HandVariant) : 'right-light';
+  return map[key];
+};
+
+// lightweight image cache hook
+const useImage = (src?: string): HTMLImageElement | null => {
+  const [img, setImg] = React.useState<HTMLImageElement | null>(null);
+  React.useEffect(() => {
+    if (!src) { setImg(null); return; }
+    const image = new window.Image();
+    image.onload = () => setImg(image);
+    image.onerror = () => setImg(null);
+    image.src = src;
+    return () => setImg(null);
+  }, [src]);
+  return img;
+};
+
+// Tool follower component to render pen/hand images with rotation
+const ToolFollower: React.FC<{
+  x: number;
+  y: number;
+  angle: number;
+  penType?: string;
+  handAsset?: string;
+  handOffset?: { x: number; y: number };
+  handScale?: number;
+  penOffset?: { x: number; y: number };
+  penScale?: number;
+}> = ({ x, y, angle, penType = 'pen', handAsset, handOffset, handScale = 1, penOffset, penScale = 1 }) => {
+  const penImg = useImage(getPenAsset(penType));
+  const handPath = getHandAsset(handAsset || undefined) || undefined;
+  const handImg = useImage(handPath);
+  return (
+    <>
+      {penImg && (
+        <KonvaImage
+          image={penImg}
+          x={x + (penOffset?.x || 0)}
+          y={y + (penOffset?.y || 0)}
+          width={32 * penScale}
+          height={32 * penScale}
+          offsetX={(16) * penScale}
+          offsetY={(24) * penScale}
+          rotation={angle}
+        />
+      )}
+      {handImg && (
+        <KonvaImage
+          image={handImg}
+          x={x + (handOffset?.x ?? 16)}
+          y={y + (handOffset?.y ?? 8)}
+          width={40 * handScale}
+          height={40 * handScale}
+          offsetX={(20) * handScale}
+          offsetY={(20) * handScale}
+          rotation={angle}
+        />
+      )}
+    </>
+  );
+};
 
 const CanvasEditor: React.FC = () => {
   const stageRef = React.useRef<Konva.Stage>(null);
@@ -72,6 +158,15 @@ const CanvasEditor: React.FC = () => {
   const [showCanvasSettings, setShowCanvasSettings] = React.useState(false);
   const [fitMode, setFitMode] = React.useState<'width' | 'contain'>('contain');
   const [canvasSize, setCanvasSize] = React.useState({ width: 800, height: 600 });
+
+  // Pro Draw Editor (edit existing drawPath from canvas)
+  // Deprecated: editor state (moved to Assets panel)
+  // Pro editor removed from canvas flow
+
+  // Open Pro editor starting from a plain image; user will draw path that replaces the image
+  // Deprecated: editor is now opened from Assets panel only
+  // Editor launch from canvas disabled in new design
+  const openProEditorFromImage = React.useCallback((_obj: any) => { /* no-op */ }, []);
 
   // Scroll handler for canvas container
   const handleCanvasScroll = React.useCallback((event: Event) => {
@@ -445,6 +540,22 @@ const CanvasEditor: React.FC = () => {
         rotation,
         properties: { ...obj.properties, fontSize: newFont },
       });
+  } else if (obj && obj.type === 'drawPath') {
+      // Scale path points to match new size to avoid displacement
+      const ox = typeof node.offsetX === 'function' ? node.offsetX() : node.offsetX || 0;
+      const oy = typeof node.offsetY === 'function' ? node.offsetY() : node.offsetY || 0;
+      const sx = baseWidth ? newWidth / baseWidth : 1;
+      const sy = baseHeight ? newHeight / baseHeight : 1;
+      const prevPoints = Array.isArray(obj.properties?.points) ? obj.properties.points : [];
+      const scaledPoints = prevPoints.map((p: any) => ({ x: p.x * sx, y: p.y * sy }));
+      updateObject(id, {
+        x: nx - ox,
+        y: ny - oy,
+        width: newWidth,
+        height: newHeight,
+        rotation,
+        properties: { ...obj.properties, points: scaledPoints },
+      });
   } else {
       // Default: offset-aware update using current offsets
       const ox = typeof node.offsetX === 'function' ? node.offsetX() : node.offsetX || 0;
@@ -723,7 +834,7 @@ const CanvasEditor: React.FC = () => {
                 />
               ))}
 
-              {currentProject?.objects.map((obj) => {
+              {(currentProject?.objects || []).map((obj) => {
                 const animStart = obj.animationStart || 0;
                 const animDuration = obj.animationDuration || 5;
                 // Show objects at all times; clamp animation progression 0..1
@@ -743,6 +854,35 @@ const CanvasEditor: React.FC = () => {
                   case 'fadeIn': animatedProps.opacity = ep; break;
                   case 'scaleIn': animatedProps.scaleX = ep; animatedProps.scaleY = ep; break;
                   case 'slideIn': animatedProps.x = obj.x + (1 - ep) * 100; animatedProps.y = obj.y; break;
+                  case 'pathFollow': {
+                    // Hand animation following a path
+                    if (obj.properties?.pathPoints && Array.isArray(obj.properties.pathPoints)) {
+                      const pathPoints = obj.properties.pathPoints;
+                      const totalPoints = pathPoints.length;
+                      if (totalPoints > 1) {
+                        const pathProgress = ep * (totalPoints - 1);
+                        const currentIndex = Math.floor(pathProgress);
+                        const nextIndex = Math.min(currentIndex + 1, totalPoints - 1);
+                        const segmentProgress = pathProgress - currentIndex;
+                        
+                        const currentPoint = pathPoints[currentIndex];
+                        const nextPoint = pathPoints[nextIndex];
+                        
+                        // Interpolate position along the path
+                        animatedProps.x = currentPoint.x + (nextPoint.x - currentPoint.x) * segmentProgress;
+                        animatedProps.y = currentPoint.y + (nextPoint.y - currentPoint.y) * segmentProgress;
+                        
+                        // Calculate rotation if enabled
+                        if (obj.properties?.rotateWithPath) {
+                          const dx = nextPoint.x - currentPoint.x;
+                          const dy = nextPoint.y - currentPoint.y;
+                          const angle = Math.atan2(dy, dx);
+                          animatedProps.rotation = (angle * 180) / Math.PI;
+                        }
+                      }
+                    }
+                    break;
+                  }
                 }
 
                 const isSelected = selectedObject === obj.id;
@@ -804,6 +944,7 @@ const CanvasEditor: React.FC = () => {
                       onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }}
                       onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
                       onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
+                      // editor launch disabled on canvas; use Assets panel
                     />
                   );
                 }
@@ -1105,23 +1246,139 @@ const CanvasEditor: React.FC = () => {
                       onClick={handleObjectClick}
                       onDragEnd={handleObjectDrag}
                       onTransformEnd={handleObjectTransform}
+                      onDblClickImage={openProEditorFromImage}
                     />
                   );
                 }
 
                 if (obj.type === 'drawPath') {
                   const pts = obj.properties.points || [];
-                  const flat = pts.reduce((acc: number[], p: { x: number; y: number }) => acc.concat([p.x + obj.x, p.y + obj.y]), [] as number[]);
-                  if (flat.length > 3) {
+                  const assetSrc = obj.properties.assetSrc;
+                  let renderPoints = pts;
+                  
+                  // Handle drawIn animation by progressively revealing points
+                  if (obj.animationType === 'drawIn') {
+                    const totalPoints = pts.length;
+                    if (totalPoints > 1) {
+                      const revealedPointCount = Math.floor(ep * totalPoints);
+                      renderPoints = pts.slice(0, Math.max(1, revealedPointCount + 1));
+                    }
+                  }
+                  
+                  const flat = renderPoints.reduce((acc: number[], p: { x: number; y: number }) => acc.concat([p.x, p.y]), [] as number[]);
+
+                  // Compute tangent and current point for tool rendering
+                  let head = renderPoints[renderPoints.length - 1];
+                  let prev = renderPoints[renderPoints.length - 2] || head;
+                  const dx = (head?.x ?? 0) - (prev?.x ?? 0);
+                  const dy = (head?.y ?? 0) - (prev?.y ?? 0);
+                  const angleDeg = Math.atan2(dy, dx) * 180 / Math.PI;
+
+                  
+                  // If there's a background asset, create a masked reveal effect
+                  if (assetSrc && flat.length > 3) {
+                    return (
+                      <Group
+                        key={obj.id}
+                        id={obj.id}
+                        x={animatedProps.x ?? obj.x}
+                        y={animatedProps.y ?? obj.y}
+                        rotation={obj.rotation || 0}
+                        scaleX={animatedProps.scaleX ?? 1}
+                        scaleY={animatedProps.scaleY ?? 1}
+                        opacity={animatedProps.opacity ?? 1}
+                        draggable={tool === 'select'}
+                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }}
+                        onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
+                        onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
+                        clipX={0}
+                        clipY={0}
+                        clipWidth={obj.width || 400}
+                        clipHeight={obj.height || 400}
+                        // onDblClick disabled; re-edit from new flow
+                      >
+                        {/* Full opacity background image */}
+                        <CanvasImage
+                          key={`${obj.id}-masked`}
+                          id={`${obj.id}-masked`}
+                          obj={{
+                            ...obj,
+                            id: `${obj.id}-masked`,
+                            type: 'image',
+                            x: 0, // Relative to group
+                            y: 0, // Relative to group
+                            properties: {
+                              ...obj.properties,
+                              src: assetSrc,
+                              opacity: 1.0 // Full opacity
+                            }
+                          }}
+                          animatedProps={{ x: 0, y: 0, scaleX: 1, scaleY: 1, opacity: 1.0 }}
+                          isSelected={false}
+                          tool={tool}
+                          onClick={() => {}}
+                          onDragEnd={() => {}}
+                          onTransformEnd={() => {}}
+                        />
+                        
+                        {/* Mask: White path that reveals the image */}
+                        <Line
+                          key={`${obj.id}-mask`}
+                          points={flat}
+                          stroke="white"
+                          strokeWidth={(obj.properties.strokeWidth || 2) * 3} // Wider reveal area
+                          lineCap="round"
+                          lineJoin="round"
+                          perfectDrawEnabled={false}
+                          globalCompositeOperation="destination-in"
+                        />
+                        
+                        {/* Hand/Pen Asset - follows the drawing path */}
+                        {obj.animationType === 'drawIn' && renderPoints.length > 0 && (
+                          <>
+                            <ToolFollower
+                              x={head?.x || 0}
+                              y={head?.y || 0}
+                              angle={angleDeg}
+                              penType={obj.properties.selectedPenType}
+                              handAsset={obj.properties.selectedHandAsset}
+                              handOffset={obj.properties.handOffset}
+                              handScale={obj.properties.handScale}
+                              penOffset={obj.properties.penOffset}
+                              penScale={obj.properties.penScale}
+                            />
+                          </>
+                        )}
+                        
+                        {/* Selection indicator - only show border when selected */}
+                        {isSelected && (
+                          <Rect
+                            x={0}
+                            y={0}
+                            width={obj.width || 400}
+                            height={obj.height || 400}
+                            stroke="#4f46e5"
+                            strokeWidth={2}
+                            fill="transparent"
+                            dash={[5, 5]}
+                          />
+                        )}
+                      </Group>
+                    );
+                  }
+                  
+                  // Fallback: render as regular line if no asset source
+      if (flat.length > 3) {
+                    const adjustedFlat = renderPoints.reduce((acc: number[], p: { x: number; y: number }) => acc.concat([p.x + (animatedProps.x ?? obj.x), p.y + (animatedProps.y ?? obj.y)]), [] as number[]);
                     return (
                       <Line
                         key={obj.id}
                         id={obj.id}
-                        points={flat}
+                        points={adjustedFlat}
                         rotation={obj.rotation || 0}
                         stroke={isSelected ? '#4f46e5' : obj.properties.strokeColor || '#000'}
                         strokeWidth={(obj.properties.strokeWidth || 2) + (isSelected ? 1 : 0)}
-                        opacity={obj.properties.opacity ?? 1}
+                        opacity={(animatedProps.opacity ?? 1) * (obj.properties.opacity ?? 1)}
                         dash={obj.properties.dash}
                         lineCap="round"
                         lineJoin="round"
@@ -1132,6 +1389,7 @@ const CanvasEditor: React.FC = () => {
                         onMouseEnter={(e) => { if (tool === 'select') (e.target.getStage() as any)?.container().style.setProperty('cursor', 'pointer'); }}
                         onMouseLeave={(e) => { (e.target.getStage() as any)?.container().style.removeProperty('cursor'); }}
                         onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }}
+  // onDblClick disabled; re-edit from new flow
                         onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
                         onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
                       />
@@ -1475,6 +1733,8 @@ const CanvasEditor: React.FC = () => {
       )}
 
       <CanvasSettings isOpen={showCanvasSettings} onClose={() => setShowCanvasSettings(false)} />
+
+  {/* Pro Draw Editor is launched only from Assets panel now */}
     </div>
   );
 };
@@ -1489,7 +1749,8 @@ const CanvasImage: React.FC<{
   onClick: (id: string, node: any) => void;
   onDragEnd: (id: string, node: any) => void;
   onTransformEnd: (id: string, node: any) => void;
-}> = ({ id, obj, animatedProps, isSelected, tool, onClick, onDragEnd, onTransformEnd }) => {
+  onDblClickImage?: (obj: any) => void;
+}> = ({ id, obj, animatedProps, isSelected, tool, onClick, onDragEnd, onTransformEnd, onDblClickImage }) => {
   const [image, setImage] = React.useState<HTMLImageElement | null>(null);
   const src = obj.properties?.src as string | undefined;
 
@@ -1527,6 +1788,7 @@ const CanvasImage: React.FC<{
         strokeWidth={2}
         draggable={tool === 'select'}
         onClick={(e) => { e.cancelBubble = true; onClick(id, e.target); }}
+  onDblClick={(e) => { e.cancelBubble = true; onDblClickImage && onDblClickImage(obj); }}
         onDragEnd={(e) => onDragEnd(id, e.currentTarget)}
         onTransformEnd={(e) => onTransformEnd(id, e.currentTarget)}
       />
@@ -1550,6 +1812,7 @@ const CanvasImage: React.FC<{
       strokeWidth={isSelected ? 1 : 0}
       draggable={tool === 'select'}
       onClick={(e) => { e.cancelBubble = true; onClick(id, e.target); }}
+  onDblClick={(e) => { e.cancelBubble = true; onDblClickImage && onDblClickImage(obj); }}
       onDragEnd={(e) => onDragEnd(id, e.currentTarget)}
       onTransformEnd={(e) => onTransformEnd(id, e.currentTarget)}
     />

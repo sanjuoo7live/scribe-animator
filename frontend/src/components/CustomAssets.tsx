@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useAppStore } from '../store/appStore';
-import DrawPathEditor from './DrawPathEditor';
+import ProDrawEditor from './ProDrawEditor';
 
 interface CustomAsset {
   id: string;
@@ -17,16 +18,23 @@ const CustomAssets: React.FC = () => {
   const [assets, setAssets] = useState<CustomAsset[]>([]);
   const [uploading, setUploading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [showDrawPathEditor, setShowDrawPathEditor] = useState(false);
   const [selectedAsset, setSelectedAsset] = useState<CustomAsset | null>(null);
+  const [showProEditor, setShowProEditor] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [embedUrl, setEmbedUrl] = useState('');
   const [embedError, setEmbedError] = useState<string | null>(null);
 
-  // Load custom assets from backend
+  // Dynamic backend URL based on current frontend port
+  const getBackendUrl = () => {
+    const currentPort = window.location.port;
+    const backendPort = currentPort === '3002' ? '3001' : '3001'; // Can be made more dynamic if needed
+    return `${window.location.protocol}//${window.location.hostname}:${backendPort}`;
+  };
+
+  // Load custom assets from backend (repo baseline)
   const loadAssets = async () => {
     try {
-      const response = await fetch('http://localhost:3001/api/assets');
+      const response = await fetch(`${getBackendUrl()}/api/assets`);
       if (response.ok) {
         const data = await response.json();
         setAssets(data);
@@ -38,9 +46,9 @@ const CustomAssets: React.FC = () => {
 
   useEffect(() => {
     loadAssets();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Handle file upload
+  // Handle file upload (repo baseline uses /api/upload with field 'asset')
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (!files || files.length === 0) return;
@@ -67,7 +75,7 @@ const CustomAssets: React.FC = () => {
       formData.append('asset', file);
 
       try {
-        const response = await fetch('http://localhost:3001/api/upload', {
+        const response = await fetch(`${getBackendUrl()}/api/upload`, {
           method: 'POST',
           body: formData,
         });
@@ -90,18 +98,7 @@ const CustomAssets: React.FC = () => {
     }
   };
 
-  // Open draw path editor for an asset
-  const openDrawPathEditor = (asset: CustomAsset) => {
-    setSelectedAsset(asset);
-    setShowDrawPathEditor(true);
-  };
-
-  const closeDrawPathEditor = () => {
-    setShowDrawPathEditor(false);
-    setSelectedAsset(null);
-  };
-
-  // Add custom asset to canvas
+  // Add custom asset to canvas (repo baseline)
   const addCustomAssetToCanvas = (asset: CustomAsset) => {
     if (!currentProject) {
       alert('Please create a project first');
@@ -116,7 +113,7 @@ const CustomAssets: React.FC = () => {
       width: 150,
       height: 150,
       properties: {
-        src: `http://localhost:3001${asset.path}`,
+        src: `${getBackendUrl()}${asset.path}`,
         alt: asset.originalName,
         assetId: asset.id,
         assetName: asset.originalName,
@@ -131,19 +128,40 @@ const CustomAssets: React.FC = () => {
     addObject(newObject);
   };
 
-  // Helpers to build embed URLs
+  // Delete custom asset (repo baseline)
+  const deleteAsset = async (asset: CustomAsset) => {
+    // eslint-disable-next-line no-restricted-globals
+    if (!confirm(`Delete ${asset.originalName}?`)) return;
+
+    try {
+      const response = await fetch(`${getBackendUrl()}/api/assets/${asset.filename}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        setAssets(prev => prev.filter(a => a.id !== asset.id));
+      } else {
+        alert('Failed to delete asset');
+      }
+    } catch (error) {
+      console.error('Delete error:', error);
+      alert('Error deleting asset');
+    }
+  };
+
+  // Helpers to build embed URLs (repo baseline)
   const buildYouTubeEmbed = (url: string): string | null => {
     try {
       const u = new URL(url);
-      if (!/^(www\.)?youtube\.com$|^(www\.)?youtu\.be$/.test(u.hostname)) return null;
-      // youtu.be/<id>
       if (u.hostname.includes('youtu.be')) {
-        const id = u.pathname.replace('/', '');
+        const id = u.pathname.slice(1);
+        return `https://www.youtube.com/embed/${id}`;
+      }
+      if (u.hostname.includes('youtube.com')) {
+        const id = u.searchParams.get('v');
         return id ? `https://www.youtube.com/embed/${id}` : null;
       }
-      // youtube.com/watch?v=<id>
-      const id = u.searchParams.get('v');
-      return id ? `https://www.youtube.com/embed/${id}` : null;
+      return null;
     } catch {
       return null;
     }
@@ -152,9 +170,7 @@ const CustomAssets: React.FC = () => {
   const buildInstagramEmbed = (url: string): string | null => {
     try {
       const u = new URL(url);
-      if (!u.hostname.includes('instagram.com')) return null;
-      // Accept reels/shorts URLs; Instagram embeds use oembed or post embed. We'll use the public embed path with query params.
-      // Example: https://www.instagram.com/reel/<id> -> https://www.instagram.com/reel/<id>/embed
+      if (!u.hostname.includes('instagram.')) return null;
       return `${u.origin}${u.pathname.replace(/\/?$/, '/') }embed`;
     } catch {
       return null;
@@ -197,32 +213,6 @@ const CustomAssets: React.FC = () => {
     setEmbedUrl('');
   };
 
-  // Delete custom asset
-  const deleteAsset = async (asset: CustomAsset) => {
-    // eslint-disable-next-line no-restricted-globals
-    if (!confirm(`Delete ${asset.originalName}?`)) return;
-
-    try {
-      const response = await fetch(`http://localhost:3001/api/assets/${asset.filename}`, {
-        method: 'DELETE',
-      });
-
-      if (response.ok) {
-        setAssets(prev => prev.filter(a => a.id !== asset.id));
-      } else {
-        alert('Failed to delete asset');
-      }
-    } catch (error) {
-      console.error('Delete error:', error);
-      alert('Error deleting asset');
-    }
-  };
-
-  // Filter assets based on search term
-  const filteredAssets = assets.filter(asset =>
-    asset.originalName.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
   const formatFileSize = (bytes: number) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -230,6 +220,24 @@ const CustomAssets: React.FC = () => {
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
+
+  // Open Pro Draw Editor (added on top of repo code)
+  const openProEditor = (asset: CustomAsset) => {
+    console.log('Opening ProDrawEditor for asset:', asset);
+    setSelectedAsset(asset);
+    setShowProEditor(true);
+  };
+
+  const closeProEditor = () => {
+    console.log('Closing ProDrawEditor');
+    setShowProEditor(false);
+    setSelectedAsset(null);
+  };
+
+  // Filter assets based on search term
+  const filteredAssets = assets.filter(asset =>
+    asset.originalName.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
   return (
     <div className="h-full">
@@ -318,7 +326,7 @@ const CustomAssets: React.FC = () => {
               >
                 <div className="aspect-square bg-gray-600 rounded mb-2 flex items-center justify-center overflow-hidden">
                   <img
-                    src={`http://localhost:3001${asset.path}`}
+                    src={`${getBackendUrl()}${asset.path}`}
                     alt={asset.originalName}
                     className="max-w-full max-h-full object-contain"
                     loading="lazy"
@@ -343,13 +351,14 @@ const CustomAssets: React.FC = () => {
                 ×
               </button>
 
+              {/* Open Pro Editor (replaces old DrawPathEditor button) */}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  openDrawPathEditor(asset);
+                  openProEditor(asset);
                 }}
-                className="absolute top-1 right-7 w-5 h-5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center"
-                title="Create draw path"
+                className="absolute top-1 right-7 w-5 h-5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-full opacity-100 transition-opacity flex items-center justify-center"
+                title="Edit with Pro Draw Editor"
               >
                 ✏️
               </button>
@@ -357,6 +366,20 @@ const CustomAssets: React.FC = () => {
           ))
         )}
       </div>
+
+      {/* Pro Draw Editor Modal */}
+      {showProEditor && selectedAsset && (() => {
+        console.log('Rendering ProDrawEditor floating variant:', { showProEditor, selectedAsset: selectedAsset?.filename });
+        return (
+          <ProDrawEditor
+            isOpen={true}
+            assetSrc={`${getBackendUrl()}${selectedAsset.path}`}
+            assetId={selectedAsset.id}
+            variant="floating"
+            onClose={closeProEditor}
+          />
+        );
+      })()}
 
       {/* Upload Info */}
       <div className="mt-4 pt-4 border-t border-gray-600">
@@ -366,14 +389,6 @@ const CustomAssets: React.FC = () => {
           <div className="mt-1">Total assets: {assets.length}</div>
         </div>
       </div>
-
-      {/* Draw Path Editor Modal */}
-      <DrawPathEditor
-        isOpen={showDrawPathEditor}
-        onClose={closeDrawPathEditor}
-        assetId={selectedAsset?.id}
-        assetSrc={selectedAsset ? `http://localhost:3001${selectedAsset.path}` : undefined}
-      />
     </div>
   );
 };

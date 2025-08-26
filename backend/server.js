@@ -116,6 +116,15 @@ app.put('/api/projects/:id', async (req, res) => {
   }
 });
 
+app.delete('/api/projects/:id', async (req, res) => {
+  try {
+    await fs.unlink(`./data/projects/${req.params.id}.json`);
+    res.json({ message: 'Project deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to delete project' });
+  }
+});
+
 // Asset management endpoints
 app.get('/api/assets', async (req, res) => {
   try {
@@ -182,6 +191,22 @@ app.delete('/api/assets/:filename', async (req, res) => {
     res.json({ message: 'Asset deleted successfully' });
   } catch (error) {
     res.status(500).json({ error: 'Failed to delete asset' });
+  }
+});
+
+// Rename asset (update originalName in metadata)
+app.put('/api/assets/:id/rename', async (req, res) => {
+  try {
+    const { name } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Name is required' });
+    }
+    
+    // In a real implementation, you'd store metadata in a database
+    // For now, we'll just return success since filename stays the same
+    res.json({ message: 'Asset renamed successfully', name: name.trim() });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to rename asset' });
   }
 });
 

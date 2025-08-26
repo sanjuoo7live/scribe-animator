@@ -107,30 +107,47 @@ const EnhancedShapeLibrary: React.FC<EnhancedShapeLibraryProps> = ({ onAddShape 
 
   const CollectionTabs: React.FC = () => (
     <div className="flex flex-wrap gap-1 mb-4">
-      {shapeCollections.map((collection) => (
-        <button
-          key={collection.id}
-          onClick={() => {
-            setSelectedCollection(collection.id);
-            setSearchTerm(''); // Clear search when switching collections
-          }}
-          className={`
-            px-3 py-2 rounded-lg text-sm font-medium transition-all
-            flex items-center gap-2 flex-shrink-0
-            ${selectedCollection === collection.id
-              ? `${collection.color} text-white shadow-lg`
-              : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-            }
-          `}
-          title={collection.description}
-        >
-          <span>{collection.icon}</span>
-          <span className="hidden sm:inline">{collection.name}</span>
-          <span className="inline-flex min-w-[24px] justify-center bg-black/20 px-2.5 py-0.5 rounded-full text-xs">
-            {collection.shapes.length}
-          </span>
-        </button>
-      ))}
+      {shapeCollections.map((collection) => {
+        const isSelected = selectedCollection === collection.id;
+        return (
+          <button
+            key={collection.id}
+            onClick={() => {
+              setSelectedCollection(collection.id);
+              setSearchTerm(''); // Clear search when switching collections
+            }}
+            className="px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 flex-shrink-0"
+            title={collection.description}
+            style={{
+              backgroundColor: isSelected ? '#2563EB' : '#374151', // blue-600 vs gray-700
+              color: isSelected ? '#FFFFFF' : '#D1D5DB', // white vs gray-300
+              border: '1px solid #4B5563', // gray-600
+              boxShadow: isSelected ? '0 8px 16px rgba(0,0,0,0.35)' : 'none'
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.backgroundColor = isSelected ? '#1D4ED8' : '#4B5563'; // darker on hover
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.backgroundColor = isSelected ? '#2563EB' : '#374151';
+            }}
+          >
+            <span>{collection.icon}</span>
+            <span className="hidden sm:inline">{collection.name}</span>
+            <span
+              className="inline-flex justify-center rounded-full text-xs border"
+              style={{
+                minWidth: 24,
+                padding: '2px 8px',
+                backgroundColor: isSelected ? 'rgba(255,255,255,0.2)' : 'rgba(17,24,39,0.7)', // white/20 vs gray-900/70
+                color: isSelected ? '#FFFFFF' : '#E5E7EB', // white vs gray-200
+                borderColor: isSelected ? 'rgba(255,255,255,0.25)' : '#374151'
+              }}
+            >
+              {collection.shapes.length}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 
@@ -250,15 +267,15 @@ const EnhancedShapeLibrary: React.FC<EnhancedShapeLibraryProps> = ({ onAddShape 
         <ShapesGrid />
       </div>
 
-      {/* Pro Tips */}
-      <div className="p-4 flex-shrink-0" style={{ backgroundColor: '#111827' }}>
-        <div className="p-3 bg-gray-900 rounded-lg border border-gray-600">
-          <h4 className="text-sm font-semibold text-white mb-2">💡 Pro Tips</h4>
-          <div className="text-xs text-gray-300 space-y-1">
-            <div>• Search by keywords: "business", "arrow", "tech"</div>
-            <div>• Click any shape to add it to your canvas</div>
-            <div>• Use collections for organized browsing</div>
-            <div>• Toggle between grid and list views</div>
+      {/* Pro Tips (compact) */}
+      <div className="px-4 pb-3 flex-shrink-0" style={{ backgroundColor: '#111827' }}>
+        <div className="px-3 py-2 bg-gray-900 rounded-lg border border-gray-700">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] leading-snug text-gray-300">
+            <span>💡</span>
+            <span>Search keywords: "business", "arrow", "tech"</span>
+            <span className="hidden sm:inline">• Click a shape to add</span>
+            <span className="hidden md:inline">• Use collections</span>
+            <span className="hidden md:inline">• Toggle grid/list</span>
           </div>
         </div>
       </div>

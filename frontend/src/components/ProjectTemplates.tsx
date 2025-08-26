@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+// Removed portal in favor of AssetLibraryPopup
+import AssetLibraryPopup from './AssetLibraryPopup';
 import { useAppStore } from '../store/appStore';
 
 interface ProjectTemplate {
@@ -21,11 +23,17 @@ interface ProjectTemplate {
 
 interface ProjectTemplatesProps {
   onClose: () => void;
+  onProjectCreated?: (project: any) => void;
 }
 
-const ProjectTemplates: React.FC<ProjectTemplatesProps> = ({ onClose }) => {
+const ProjectTemplates: React.FC<ProjectTemplatesProps> = ({ onClose, onProjectCreated }) => {
   const { setProject } = useAppStore();
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [showNameDialog, setShowNameDialog] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<ProjectTemplate | null>(null);
+  const [projectName, setProjectName] = useState('');
+  const [projectDescription, setProjectDescription] = useState('');
+  const [saveToLibrary, setSaveToLibrary] = useState(true);
   const [customProject, setCustomProject] = useState({
     name: '',
     width: 1920,
@@ -397,10 +405,28 @@ const ProjectTemplates: React.FC<ProjectTemplatesProps> = ({ onClose }) => {
     { id: 'tutorial', name: 'Tutorial', icon: '📚' }
   ];
 
-  const createProjectFromTemplate = (template: ProjectTemplate) => {
+  const createProjectFromTemplate = (_templateOrEvent: any, templateMaybe?: ProjectTemplate) => {
+    // Support old/new signatures seamlessly
+    const template = (templateMaybe || _templateOrEvent) as ProjectTemplate;
+    setSelectedTemplate(template);
+    setProjectName(template.name);
+    setProjectDescription(`Created from template: ${template.description}`);
+    setShowNameDialog(true);
+  };
+
+  const createProjectWithName = async () => {
+    if (!projectName.trim()) {
+      alert('Please enter a project name');
+      return;
+    }
+
+    const template = selectedTemplate;
+    if (!template) return;
+
     const newProject = {
       id: `project-${Date.now()}`,
-      name: template.name,
+      name: projectName.trim(),
+      description: projectDescription.trim(),
       width: template.settings.width,
       height: template.settings.height,
       fps: template.settings.fps,
@@ -411,16 +437,43 @@ const ProjectTemplates: React.FC<ProjectTemplatesProps> = ({ onClose }) => {
       })),
       boardStyle: template.settings.boardStyle,
       backgroundColor: template.settings.backgroundColor,
-      cameraPosition: { x: 0, y: 0, zoom: 1 }
+      cameraPosition: { x: 0, y: 0, zoom: 1 },
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
 
-    setProject(newProject);
+    // Save to backend if requested
+    if (saveToLibrary) {
+      try {
+        const response = await fetch('http://localhost:3001/api/projects', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(newProject)
+        });
+
+        if (response.ok) {
+          const savedProject = await response.json();
+          setProject(savedProject);
+          onProjectCreated?.(savedProject);
+        } else {
+          // If save fails, still create the project locally
+          setProject(newProject);
+        }
+      } catch (error) {
+        console.error('Failed to save project:', error);
+        setProject(newProject);
+      }
+    } else {
+      setProject(newProject);
+    }
+
+  setShowNameDialog(false);
     onClose();
 
     // Success notification
     const notification = document.createElement('div');
     notification.className = 'fixed top-4 right-4 bg-green-600 text-white px-4 py-2 rounded shadow-lg z-50';
-    notification.textContent = `Created project: "${template.name}"`;
+    notification.textContent = `Created project: "${projectName}"`;
     document.body.appendChild(notification);
     setTimeout(() => document.body.removeChild(notification), 3000);
   };
@@ -462,7 +515,7 @@ const ProjectTemplates: React.FC<ProjectTemplatesProps> = ({ onClose }) => {
     : projectTemplates.filter(t => t.category === selectedCategory);
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[60]">
       <div className="bg-gray-800 rounded-lg p-6 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-xl font-semibold text-white">Choose Project Template</h3>
@@ -679,6 +732,71 @@ const ProjectTemplates: React.FC<ProjectTemplatesProps> = ({ onClose }) => {
           </div>
         )}
       </div>
+
+      {/* Project Name Dialog in a draggable/resizable popup */}
+      {showNameDialog && (
+        <AssetLibraryPopup
+          isOpen={showNameDialog}
+          onClose={() => { setShowNameDialog(false); }}
+          title="Name Your Project"
+          initialX={Math.max(0, Math.floor((typeof window !== 'undefined' ? window.innerWidth : 1024) / 2 - 480 / 2))}
+          initialY={Math.max(0, Math.floor((typeof window !== 'undefined' ? window.innerHeight : 768) / 2 - 360 / 2))}
+          initialWidth={480}
+          initialHeight={360}
+          minWidth={360}
+          minHeight={280}
+          footerText="Drag header to move • Drag edges to resize • ESC to close"
+        >
+          <div className="p-4 space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Project Name *</label>
+              <input
+                type="text"
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+                placeholder="Enter project name"
+                className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500"
+                autoFocus
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Description (Optional)</label>
+              <textarea
+                value={projectDescription}
+                onChange={(e) => setProjectDescription(e.target.value)}
+                placeholder="Brief description of your project"
+                rows={3}
+                className="w-full p-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-blue-500 resize-vertical"
+              />
+            </div>
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="saveToLibrary"
+                checked={saveToLibrary}
+                onChange={(e) => setSaveToLibrary(e.target.checked)}
+                className="mr-2"
+              />
+              <label htmlFor="saveToLibrary" className="text-sm text-gray-300">Save to project library</label>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button
+                onClick={() => { setShowNameDialog(false); }}
+                className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={createProjectWithName}
+                disabled={!projectName.trim()}
+                className="flex-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+              >
+                Create Project
+              </button>
+            </div>
+          </div>
+        </AssetLibraryPopup>
+      )}
     </div>
   );
 };

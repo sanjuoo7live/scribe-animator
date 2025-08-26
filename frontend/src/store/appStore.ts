@@ -11,7 +11,7 @@ export interface SceneObject {
   properties: any;
   animationStart?: number;
   animationDuration?: number;
-  animationType?: 'fadeIn' | 'slideIn' | 'scaleIn' | 'drawIn' | 'none';
+  animationType?: 'fadeIn' | 'slideIn' | 'scaleIn' | 'drawIn' | 'pathFollow' | 'none';
   animationEasing?: 'linear' | 'easeIn' | 'easeOut' | 'easeInOut';
 }
 
@@ -66,6 +66,46 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => {
+  // Ensure a project has the expected shape regardless of backend variations
+  const normalizeProject = (input: any): Project => {
+    const settings = input?.settings || {};
+    const width = Number(input?.width ?? settings.width ?? 1920);
+    const height = Number(input?.height ?? settings.height ?? 1080);
+    const fps = Number(input?.fps ?? settings.fps ?? 30);
+    const duration = Number(input?.duration ?? settings.duration ?? 30);
+
+    const rawObjects = Array.isArray(input?.objects) ? input.objects : [];
+    const objects: SceneObject[] = rawObjects.map((obj: any, index: number) => ({
+      id: obj?.id ?? `obj-${Date.now()}-${index}`,
+      type: obj?.type ?? 'shape',
+      x: Number(obj?.x ?? 0),
+      y: Number(obj?.y ?? 0),
+      width: obj?.width,
+      height: obj?.height,
+      rotation: obj?.rotation,
+      properties: obj?.properties ?? {},
+      animationStart: obj?.animationStart,
+      animationDuration: obj?.animationDuration,
+      animationType: obj?.animationType,
+      animationEasing: obj?.animationEasing,
+    }));
+
+    return {
+      id: String(input?.id ?? `project-${Date.now()}`),
+      name: String(input?.name ?? 'Untitled Project'),
+      width,
+      height,
+      fps,
+      duration,
+      objects,
+      boardStyle: input?.boardStyle ?? settings.boardStyle ?? 'whiteboard',
+      backgroundColor: input?.backgroundColor ?? settings.backgroundColor ?? '#ffffff',
+      cameraPosition: input?.cameraPosition ?? { x: 0, y: 0, zoom: 1 },
+      backgroundMusic: input?.backgroundMusic,
+      voiceover: input?.voiceover,
+    };
+  };
+
   // Helper function to save current state to history
   const saveToHistory = () => {
     const state = get();
@@ -97,14 +137,17 @@ export const useAppStore = create<AppState>((set, get) => {
       future: []
     },
 
-    setProject: (project) => set(() => ({
-      currentProject: project,
-      history: {
-        past: [],
-        present: JSON.parse(JSON.stringify(project)),
-        future: []
-      }
-    })),
+    setProject: (project) => set(() => {
+      const normalized = normalizeProject(project);
+      return {
+        currentProject: normalized,
+        history: {
+          past: [],
+          present: JSON.parse(JSON.stringify(normalized)),
+          future: []
+        }
+      };
+    }),
     
     updateProject: (updates) => set((state) => {
       const newHistory = saveToHistory();
@@ -118,41 +161,39 @@ export const useAppStore = create<AppState>((set, get) => {
 
     addObject: (object) => set((state) => {
       const newHistory = saveToHistory();
+      if (!state.currentProject) return { currentProject: null, history: newHistory };
+      const prevObjects = Array.isArray(state.currentProject.objects) ? state.currentProject.objects : [];
       return {
-        currentProject: state.currentProject
-          ? {
-              ...state.currentProject,
-              objects: [...state.currentProject.objects, object]
-            }
-          : null,
+        currentProject: {
+          ...state.currentProject,
+          objects: [...prevObjects, object]
+        },
         history: newHistory
       };
     }),
 
     updateObject: (id, updates) => set((state) => {
       const newHistory = saveToHistory();
+      if (!state.currentProject) return { currentProject: null, history: newHistory };
+      const prevObjects = Array.isArray(state.currentProject.objects) ? state.currentProject.objects : [];
       return {
-        currentProject: state.currentProject
-          ? {
-              ...state.currentProject,
-              objects: state.currentProject.objects.map(obj =>
-                obj.id === id ? { ...obj, ...updates } : obj
-              )
-            }
-          : null,
+        currentProject: {
+          ...state.currentProject,
+          objects: prevObjects.map(obj => (obj.id === id ? { ...obj, ...updates } : obj))
+        },
         history: newHistory
       };
     }),
 
     removeObject: (id) => set((state) => {
       const newHistory = saveToHistory();
+      if (!state.currentProject) return { currentProject: null, selectedObject: state.selectedObject, history: newHistory } as any;
+      const prevObjects = Array.isArray(state.currentProject.objects) ? state.currentProject.objects : [];
       return {
-        currentProject: state.currentProject
-          ? {
-              ...state.currentProject,
-              objects: state.currentProject.objects.filter(obj => obj.id !== id)
-            }
-          : null,
+        currentProject: {
+          ...state.currentProject,
+          objects: prevObjects.filter(obj => obj.id !== id)
+        },
         selectedObject: state.selectedObject === id ? null : state.selectedObject,
         history: newHistory
       };
@@ -167,7 +208,7 @@ export const useAppStore = create<AppState>((set, get) => {
       if (!state.currentProject) return state;
       
       const newHistory = saveToHistory();
-      const objects = [...state.currentProject.objects];
+      const objects = [...(Array.isArray(state.currentProject.objects) ? state.currentProject.objects : [])];
       const objectIndex = objects.findIndex(obj => obj.id === id);
       
       if (objectIndex === -1) return state;

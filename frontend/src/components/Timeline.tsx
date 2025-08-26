@@ -507,7 +507,7 @@ const Timeline: React.FC = () => {
           {/* Project info */}
           <div className="ml-auto text-sm text-gray-300 bg-gray-800 px-3 py-2 rounded-lg">
             {currentProject ? (
-              <span>📦 {currentProject.objects.length} objects</span>
+              <span>📦 {(currentProject.objects || []).length} objects</span>
             ) : (
               <span>⚠️ No project loaded</span>
             )}
@@ -562,7 +562,7 @@ const Timeline: React.FC = () => {
         <div className="flex justify-between items-center mb-4">
           <div className="text-sm font-bold text-white">Object Timeline</div>
           <div className="text-xs text-gray-400">
-            {currentProject?.objects.length || 0} objects • Click purple bars to jump to object time
+            {(currentProject?.objects || []).length} objects • Click purple bars to jump to object time
           </div>
         </div>
         {/* Global markers ruler */}
@@ -634,13 +634,14 @@ const Timeline: React.FC = () => {
             </div>
           )}
           
-          {currentProject?.objects && currentProject.objects.length > 0 && (
+          {currentProject?.objects && (currentProject.objects.length > 0) && (
             <div className="text-xs text-gray-400 mb-2 px-2">
-              📊 {currentProject.objects.length} object(s) • Click purple bars to jump to object time
+              📊 {(currentProject.objects || []).length} object(s) • Click purple bars to jump to object time
             </div>
           )}
           
-          {currentProject?.objects.map((obj, index) => {
+          {(currentProject?.objects || []).map((obj, index) => {
+            const objectCount = (currentProject?.objects || []).length;
             console.log('Rendering timeline object:', obj.id, obj.type, `Position: ${obj.x}, ${obj.y}`);
             console.log('Timeline duration:', duration, 'Object animation:', obj.animationStart, obj.animationDuration);
             
@@ -666,7 +667,7 @@ const Timeline: React.FC = () => {
                 {/* Layer order indicator */}
                 <div 
                   className="text-xs text-gray-400 mr-2 font-mono w-4 flex-shrink-0 text-center"
-                  title={`Layer ${index + 1} of ${currentProject.objects.length}`}
+                  title={`Layer ${index + 1} of ${objectCount}`}
                 >
                   {index + 1}
                 </div>

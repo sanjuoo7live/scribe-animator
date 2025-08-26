@@ -6,13 +6,27 @@ interface AssetLibraryPopupProps {
   onClose: () => void;
   title: string;
   children: React.ReactNode;
+  initialX?: number;
+  initialY?: number;
+  initialWidth?: number;
+  initialHeight?: number;
+  minWidth?: number;
+  minHeight?: number;
+  footerText?: string;
 }
 
 const AssetLibraryPopup: React.FC<AssetLibraryPopupProps> = ({
   isOpen,
   onClose,
   title,
-  children
+  children,
+  initialX,
+  initialY,
+  initialWidth,
+  initialHeight,
+  minWidth,
+  minHeight,
+  footerText
 }) => {
   const [position, setPosition] = useState({ x: 100, y: 100 });
   const [size, setSize] = useState({ width: 800, height: 600 });
@@ -25,6 +39,30 @@ const AssetLibraryPopup: React.FC<AssetLibraryPopupProps> = ({
 
   // Handle ESC key
   useEffect(() => {
+    if (isOpen) {
+      // Apply initial size first
+      const nextWidth = typeof initialWidth === 'number'
+        ? Math.min(window.innerWidth, Math.max(minWidth || 400, initialWidth))
+        : size.width;
+      const nextHeight = typeof initialHeight === 'number'
+        ? Math.min(window.innerHeight, Math.max(minHeight || 400, initialHeight))
+        : size.height;
+      if (nextWidth !== size.width || nextHeight !== size.height) {
+        setSize({ width: nextWidth, height: nextHeight });
+      }
+
+      // Then position with clamping based on size
+      const nextX = typeof initialX === 'number'
+        ? Math.max(0, Math.min(window.innerWidth - nextWidth, initialX))
+        : position.x;
+      const nextY = typeof initialY === 'number'
+        ? Math.max(0, Math.min(window.innerHeight - nextHeight, initialY))
+        : position.y;
+      if (nextX !== position.x || nextY !== position.y) {
+        setPosition({ x: nextX, y: nextY });
+      }
+    }
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape' && isOpen) {
         event.preventDefault();
@@ -40,7 +78,7 @@ const AssetLibraryPopup: React.FC<AssetLibraryPopupProps> = ({
     return () => {
       document.removeEventListener('keydown', handleKeyDown, true);
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, initialX, initialY, initialWidth, initialHeight, minWidth, minHeight, size.width, size.height, position.x, position.y]);
 
   // Handle dragging
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -138,7 +176,7 @@ const AssetLibraryPopup: React.FC<AssetLibraryPopupProps> = ({
   if (!isOpen) return null;
 
   return createPortal(
-    <div
+  <div
       style={{
         position: 'fixed',
         top: 0,
@@ -150,11 +188,6 @@ const AssetLibraryPopup: React.FC<AssetLibraryPopupProps> = ({
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center'
-      }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) {
-          onClose();
-        }
       }}
     >
       <div
@@ -173,8 +206,8 @@ const AssetLibraryPopup: React.FC<AssetLibraryPopupProps> = ({
           flexDirection: 'column',
           overflow: 'hidden',
           cursor: isDragging ? 'grabbing' : 'default',
-          minWidth: '400px',
-          minHeight: '400px'
+          minWidth: `${minWidth || 400}px`,
+          minHeight: `${minHeight || 400}px`
         }}
       >
         {/* Header */}
@@ -254,7 +287,7 @@ const AssetLibraryPopup: React.FC<AssetLibraryPopupProps> = ({
         {/* Content */}
         <div style={{
           flex: '1',
-          overflow: 'hidden',
+          overflow: 'auto',
           display: 'flex',
           flexDirection: 'column'
         }}>
@@ -273,7 +306,7 @@ const AssetLibraryPopup: React.FC<AssetLibraryPopupProps> = ({
           color: '#9CA3AF'
         }}>
           <div style={{ color: '#3B82F6', fontSize: '14px' }}>💡</div>
-          <span>Drag from header to move • Click outside or press ESC to close • Click any asset to add to canvas • Drag edges to resize</span>
+          <span>{footerText || 'Drag from header to move • Press ESC or use × to close • Drag edges to resize'}</span>
         </div>
 
         {/* Resize Handles */}

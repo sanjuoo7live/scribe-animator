@@ -17,6 +17,7 @@
     "react-konva": "^19.0.7",
     "react-scripts": "5.0.1",
     "typescript": "^4.9.5",
+    "vtracer-wasm": "^0.1.0",
     "web-vitals": "^2.1.4",
     "zustand": "^5.0.8"
   },
@@ -24,6 +25,7 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
+    "postinstall": "node scripts/copy-vtracer-wasm.js || echo 'skip copy'",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {

@@ -642,14 +642,10 @@ const Timeline: React.FC = () => {
           
           {(currentProject?.objects || []).map((obj, index) => {
             const objectCount = (currentProject?.objects || []).length;
-            console.log('Rendering timeline object:', obj.id, obj.type, `Position: ${obj.x}, ${obj.y}`);
-            console.log('Timeline duration:', duration, 'Object animation:', obj.animationStart, obj.animationDuration);
             
             // Calculate purple bar dimensions
             const barLeft = Math.max(0, ((obj.animationStart || 0) / duration) * 100);
             const barWidth = Math.max(2, ((obj.animationDuration || 5) / duration) * 100); // Minimum width in %
-            
-            console.log('Purple bar calculations - Left:', barLeft + '%', 'Width:', barWidth + '%');
             
             const isVisible = currentTime >= (obj.animationStart || 0) && 
                             currentTime <= ((obj.animationStart || 0) + (obj.animationDuration || 5));
@@ -739,7 +735,6 @@ const Timeline: React.FC = () => {
                             const objectStartTime = obj.animationStart || 0;
                             setCurrentTime(objectStartTime);
               selectObject(obj.id);
-                            console.log(`Clicked: Jumped to object "${obj.type}" at time ${objectStartTime}s`);
                           }
                           document.removeEventListener('mousemove', onMove);
                           document.removeEventListener('mouseup', onUp);

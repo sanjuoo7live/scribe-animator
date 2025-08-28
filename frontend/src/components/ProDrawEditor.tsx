@@ -104,7 +104,6 @@ function useImageCompat(src?: string, crossOrigin?: string): [HTMLImageElement |
 }
 
 const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId, assetSrc, editTarget, variant = 'modal', sourceImage }) => {
-  console.log('ProDrawEditor function called with props:', { isOpen, variant, assetSrc, assetId });
   const { addObject, updateObject, removeObject, currentProject } = useAppStore();
   const originalRectRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
 
@@ -216,7 +215,7 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
   const [hand, setHand] = useState<'none' | 'pencil' | 'marker' | 'brush'>('pencil');
   const [handVariant, setHandVariant] = useState<'right-light'|'right-medium'|'right-dark'|'left-light'|'left-medium'|'left-dark'>('right-light');
   const [handOffset, setHandOffset] = useState<{x:number;y:number}>({ x: 16, y: 8 });
-  const [handScale, setHandScale] = useState<number>(1);
+  const [handScale, setHandScale] = useState<number>(1.8);
   const [penOffset, setPenOffset] = useState<{x:number;y:number}>({ x: 0, y: 0 });
   const [penScale, setPenScale] = useState<number>(1);
   const [strokeWidth, setStrokeWidth] = useState(3);
@@ -252,7 +251,7 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
     setHand('pencil');
     setHandVariant('right-light');
     setHandOffset({ x: 16, y: 8 });
-    setHandScale(1);
+  setHandScale(1.8);
     setPenOffset({ x: 0, y: 0 });
     setPenScale(1);
     setStrokeWidth(3);
@@ -778,11 +777,8 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
   };
 
   if (!isOpen) {
-    console.log('ProDrawEditor early return - isOpen is false, received isOpen:', isOpen);
     return null;
   }
-
-  console.log('ProDrawEditor continuing to render - isOpen is true');
 
   // Common header with drag support when floating
   const Header = (
@@ -1143,6 +1139,38 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
           <div className="text-[10px] text-gray-400 mt-1 space-y-0.5">
             <div>Tip: Hold Space to pan; use New Path for each letter.</div>
             <div>Tip: Drag the vertical divider to resize Tools; press [ and ] to nudge width.</div>
+          </div>
+        </div>
+        {/* Hand & Pen Settings */}
+        <div className="mt-3">
+          <div className="text-xs text-gray-400 mb-1">Hand & Pen</div>
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-xs">
+              <span className="w-24 text-gray-300">Hand Size</span>
+              <input
+                type="range"
+                min={0.5}
+                max={3}
+                step={0.1}
+                value={handScale}
+                onChange={(e) => setHandScale(Number(e.target.value))}
+                className="flex-1"
+              />
+              <span className="w-10 text-right text-gray-300">{handScale.toFixed(1)}x</span>
+            </label>
+            <label className="flex items-center gap-2 text-xs">
+              <span className="w-24 text-gray-300">Pen Size</span>
+              <input
+                type="range"
+                min={0.5}
+                max={3}
+                step={0.1}
+                value={penScale}
+                onChange={(e) => setPenScale(Number(e.target.value))}
+                className="flex-1"
+              />
+              <span className="w-10 text-right text-gray-300">{penScale.toFixed(1)}x</span>
+            </label>
           </div>
         </div>
         {/* Zoom */}
@@ -1509,7 +1537,6 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
   );
 
   if (variant === 'floating') {
-    console.log('ProDrawEditor rendering floating variant with position:', winPos, 'and size:', winSize);
     const floating = (
       <div
         ref={wrapperRef}
@@ -1546,7 +1573,6 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
         </div>
       </div>
     );
-    console.log('ProDrawEditor creating portal for floating variant');
     return createPortal(floating, document.body);
   }
 

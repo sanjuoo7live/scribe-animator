@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>VTracer public worker test</title>
+  <style> body{font-family:system-ui; padding:16px;} .log{padding:8px; margin:6px 0; border-left:4px solid #0891b2; background:#ecfeff} .ok{border-left-color:#16a34a; background:#ecfdf5} .err{border-left-color:#dc2626; background:#fef2f2}</style>
+</head>
+<body>
+  <h1>VTracer public worker test</h1>
+  <div id="out"></div>
+  <script>
+    const out=document.getElementById('out'); const log=(m,c='')=>{const d=document.createElement('div'); d.className=`log ${c}`; d.textContent=m; out.appendChild(d); console.log(m);};
+    try{
+      log('Creating tiny ImageData...');
+      const w=16,h=16; const c=document.createElement('canvas'); c.width=w; c.height=h; const ctx=c.getContext('2d');
+      // draw simple pattern
+      ctx.fillStyle='#fff'; ctx.fillRect(0,0,w,h); ctx.fillStyle='#000'; ctx.fillRect(2,2,12,12);
+      const imgData = ctx.getImageData(0,0,w,h);
+      log('Starting worker /workers/vtracer-worker.js');
+      const worker = new Worker('/workers/vtracer-worker.js', { type: 'module' });
+      const timer = setTimeout(()=>{ try{worker.terminate()}catch{}; log('Timeout waiting for worker', 'err'); }, 20000);
+      worker.onmessage = (e)=>{
+        clearTimeout(timer);
+        if (e.data?.error){ log('Worker error: '+e.data.error, 'err'); return; }
+        const { paths, svg, engine } = e.data || {};
+        log(`OK. Engine: ${engine||'n/a'}, paths: ${(paths||[]).length}, svg: ${(svg||'').length} chars`, 'ok');
+        if (svg){ const holder=document.createElement('div'); holder.className='log'; holder.innerHTML = svg; out.appendChild(holder); }
+        try{worker.terminate()}catch{}
+      };
+      worker.onerror=(e)=>{ clearTimeout(timer); log('Worker onerror: '+(e?.message||e), 'err'); };
+      worker.postMessage({ imageData: imgData, options: { mode: 'spline', hierarchical: 'stacked', filterSpeckle: 4, colorPrecision: 6, gradientStep: 16, cornerThreshold: 60, segmentLength: 4, spliceThreshold: 45, source: 'npm' } });
+    }catch(e){ log('Setup error: '+(e?.message||e), 'err'); }
+  </script>
+</body>
+</html>

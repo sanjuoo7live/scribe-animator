@@ -21,6 +21,19 @@
 			"command": "cd frontend && npm start",
 			"isBackground": true,
 			"group": "build"
+		},
+		{
+			"label": "Start Frontend Dev Server",
+			"type": "shell",
+			"command": "cd frontend && npm start",
+			"isBackground": true,
+			"group": "build"
+		},
+		{
+			"label": "Install vtracer-wasm in frontend",
+			"type": "shell",
+			"command": "cd frontend && npm install vtracer-wasm",
+			"isBackground": false
 		}
 	]
 }

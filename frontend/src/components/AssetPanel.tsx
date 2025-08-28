@@ -17,6 +17,7 @@ import PerformanceAnalytics from './PerformanceAnalytics';
 import AIAssistant from './AIAssistant';
 import AssetLibraryPopup from './AssetLibraryPopup';
 import { IconDefinition } from '../data/iconLibrary';
+import SvgImporter from './SvgImporter';
 
 interface AssetCategory {
   id: string;
@@ -37,6 +38,7 @@ const AssetPanel: React.FC = () => {
     characters: false,
     props: false,
     images: false,
+  vectors: false,
     templates: false,
     sceneTemplates: false,
     plugins: false
@@ -55,6 +57,7 @@ const AssetPanel: React.FC = () => {
     { id: 'characters', name: 'Characters', icon: '👤', color: 'bg-purple-500', description: 'People & avatars' },
     { id: 'props', name: 'Props', icon: '🎭', color: 'bg-pink-500', description: 'Objects & icons' },
     { id: 'images', name: 'Images', icon: '🖼️', color: 'bg-indigo-500', description: 'Custom uploads' },
+  { id: 'vectors', name: 'Vectors', icon: '🧩', color: 'bg-emerald-600', description: 'SVG import & tracing' },
     
     // Audio Tools
     { id: 'audio', name: 'Audio', icon: '🎵', color: 'bg-red-500', description: 'Basic audio' },
@@ -73,7 +76,7 @@ const AssetPanel: React.FC = () => {
 
   const categoryGroups = {
     basics: { name: 'Basic Tools', categories: ['shapes', 'icons', 'text'] },
-    assets: { name: 'Visual Assets', categories: ['hands', 'characters', 'props', 'images'] },
+  assets: { name: 'Visual Assets', categories: ['hands', 'characters', 'props', 'images', 'vectors'] },
     audio: { name: 'Audio Tools', categories: ['audio', 'advancedAudio'] },
     templates: { name: 'Templates & Effects', categories: ['templates', 'sceneTemplates', 'plugins'] },
     advanced: { name: 'Advanced Tools', categories: ['collaborate', 'analytics', 'ai'] }
@@ -383,6 +386,41 @@ const AssetPanel: React.FC = () => {
                 </div>
               </div>
             </div>
+          ) : activeCategory === 'vectors' ? (
+            <div className="space-y-4">
+              <button
+                onClick={() => openPopup('vectors')}
+                className="asset-button-text w-full p-6 rounded-lg transition-all transform hover:scale-105 shadow-lg font-semibold"
+                style={{ 
+                  background: 'linear-gradient(135deg, #065F46, #10B981)',
+                  color: 'white',
+                  border: '2px solid #374151'
+                }}
+              >
+                <div className="text-xl font-bold mb-2" style={{ color: 'white' }}>🧩 Open Vector Importer</div>
+                <div className="text-sm mb-1" style={{ color: 'rgba(255, 255, 255, 0.9)' }}>Import SVG files or paste path data</div>
+                <div className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.75)' }}>• SVG → Canvas • Multi-path • Draw animation</div>
+              </button>
+
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-3 bg-gray-700 rounded-lg border border-gray-600">
+                  <div className="text-white font-medium mb-2">📥 Sources</div>
+                  <div className="space-y-1 text-gray-300">
+                    <div>• Upload .svg</div>
+                    <div>• Paste path d</div>
+                    <div>• Trace (soon)</div>
+                  </div>
+                </div>
+                <div className="p-3 bg-gray-700 rounded-lg border border-gray-600">
+                  <div className="text-white font-medium mb-2">✨ Benefits</div>
+                  <div className="space-y-1 text-gray-300">
+                    <div>• Crisp at any size</div>
+                    <div>• Animate strokes</div>
+                    <div>• Easy styling</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           ) : activeCategory === 'templates' ? (
             <div className="space-y-4">
               <button
@@ -568,6 +606,14 @@ const AssetPanel: React.FC = () => {
             </div>
           </div>
         </div>
+      </AssetLibraryPopup>
+
+      <AssetLibraryPopup
+        isOpen={openPopups.vectors}
+        onClose={() => closePopup('vectors')}
+        title="Vector Import - SVG to Paths"
+      >
+        <SvgImporter />
       </AssetLibraryPopup>
 
       <AssetLibraryPopup

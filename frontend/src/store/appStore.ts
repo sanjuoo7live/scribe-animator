@@ -2,7 +2,7 @@ import { create } from 'zustand';
 
 export interface SceneObject {
   id: string;
-  type: 'shape' | 'text' | 'image' | 'drawing' | 'drawPath' | 'videoEmbed';
+  type: 'shape' | 'text' | 'image' | 'drawing' | 'drawPath' | 'videoEmbed' | 'svgPath';
   x: number;
   y: number;
   width?: number;

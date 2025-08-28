@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>VTracer Official Web Engine Test</title>
+  <style>
+    body{font-family:system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding:16px;}
+    .log{padding:8px; margin:6px 0; border-left:4px solid #0ea5e9; background:#f0f9ff}
+    .ok{border-left-color:#16a34a; background:#ecfdf5}
+    .err{border-left-color:#dc2626; background:#fef2f2}
+  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="origin-trial" content="" />
+  <script>
+    // Ensure correct MIME on dev server: CRA serves .wasm as application/wasm
+  </script>
+  <script type="module">
+    const out = document.getElementById('out');
+    const log = (msg, cls='') => { const d=document.createElement('div'); d.className=`log ${cls}`; d.textContent=msg; out.appendChild(d); console.log(msg); };
+    try {
+      log('Importing /assets/tools/vtracer/web/vtracer_web.js ...');
+      const mod = await import('/assets/tools/vtracer/web/vtracer_web.js');
+      log('Imported module keys: ' + Object.keys(mod).join(', '), 'ok');
+      if (typeof mod.default === 'function') {
+        try { await mod.default('/assets/tools/vtracer/web/vtracer_web_bg.wasm'); log('Initialized via default(wasm)', 'ok'); } catch(e) { log('default() init not needed: '+(e?.message||e), ''); }
+      } else if (typeof mod.init === 'function') {
+        try { await mod.init('/assets/tools/vtracer/web/vtracer_web_bg.wasm'); log('Initialized via init(wasm)', 'ok'); } catch(e) { log('init() not needed: '+(e?.message||e), ''); }
+      }
+      if (typeof mod.convert_image_to_svg !== 'function') throw new Error('convert_image_to_svg not found');
+
+      // Build a 32x32 two-color test image for stable output
+      const w=32,h=32; const px=new Uint8Array(w*h*4);
+      for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+        const i=(y*w+x)*4; const on=((x>>3) + (y>>3)) % 2 === 0;
+        px[i]=on?255:255; px[i+1]=on?0:255; px[i+2]=on?0:255; px[i+3]=255;
+      }
+
+      // Safe default config (spline), matching our worker mapping
+      const color_precision = 6;
+      const filter_speckle = 4;
+      const gradient_step = 16;
+      const corner_threshold = 60;
+      const segment_length = 4.0;
+      const splice_threshold = 45;
+      const mode = 'spline';
+      const hierarchical = 'stacked';
+
+      let svg = '';
+      try {
+        const res = mod.convert_image_to_svg(px, w, h, color_precision, filter_speckle, gradient_step, corner_threshold, segment_length, splice_threshold, mode, hierarchical);
+        svg = res?.svg_data || '';
+        log(`Result (official web, spline) SVG ${svg?.length||0} chars`, 'ok');
+      } catch (e1) {
+        log('spline failed, trying none: '+(e1?.message||e1), '');
+        const res = mod.convert_image_to_svg(px, w, h, color_precision, filter_speckle, gradient_step, null, null, null, 'none', hierarchical);
+        svg = res?.svg_data || '';
+        log(`Result (official web, none) SVG ${svg?.length||0} chars`, 'ok');
+      }
+
+      const pre = document.createElement('div'); pre.className='log'; pre.innerHTML = svg; out.appendChild(pre);
+    } catch (e) {
+      log('Error: '+(e?.message||e), 'err');
+    }
+  </script>
+</head>
+<body>
+  <h1>VTracer Official Web Engine Test</h1>
+  <div id="out"></div>
+</body>
+</html>

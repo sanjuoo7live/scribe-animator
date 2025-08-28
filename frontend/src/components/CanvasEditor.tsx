@@ -1,5 +1,5 @@
 import React from 'react';
-import { Stage, Layer, Line, Text, Rect, Circle, Star, RegularPolygon, Arrow, Transformer, Group, Image as KonvaImage } from 'react-konva';
+import { Stage, Layer, Line, Text, Rect, Circle, Star, RegularPolygon, Arrow, Transformer, Group, Image as KonvaImage, Path as KonvaPath } from 'react-konva';
 import Konva from 'konva';
 import { useAppStore } from '../store/appStore';
 import CanvasSettings from './CanvasSettings';
@@ -159,6 +159,55 @@ const CanvasEditor: React.FC = () => {
   const [fitMode, setFitMode] = React.useState<'width' | 'contain'>('contain');
   const [canvasSize, setCanvasSize] = React.useState({ width: 800, height: 600 });
 
+  // Helpers for SVG path handling (length & bbox)
+  const getPathTotalLength = React.useCallback(() => {
+    const cache = new Map<string, number>();
+    return (d: string) => {
+      const cached = cache.get(d);
+      if (typeof cached === 'number') return cached;
+      try {
+        const svgNS = 'http://www.w3.org/2000/svg';
+        const path = document.createElementNS(svgNS, 'path');
+        path.setAttribute('d', d);
+        const len = path.getTotalLength();
+        cache.set(d, len);
+        return len;
+      } catch {
+        cache.set(d, 0);
+        return 0;
+      }
+    };
+  }, [])();
+
+  const measureSvgPath = React.useCallback((d: string) => {
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('width', '0');
+    svg.setAttribute('height', '0');
+    svg.style.position = 'absolute';
+    svg.style.left = '-99999px';
+    svg.style.top = '-99999px';
+    const path = document.createElementNS(svgNS, 'path');
+    path.setAttribute('d', d);
+    svg.appendChild(path);
+    document.body.appendChild(svg);
+    let bbox = { x: 0, y: 0, width: 100, height: 100 };
+    try {
+      const b = path.getBBox();
+      bbox = { x: b.x, y: b.y, width: Math.max(1, b.width), height: Math.max(1, b.height) };
+    } catch {}
+    document.body.removeChild(svg);
+    return bbox;
+  }, []);
+
+  // Helper to update selected object's animationType from UI
+  const setSelectedAnimation = React.useCallback((anim: 'none'|'fadeIn'|'slideIn'|'scaleIn'|'drawIn'|'pathFollow'|'typewriter') => {
+    if (!selectedObject || !currentProject) return;
+    const obj = currentProject.objects.find(o => o.id === selectedObject);
+    if (!obj) return;
+    updateObject(selectedObject, { animationType: anim });
+  }, [selectedObject, currentProject, updateObject]);
+
   // Pro Draw Editor (edit existing drawPath from canvas)
   // Deprecated: editor state (moved to Assets panel)
   // Pro editor removed from canvas flow
@@ -173,7 +222,6 @@ const CanvasEditor: React.FC = () => {
     const target = event.target as HTMLDivElement;
     // Track scroll position if needed for future features
     // Currently just handling the scroll event
-    console.log('Canvas scrolled to:', { x: target.scrollLeft, y: target.scrollTop });
   }, []);
 
   // Setup scroll listener for canvas container
@@ -249,8 +297,7 @@ const CanvasEditor: React.FC = () => {
 
   // Debug Settings visibility state
   React.useEffect(() => {
-    // eslint-disable-next-line no-console
-    console.log('[CanvasEditor] showCanvasSettings =', showCanvasSettings);
+    // Settings visibility tracking removed to prevent DevTools flickering
   }, [showCanvasSettings]);
 
   // Set initial position for text editor when opened
@@ -328,15 +375,21 @@ const CanvasEditor: React.FC = () => {
         for (let i = 0; i < last.points.length; i += 2) {
           pts.push({ x: last.points[i], y: last.points[i + 1] });
         }
+        // Normalize to tight bounds
+        const minX = Math.min(...pts.map(p => p.x));
+        const minY = Math.min(...pts.map(p => p.y));
+        const maxX = Math.max(...pts.map(p => p.x));
+        const maxY = Math.max(...pts.map(p => p.y));
+        const normPoints = pts.map(p => ({ x: p.x - minX, y: p.y - minY }));
         addObject({
           id: `draw-${Date.now()}`,
           type: 'drawPath',
-          x: 0,
-          y: 0,
-          width: 0,
-          height: 0,
+          x: minX,
+          y: minY,
+          width: Math.max(1, maxX - minX),
+          height: Math.max(1, maxY - minY),
           rotation: 0,
-          properties: { points: pts, strokeColor: last.stroke, strokeWidth: last.strokeWidth },
+          properties: { points: normPoints, strokeColor: last.stroke, strokeWidth: last.strokeWidth },
           animationStart: 0,
           animationDuration: currentProject?.duration || 5,
           animationType: 'none',
@@ -468,16 +521,22 @@ const CanvasEditor: React.FC = () => {
     for (let i = 0; i < last.points.length; i += 2) {
       points.push({ x: last.points[i], y: last.points[i + 1] });
     }
+    // Normalize to tight bounds
+    const minX = Math.min(...points.map(p => p.x));
+    const minY = Math.min(...points.map(p => p.y));
+    const maxX = Math.max(...points.map(p => p.x));
+    const maxY = Math.max(...points.map(p => p.y));
+    const normPoints = points.map(p => ({ x: p.x - minX, y: p.y - minY }));
     addObject({
       id: `draw-${Date.now()}`,
       type: 'drawPath',
-      x: 0,
-      y: 0,
-      width: 0,
-      height: 0,
+      x: minX,
+      y: minY,
+      width: Math.max(1, maxX - minX),
+      height: Math.max(1, maxY - minY),
       rotation: 0,
       properties: {
-        points,
+        points: normPoints,
         strokeColor: last.stroke,
         strokeWidth: last.strokeWidth,
         penType,
@@ -547,15 +606,37 @@ const CanvasEditor: React.FC = () => {
       const sx = baseWidth ? newWidth / baseWidth : 1;
       const sy = baseHeight ? newHeight / baseHeight : 1;
       const prevPoints = Array.isArray(obj.properties?.points) ? obj.properties.points : [];
-      const scaledPoints = prevPoints.map((p: any) => ({ x: p.x * sx, y: p.y * sy }));
-      updateObject(id, {
-        x: nx - ox,
-        y: ny - oy,
-        width: newWidth,
-        height: newHeight,
-        rotation,
-        properties: { ...obj.properties, points: scaledPoints },
-      });
+      let scaledPoints = prevPoints.map((p: any) => ({ x: p.x * sx, y: p.y * sy }));
+
+      // Normalize to a tight bounding box so the group frame matches visible content
+      if (scaledPoints.length > 0) {
+        const minX = Math.min(...scaledPoints.map((p: any) => p.x));
+        const minY = Math.min(...scaledPoints.map((p: any) => p.y));
+        const maxX = Math.max(...scaledPoints.map((p: any) => p.x));
+        const maxY = Math.max(...scaledPoints.map((p: any) => p.y));
+        const tightW = Math.max(1, maxX - minX);
+        const tightH = Math.max(1, maxY - minY);
+        // Rebase points to (0,0) within the group
+        scaledPoints = scaledPoints.map((p: any) => ({ x: p.x - minX, y: p.y - minY }));
+
+        updateObject(id, {
+          x: nx - ox + minX,
+          y: ny - oy + minY,
+          width: tightW,
+          height: tightH,
+          rotation,
+          properties: { ...obj.properties, points: scaledPoints },
+        });
+      } else {
+        updateObject(id, {
+          x: nx - ox,
+          y: ny - oy,
+          width: newWidth,
+          height: newHeight,
+          rotation,
+          properties: { ...obj.properties, points: scaledPoints },
+        });
+      }
   } else {
       // Default: offset-aware update using current offsets
       const ox = typeof node.offsetX === 'function' ? node.offsetX() : node.offsetX || 0;
@@ -575,6 +656,30 @@ const CanvasEditor: React.FC = () => {
     if (transformerRef.current && node) {
       transformerRef.current.nodes([node]);
       transformerRef.current.getLayer()?.batchDraw();
+    }
+
+    // Auto-trim legacy drawPath bounds to tight box to fix oversized selectors
+    const obj = currentProject?.objects.find(o => o.id === id);
+    if (obj && obj.type === 'drawPath' && Array.isArray(obj.properties?.points) && obj.properties.points.length > 0) {
+      const pts = obj.properties.points as { x: number; y: number }[];
+      const minX = Math.min(...pts.map(p => p.x));
+      const minY = Math.min(...pts.map(p => p.y));
+      const maxX = Math.max(...pts.map(p => p.x));
+      const maxY = Math.max(...pts.map(p => p.y));
+      const tightW = Math.max(1, maxX - minX);
+      const tightH = Math.max(1, maxY - minY);
+      if (minX !== 0 || minY !== 0) {
+        const normPoints = pts.map(p => ({ x: p.x - minX, y: p.y - minY }));
+        updateObject(id, {
+          x: obj.x + minX,
+          y: obj.y + minY,
+          width: tightW,
+          height: tightH,
+          properties: { ...obj.properties, points: normPoints },
+        });
+      } else if (!obj.width || !obj.height) {
+        updateObject(id, { width: tightW, height: tightH });
+      }
     }
   };
 
@@ -753,6 +858,30 @@ const CanvasEditor: React.FC = () => {
             {fitMode === 'width' ? '↔️ Fit Width' : '🧩 Fit Contain'}
           </button>
           <div className="w-px h-4 bg-gray-500 mx-2" />
+          {/* Quick SVG path adder (MVP) */}
+          <button className="px-3 py-1 rounded text-sm font-medium bg-gray-600 hover:bg-gray-500" title="Add SVG Path"
+            onClick={() => {
+              const d = window.prompt('Paste SVG path "d" attribute:');
+              if (!d) return;
+              const bbox = measureSvgPath(d);
+              addObject({
+                id: `svg-${Date.now()}`,
+                type: 'svgPath',
+                x: Math.max(0, 50),
+                y: Math.max(0, 50),
+                width: bbox.width,
+                height: bbox.height,
+                rotation: 0,
+                properties: {
+                  paths: [{ d, stroke: '#111827', strokeWidth: 3, fill: 'transparent' }],
+                },
+                animationType: 'drawIn',
+                animationStart: 0,
+                animationDuration: 2,
+                animationEasing: 'easeOut',
+              });
+            }}
+          >SVG</button>
           <button className={`px-3 py-1 rounded text-sm font-medium transition-colors ${canUndo() ? 'bg-gray-600 text-gray-300 hover:bg-gray-500' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`} onClick={canUndo() ? undo : undefined} disabled={!canUndo()} title="Undo (Ctrl/Cmd + Z)">↶ Undo</button>
           <button className={`px-3 py-1 rounded text-sm font-medium transition-colors ${canRedo() ? 'bg-gray-600 text-gray-300 hover:bg-gray-500' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`} onClick={canRedo() ? redo : undefined} disabled={!canRedo()} title="Redo (Ctrl/Cmd + Shift + Z)">↷ Redo</button>
           
@@ -764,9 +893,6 @@ const CanvasEditor: React.FC = () => {
           <button
             className="px-3 py-1 bg-purple-600 rounded hover:bg-purple-700 text-sm font-medium"
             onClick={() => {
-              // Debug: trace settings toggle
-              // eslint-disable-next-line no-console
-              console.log('[CanvasEditor] Settings button clicked');
               setShowCanvasSettings(true);
             }}
           >
@@ -1299,6 +1425,53 @@ const CanvasEditor: React.FC = () => {
                   );
                 }
 
+                if (obj.type === 'svgPath') {
+                  const groupX = animatedProps.x ?? obj.x;
+                  const groupY = animatedProps.y ?? obj.y;
+                  const paths = Array.isArray(obj.properties?.paths) ? obj.properties.paths : [];
+                  const draw = obj.animationType === 'drawIn';
+                  return (
+                    <Group
+                      key={obj.id}
+                      id={obj.id}
+                      x={groupX}
+                      y={groupY}
+                      rotation={obj.rotation || 0}
+                      scaleX={animatedProps.scaleX ?? 1}
+                      scaleY={animatedProps.scaleY ?? 1}
+                      opacity={animatedProps.opacity ?? 1}
+                      draggable={tool === 'select'}
+                      onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
+                      onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
+                      onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
+                    >
+                      {paths.map((p: any, idx: number) => {
+                        const d = p.d as string;
+                        const len = getPathTotalLength(d) || 0;
+                        const dash = draw && len > 0 ? [len, len] : undefined;
+                        const dashOffset = draw && len > 0 ? (1 - ep) * len : 0;
+            return (
+                          <KonvaPath
+                            key={`${obj.id}-p-${idx}`}
+                            data={d}
+                            x={0}
+                            y={0}
+                            stroke={isSelected ? '#4f46e5' : (p.stroke || '#111827')}
+                            strokeWidth={(p.strokeWidth ?? 3) + (isSelected ? 0.5 : 0)}
+                            fill={p.fill || 'transparent'}
+                            lineCap="round"
+                            lineJoin="round"
+                            dash={dash as any}
+                            dashOffset={dashOffset}
+              listening={false}
+              perfectDrawEnabled={false}
+                          />
+                        );
+                      })}
+                    </Group>
+                  );
+                }
+
                 if (obj.type === 'drawPath') {
                   const pts = obj.properties.points || [];
                   const assetSrc = obj.properties.assetSrc;
@@ -1336,13 +1509,13 @@ const CanvasEditor: React.FC = () => {
                         scaleY={animatedProps.scaleY ?? 1}
                         opacity={animatedProps.opacity ?? 1}
                         draggable={tool === 'select'}
-                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }}
+                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
                         onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
                         onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
                         clipX={0}
                         clipY={0}
-                        clipWidth={obj.width || 400}
-                        clipHeight={obj.height || 400}
+                        clipWidth={Math.max(1, obj.width || 1)}
+                        clipHeight={Math.max(1, obj.height || 1)}
                         // onDblClick disabled; re-edit from new flow
                       >
                         {/* Full opacity background image */}
@@ -1367,6 +1540,7 @@ const CanvasEditor: React.FC = () => {
                           onClick={() => {}}
                           onDragEnd={() => {}}
                           onTransformEnd={() => {}}
+                          interactive={false}
                         />
                         
                         {/* Mask: White path that reveals the image */}
@@ -1379,6 +1553,7 @@ const CanvasEditor: React.FC = () => {
                           lineJoin="round"
                           perfectDrawEnabled={false}
                           globalCompositeOperation="destination-in"
+                          listening={false}
                         />
                         
                         {/* Hand/Pen Asset - follows the drawing path */}
@@ -1398,19 +1573,7 @@ const CanvasEditor: React.FC = () => {
                           </>
                         )}
                         
-                        {/* Selection indicator - only show border when selected */}
-                        {isSelected && (
-                          <Rect
-                            x={0}
-                            y={0}
-                            width={obj.width || 400}
-                            height={obj.height || 400}
-                            stroke="#4f46e5"
-                            strokeWidth={2}
-                            fill="transparent"
-                            dash={[5, 5]}
-                          />
-                        )}
+                        {/* Selection indicator removed; Konva Transformer handles selection visuals */}
                       </Group>
                     );
                   }
@@ -1448,13 +1611,19 @@ const CanvasEditor: React.FC = () => {
                 return null;
               })}
 
-              <Transformer ref={transformerRef}
-                        keepRatio
+              {(() => {
+                const sel = currentProject?.objects.find(o => o.id === selectedObject);
+                const lockRatio = sel?.type === 'text' || sel?.type === 'image' || (sel?.type === 'drawPath' && !!sel.properties?.assetSrc);
+                return (
+                  <Transformer ref={transformerRef}
+                        keepRatio={!!lockRatio}
                         boundBoxFunc={(oldBox, newBox) => {
                           // Lock aspect ratio by default to avoid text distortion; allow tiny sizes prevention
                           if (newBox.width < 5 || newBox.height < 5) return oldBox;
                           return newBox;
                         }} />
+                );
+              })()}
             </Layer>
           </Stage>
         </div>
@@ -1781,6 +1950,33 @@ const CanvasEditor: React.FC = () => {
             </div>
           </div>
         </div>
+
+  )}
+
+      {/* Animation quick selector for selected object (outside of text editor overlay) */}
+      {selectedObject && currentProject && (
+        <div className="mt-3 p-2 bg-gray-900/60 rounded border border-gray-700">
+          <div className="text-xs text-gray-400 mb-1">Animation</div>
+          <div className="flex flex-wrap gap-2">
+            {(['none','fadeIn','slideIn','scaleIn','drawIn','typewriter'] as const).map((a) => {
+              const sel = currentProject.objects.find(o => o.id === selectedObject);
+              const permitted = a === 'typewriter' ? sel?.type === 'text' : a === 'drawIn' ? sel?.type === 'drawPath' : true;
+              const isActive = sel?.animationType === a;
+              return (
+                <button
+                  key={a}
+                  className={`px-2 py-1 rounded text-xs ${isActive ? 'bg-emerald-600' : 'bg-gray-700'} ${!permitted ? 'opacity-40 cursor-not-allowed' : ''}`}
+                  onClick={() => { if (permitted) setSelectedAnimation(a); }}
+                  disabled={!permitted}
+                  title={a === 'typewriter' ? 'Character-by-character reveal (Text only)' : a === 'drawIn' ? 'Progressive reveal along path (Draw Path only)' : a}
+                >
+                  {a}
+                </button>
+              );
+            })}
+          </div>
+          <div className="text-[10px] text-gray-500 mt-1">Tip: Use typewriter for Text and drawIn for Draw Path.</div>
+        </div>
       )}
 
       <CanvasSettings isOpen={showCanvasSettings} onClose={() => setShowCanvasSettings(false)} />
@@ -1801,7 +1997,8 @@ const CanvasImage: React.FC<{
   onDragEnd: (id: string, node: any) => void;
   onTransformEnd: (id: string, node: any) => void;
   onDblClickImage?: (obj: any) => void;
-}> = ({ id, obj, animatedProps, isSelected, tool, onClick, onDragEnd, onTransformEnd, onDblClickImage }) => {
+  interactive?: boolean;
+}> = ({ id, obj, animatedProps, isSelected, tool, onClick, onDragEnd, onTransformEnd, onDblClickImage, interactive = true }) => {
   const [image, setImage] = React.useState<HTMLImageElement | null>(null);
   const src = obj.properties?.src as string | undefined;
 
@@ -1837,11 +2034,12 @@ const CanvasImage: React.FC<{
         fill={isSelected ? '#e0e7ff' : '#f3f4f6'}
         stroke={isSelected ? '#4f46e5' : '#9ca3af'}
         strokeWidth={2}
-        draggable={tool === 'select'}
-        onClick={(e) => { e.cancelBubble = true; onClick(id, e.target); }}
-  onDblClick={(e) => { e.cancelBubble = true; onDblClickImage && onDblClickImage(obj); }}
-        onDragEnd={(e) => onDragEnd(id, e.currentTarget)}
-        onTransformEnd={(e) => onTransformEnd(id, e.currentTarget)}
+        draggable={interactive && tool === 'select'}
+        listening={interactive}
+        onClick={interactive ? (e) => { e.cancelBubble = true; onClick(id, e.target); } : undefined}
+        onDblClick={interactive ? (e) => { e.cancelBubble = true; onDblClickImage && onDblClickImage(obj); } : undefined}
+        onDragEnd={interactive ? (e) => onDragEnd(id, e.currentTarget) : undefined}
+        onTransformEnd={interactive ? (e) => onTransformEnd(id, e.currentTarget) : undefined}
       />
     );
   }
@@ -1861,11 +2059,12 @@ const CanvasImage: React.FC<{
       opacity={animatedProps.opacity ?? 1}
       stroke={isSelected ? '#4f46e5' : undefined}
       strokeWidth={isSelected ? 1 : 0}
-      draggable={tool === 'select'}
-      onClick={(e) => { e.cancelBubble = true; onClick(id, e.target); }}
-  onDblClick={(e) => { e.cancelBubble = true; onDblClickImage && onDblClickImage(obj); }}
-      onDragEnd={(e) => onDragEnd(id, e.currentTarget)}
-      onTransformEnd={(e) => onTransformEnd(id, e.currentTarget)}
+  draggable={interactive && tool === 'select'}
+  listening={interactive}
+  onClick={interactive ? (e) => { e.cancelBubble = true; onClick(id, e.target); } : undefined}
+  onDblClick={interactive ? (e) => { e.cancelBubble = true; onDblClickImage && onDblClickImage(obj); } : undefined}
+  onDragEnd={interactive ? (e) => onDragEnd(id, e.currentTarget) : undefined}
+  onTransformEnd={interactive ? (e) => onTransformEnd(id, e.currentTarget) : undefined}
     />
   );
 };

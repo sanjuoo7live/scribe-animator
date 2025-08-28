@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SVG vs Canvas Compare (Outline → Fill → Move)</title>
+  <style>
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; background:#0b1020; color:#e5e7eb; }
+    header { padding: 12px 16px; background:#0f172a; border-bottom:1px solid #1f2937; display:flex; align-items:center; justify-content:space-between; }
+    main { display:grid; grid-template-columns: 380px 1fr; gap: 12px; padding: 12px; }
+    .panel { background:#0f172a; border:1px solid #1f2937; border-radius: 8px; padding: 12px; }
+    .row { display:flex; align-items:center; gap:8px; margin: 6px 0; flex-wrap: wrap; }
+    .btn { background:#374151; color:#e5e7eb; border:1px solid #4b5563; border-radius:6px; padding:6px 10px; cursor:pointer; }
+    .btn:hover { background:#4b5563; }
+    .ok { background:#065f46; border-color:#059669; }
+    .ok:hover { background:#047857; }
+    .warn { background:#7c2d12; border-color:#fb923c; }
+    input[type="range"] { width: 180px; }
+    textarea { width:100%; height:140px; background:#0b132b; color:#e5e7eb; border:1px solid #334155; border-radius:6px; padding:8px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size:12px; }
+  .cols { display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+    .viewport { background:#ffffff; border:1px solid #334155; border-radius: 8px; height: 520px; display:flex; align-items:center; justify-content:center; overflow:hidden; position:relative; }
+    .small { font-size:12px; color:#9ca3af; }
+    .metric { font-size:12px; background:#111827; border:1px solid #374151; padding:4px 6px; border-radius:6px; }
+    .list { max-height:120px; overflow:auto; font-size:12px; background:#0b132b; border:1px solid #334155; padding:6px; border-radius:6px; }
+    .hint { color:#a7f3d0; font-size:11px; margin-top:6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div><strong>SVG vs Canvas Compare</strong> • Outline → Fill → Move</div>
+    <div class="row">
+      <span class="metric">Progress: <span id="pct">0%</span></span>
+      <input id="progress" type="range" min="0" max="1000" value="0" />
+      <button class="btn" id="play">Play</button>
+      <button class="btn" id="stop">Stop</button>
+    </div>
+  </header>
+  <main>
+    <div class="panel">
+      <div class="row"><strong>Input</strong></div>
+      <div class="row">
+        <input id="file" type="file" accept=".svg,image/svg+xml" />
+        <button class="btn" id="load">Load</button>
+        <button class="btn warn" id="clear">Clear</button>
+      </div>
+      <textarea id="src" placeholder="Paste SVG markup here (&lt;svg&gt;...&lt;/svg&gt;)"></textarea>
+
+      <div class="row">
+        <label class="small"><input id="split" type="checkbox" checked /> Split multi-move paths (kit-of-parts)</label>
+      </div>
+      <div class="row">
+        <label class="small">Min area % of largest</label>
+        <input id="minAreaPct" type="range" min="0" max="100" value="0" />
+        <span class="metric" id="areaVal">0%</span>
+      </div>
+      <div class="row">
+        <label class="small">Keep top N by length</label>
+        <input id="topN" type="number" min="0" step="1" value="0" style="width:70px" />
+        <span class="small">0 = all</span>
+      </div>
+      <div class="row">
+        <label class="small"><input id="useVivus" type="checkbox" checked /> Use Vivus for DOM-SVG animation</label>
+      </div>
+      <div class="row">
+        <button class="btn ok" id="build">Build Preview</button>
+      </div>
+
+      <div class="row small">
+        <div class="metric">Paths: <span id="count">0</span></div>
+        <div class="metric">Total length: <span id="totlen">0</span></div>
+      </div>
+      <div class="list" id="plist"></div>
+      <div class="hint">If Canvas diverges (scribbles/noise) while SVG is clean, note which path index it starts on. Filters help isolate noisy paths.</div>
+    </div>
+
+    <div class="panel">
+      <div class="cols">
+        <div>
+          <div class="small">DOM-SVG (left) — uses path length + dash, fills when complete</div>
+          <div id="svgBox" class="viewport"></div>
+        </div>
+        <div>
+          <div class="small">Canvas (right) — same logic via Canvas 2D</div>
+          <canvas id="cvs" class="viewport"></canvas>
+        </div>
+        <div>
+          <div class="row" style="justify-content:space-between; align-items:center;">
+            <div class="small">Resvg reference (WASM raster)</div>
+            <button class="btn" id="resvgRender">Render</button>
+          </div>
+          <div class="viewport">
+            <img id="resvgOut" alt="resvg output" style="max-width:100%; max-height:100%; object-fit:contain;" />
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+  <!-- Resvg WASM for high-fidelity reference rendering -->
+  <script src="https://unpkg.com/@resvg/resvg-wasm"></script>
+  <!-- Vivus for DOM-SVG stroke animation -->
+  <script src="https://unpkg.com/vivus@0.4.6/dist/vivus.min.js"></script>
+
+  <script>
+    const $ = sel => document.querySelector(sel);
+    const srcEl = $('#src');
+    const fileEl = $('#file');
+    const loadBtn = $('#load');
+    const clearBtn = $('#clear');
+    const buildBtn = $('#build');
+    const splitEl = $('#split');
+    const minAreaEl = $('#minAreaPct');
+    const areaVal = $('#areaVal');
+    const topNEl = $('#topN');
+    const svgBox = $('#svgBox');
+    const cvs = $('#cvs');
+    const progressEl = $('#progress');
+    const pctEl = $('#pct');
+    const playBtn = $('#play');
+    const stopBtn = $('#stop');
+    const countEl = $('#count');
+    const totlenEl = $('#totlen');
+    const plistEl = $('#plist');
+  const useVivusEl = document.getElementById('useVivus');
+  const resvgBtn = document.getElementById('resvgRender');
+  const resvgImg = document.getElementById('resvgOut');
+
+    let paths = []; // { d, stroke, strokeWidth, fill }
+    let lens = [];  // per-path total length
+    let totalLen = 0;
+    let playing = false;
+    let raf = 0;
+  let vbState = { x: 0, y: 0, w: 800, h: 600 };
+  let lastResvgUrl = null;
+  let resvgLive = true; // animate Resvg during play (throttled)
+  let lastResvgAt = 0;
+  let viv = null; // Vivus instance
+  let vivusMode = true; // default from checkbox
+  let origFills = []; // original fills per path
+
+    fileEl.addEventListener('change', async () => {
+      const f = fileEl.files && fileEl.files[0];
+      if (!f) return;
+      srcEl.value = await f.text();
+    });
+    loadBtn.addEventListener('click', () => {
+      try {
+        const p = new DOMParser().parseFromString(srcEl.value, 'image/svg+xml');
+        const err = p.querySelector('parsererror');
+        if (err) alert('Invalid SVG');
+        else alert('SVG parsed. Now click Build Preview.');
+      } catch {}
+    });
+    clearBtn.addEventListener('click', () => { srcEl.value=''; svgBox.innerHTML=''; const g=cvs.getContext('2d'); g && g.clearRect(0,0,cvs.width,cvs.height); });
+
+    minAreaEl.addEventListener('input', () => { areaVal.textContent = minAreaEl.value + '%'; });
+    areaVal.textContent = minAreaEl.value + '%';
+
+    function parseSvg(text) {
+      const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+      const svg = doc.querySelector('svg');
+      if (!svg) return { vb: { x:0,y:0,w:800,h:600 }, items: [] };
+      const vbAttr = svg.getAttribute('viewBox');
+      let vb = { x:0, y:0, w: 800, h: 600 };
+      if (vbAttr) {
+        const a = vbAttr.trim().split(/[\s,]+/).map(Number); if (a.length===4 && a.every(n=>!isNaN(n))) vb = { x:a[0], y:a[1], w:Math.max(1,a[2]), h:Math.max(1,a[3]) };
+      } else {
+        const w = Number(svg.getAttribute('width')); const h = Number(svg.getAttribute('height'));
+        if (!isNaN(w) && !isNaN(h)) vb = { x:0, y:0, w:Math.max(1,w), h:Math.max(1,h) };
+      }
+      // Transform helpers
+      const I = [1,0,0,1,0,0];
+      const mul = (m1,m2)=>[ m1[0]*m2[0]+m1[2]*m2[1], m1[1]*m2[0]+m1[3]*m2[1], m1[0]*m2[2]+m1[2]*m2[3], m1[1]*m2[2]+m1[3]*m2[3], m1[0]*m2[4]+m1[2]*m2[5]+m1[4], m1[1]*m2[4]+m1[3]*m2[5]+m1[5] ];
+      const translate = (tx,ty)=>[1,0,0,1,tx,ty];
+      const scale = (sx,sy)=>[sx,0,0,sy,0,0];
+      const rotate = (deg)=>{ const r=deg*Math.PI/180, c=Math.cos(r), s=Math.sin(r); return [c,s,-s,c,0,0]; };
+      const skewX = (deg)=>{ const t=Math.tan(deg*Math.PI/180); return [1,0,t,1,0,0]; };
+      const skewY = (deg)=>{ const t=Math.tan(deg*Math.PI/180); return [1,t,0,1,0,0]; };
+      const parseTransform = (str)=>{
+        if (!str) return I; let m=I; const re=/(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)/g; let match;
+        while ((match=re.exec(str))) { const fn=match[1]; const args=match[2].split(/[\s,]+/).map(Number).filter(n=>!isNaN(n)); let t=I;
+          switch(fn){
+            case 'matrix': if (args.length===6) t=[args[0],args[1],args[2],args[3],args[4],args[5]]; break;
+            case 'translate': t=translate(args[0]||0,args[1]||0); break;
+            case 'scale': t=scale(args[0]||1, args.length>1? args[1] : (args[0]||1)); break;
+            case 'rotate': t = args.length>2 ? mul(mul(translate(args[1],args[2]), rotate(args[0]||0)), translate(-args[1],-args[2])) : rotate(args[0]||0); break;
+            case 'skewX': t=skewX(args[0]||0); break;
+            case 'skewY': t=skewY(args[0]||0); break;
+          }
+          m = mul(m,t);
+        }
+        return m;
+      };
+      const getCtm = (el)=>{
+        let chain=[]; let p=el; while(p && p.nodeName.toLowerCase()!=='html'){ chain.unshift(p); p=p.parentElement; }
+        let m = I; // viewBox rebase as translate(-vb.x, -vb.y)
+        m = mul(m, translate(-vb.x, -vb.y));
+        for (const node of chain) m = mul(m, parseTransform(node.getAttribute('transform')));
+        return m;
+      };
+
+      const items = [];
+      const visit = (el)=>{
+        if (el.nodeName.toLowerCase()==='path') {
+          const d = el.getAttribute('d')||'';
+          let fill = (el.getAttribute('fill')||'').trim();
+          let stroke = (el.getAttribute('stroke')||'').trim();
+          const sw = Number(el.getAttribute('stroke-width')||'1');
+          if (!stroke) stroke = '#111827';
+          if (!fill) fill = 'transparent';
+          const m = getCtm(el);
+          items.push({ d, fill, stroke, strokeWidth: isNaN(sw)?1:sw, m });
+        }
+        Array.from(el.children).forEach(visit);
+      };
+      visit(svg);
+      return { vb, items };
+    }
+
+    function splitPathD(d) {
+      if (!d) return [];
+  const norm = d.replace(/\s+/g, ' ').trim();
+  // Split ONLY on absolute 'M' to preserve relative 'm' subpaths
+  const parts = norm.split(/(?=M(?=[\s,\-\d\.]))/g).filter(Boolean);
+  if (parts.length <= 1) return [norm];
+  return parts.map(s => s.trim());
+    }
+
+    function build() {
+      const text = srcEl.value.trim();
+      if (!text) { alert('Paste SVG first.'); return; }
+      const { vb, items } = parseSvg(text);
+      vbState = { x: vb.x, y: vb.y, w: Math.max(1, vb.w), h: Math.max(1, vb.h) };
+      // Split if requested
+    let list = [];
+      for (const it of items) {
+        if (splitEl.checked) {
+          const parts = splitPathD(it.d);
+      for (const d of parts) list.push({ d, fill: it.fill, stroke: it.stroke, strokeWidth: it.strokeWidth, m: it.m });
+        } else {
+      list.push(it);
+        }
+      }
+
+      // Compute bbox area for filtering using a hidden SVG
+      const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      s.setAttribute('width','0'); s.setAttribute('height','0'); s.style.position='absolute'; s.style.left='-99999px'; s.style.top='-99999px';
+      document.body.appendChild(s);
+      const areas = list.map(it => { try { const p = document.createElementNS(s.namespaceURI,'path'); p.setAttribute('d', it.d); s.appendChild(p); const b = p.getBBox(); s.removeChild(p); return Math.max(1, b.width*b.height); } catch { return 1; } });
+      document.body.removeChild(s);
+      const maxArea = areas.reduce((a,b)=>Math.max(a,b),1);
+      const minArea = maxArea * (Number(minAreaEl.value)/100);
+      let filtered = list.filter((_,i)=>areas[i] >= minArea);
+
+      // Sort by length (longest first) and cap topN if set
+      const withLen = filtered.map((it,i)=>({ i, it, score: it.d.length }));
+      withLen.sort((a,b)=>b.score - a.score);
+      filtered = withLen.map(x=>x.it);
+      const n = Math.max(0, Number(topNEl.value)||0);
+      if (n>0) filtered = filtered.slice(0, n);
+
+      // Save
+      paths = filtered;
+
+      // Build DOM-SVG viewport
+      svgBox.innerHTML = '';
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', `${vb.x} ${vb.y} ${Math.max(1,vb.w)} ${Math.max(1,vb.h)}`);
+      svg.setAttribute('width','100%'); svg.setAttribute('height','100%');
+      svg.setAttribute('id','vivusSvg');
+      svgBox.appendChild(svg);
+      origFills = [];
+      for (const p of paths) {
+        const el = document.createElementNS(svg.namespaceURI, 'path');
+        el.setAttribute('d', p.d);
+        el.setAttribute('stroke', p.stroke || '#111827');
+        el.setAttribute('stroke-width', String(p.strokeWidth || 2));
+        el.setAttribute('fill', p.fill || 'transparent');
+        el.setAttribute('stroke-linecap', 'round');
+        el.setAttribute('stroke-linejoin', 'round');
+        if (p.m) el.setAttribute('transform', `matrix(${p.m[0]} ${p.m[1]} ${p.m[2]} ${p.m[3]} ${p.m[4]} ${p.m[5]})`);
+        svg.appendChild(el);
+        origFills.push(p.fill || 'transparent');
+      }
+
+      // Measure lengths approximated in transformed space (sample points)
+      const domPaths = Array.from(svg.querySelectorAll('path'));
+      lens = domPaths.map(pth=>{
+        try {
+          const L = pth.getTotalLength();
+          if (!isFinite(L) || L<=0) return 0;
+          const steps = Math.max(32, Math.min(220, Math.round(L/6)));
+          let prev = pth.getPointAtLength(0);
+          let acc = 0;
+          for (let i=1;i<=steps;i++){
+            const pt = pth.getPointAtLength((i/steps)*L);
+            const dx = pt.x - prev.x; const dy = pt.y - prev.y;
+            acc += Math.hypot(dx, dy);
+            prev = pt;
+          }
+          return acc;
+        } catch { return 0; }
+      });
+      totalLen = lens.reduce((a,b)=>a+b,0);
+      countEl.textContent = String(paths.length);
+      totlenEl.textContent = totalLen.toFixed(1);
+      plistEl.innerHTML = lens.map((l,i)=>`#${i} len=${l.toFixed(1)}`).join('<br/>');
+
+  // Resize canvas to match box
+      const rect = svgBox.getBoundingClientRect();
+      cvs.width = Math.max(10, Math.floor(rect.width));
+      cvs.height = Math.max(10, Math.floor(rect.height));
+
+      // Reset progress
+      progressEl.value = 0; pctEl.textContent = '0%';
+  // (Re)create Vivus instance if enabled
+  try { if (viv) { viv.stop(); viv = null; } } catch {}
+  vivusMode = !!(useVivusEl && useVivusEl.checked);
+  if (vivusMode && window.Vivus) {
+    try {
+      viv = new window.Vivus(svg, {
+        type: 'oneByOne',
+        start: 'manual',
+        duration: Math.max(30, Math.min(400, Math.round((totalLen||1)/3)))
+      });
+    } catch (e) { console.warn('Vivus init failed', e); viv = null; }
+  }
+  update(0);
+  // Also render initial Resvg frame
+  queueResvg(0);
+    }
+
+  function update(ep) {
+      // DOM-SVG side
+  const svgEl1 = svgBox.querySelector('svg');
+  const domPaths = svgEl1 ? Array.from(svgEl1.querySelectorAll('path')) : [];
+      const target = ep * totalLen;
+      if (vivusMode && viv && typeof viv.setFrameProgress === 'function') {
+        try { viv.setFrameProgress(ep); } catch {}
+        let consumed = 0;
+        for (let i=0;i<domPaths.length;i++) {
+          const el = domPaths[i];
+          const len = lens[i] || 0;
+          const start = consumed;
+          const end = start + len;
+          const original = origFills[i] || 'transparent';
+          if (totalLen<=0 || len<=0) {
+            el.setAttribute('fill', original);
+          } else if (target >= end) {
+            if (original && original!=='none' && original!=='transparent') el.setAttribute('fill', original);
+          } else {
+            el.setAttribute('fill', 'transparent');
+          }
+          consumed += len;
+        }
+      } else {
+        let consumed = 0;
+        for (let i=0;i<domPaths.length;i++) {
+          const el = domPaths[i];
+          const len = lens[i] || 0;
+          const start = consumed;
+          const end = start + len;
+          if (len<=0 || totalLen<=0) { el.removeAttribute('stroke-dasharray'); el.removeAttribute('stroke-dashoffset'); continue; }
+          if (target <= start) {
+            el.setAttribute('stroke-dasharray', `${len} ${len}`);
+            el.setAttribute('stroke-dashoffset', `${len}`);
+            el.setAttribute('fill', 'transparent');
+          } else if (target >= end) {
+            el.removeAttribute('stroke-dasharray');
+            el.removeAttribute('stroke-dashoffset');
+            const wantFill = el.getAttribute('fill') && el.getAttribute('fill')!=='transparent' && el.getAttribute('fill')!=='none';
+            if (wantFill) el.setAttribute('fill', el.getAttribute('fill'));
+          } else {
+            const local = Math.max(0, Math.min(len, target - start));
+            el.setAttribute('stroke-dasharray', `${len} ${len}`);
+            el.setAttribute('stroke-dashoffset', `${Math.max(0, len - local)}`);
+            el.setAttribute('fill', 'transparent');
+          }
+          consumed += len;
+        }
+      }
+
+      // Canvas side
+      const g = cvs.getContext('2d');
+      g.clearRect(0,0,cvs.width,cvs.height);
+      // Draw white background
+      g.fillStyle = '#ffffff';
+      g.fillRect(0,0,cvs.width,cvs.height);
+      // Build an offscreen SVG for Path2D conversion and viewBox mapping
+  const svgEl2 = svgBox.querySelector('svg');
+  const vbAttr = svgEl2 ? svgEl2.getAttribute('viewBox') : null;
+      let vb = { x:0, y:0, w:1, h:1 };
+      if (vbAttr) {
+        const a = vbAttr.trim().split(/[\s,]+/).map(Number);
+        vb = { x:a[0], y:a[1], w:Math.max(1,a[2]), h:Math.max(1,a[3]) };
+      }
+      // Map vb to canvas size
+  const scaleX = cvs.width / vb.w;
+  const scaleY = cvs.height / vb.h;
+      g.save();
+      g.translate(-vb.x*scaleX, -vb.y*scaleY);
+      g.scale(scaleX, scaleY);
+
+      let consumed2 = 0;
+      for (let i=0;i<paths.length;i++) {
+        const p = paths[i];
+        const len = lens[i] || 0;
+        const start = consumed2;
+        const end = start + len;
+        const target = ep * totalLen;
+        // Path2D from d
+        let path;
+        try { path = new Path2D(p.d); } catch { continue; }
+        g.lineWidth = p.strokeWidth || 2;
+        g.lineCap = 'round';
+        g.lineJoin = 'round';
+        g.strokeStyle = p.stroke || '#111827';
+        // Apply per-path transform
+        if (p.m) { g.save(); g.transform(p.m[0], p.m[1], p.m[2], p.m[3], p.m[4], p.m[5]); }
+
+        if (len>0 && totalLen>0) {
+          if (target <= start) {
+            g.setLineDash([len, len]);
+            g.lineDashOffset = len;
+            g.stroke(path);
+          } else if (target >= end) {
+            g.setLineDash([]);
+            g.stroke(path);
+            // fill once fully done
+            if (p.fill && p.fill!=='none' && p.fill!=='transparent') {
+              g.fillStyle = p.fill; g.fill(path);
+            }
+          } else {
+            const local = Math.max(0, Math.min(len, target - start));
+            g.setLineDash([len, len]);
+            g.lineDashOffset = Math.max(0, len - local);
+            g.stroke(path);
+          }
+        } else {
+          g.stroke(path);
+        }
+        if (p.m) { g.restore(); }
+        consumed2 += len;
+      }
+      g.restore();
+
+  // Queue Resvg update when playing or scrubbing
+  queueResvg(ep);
+    }
+
+    buildBtn.addEventListener('click', build);
+    // Toggle Vivus mode dynamically
+    (function attachVivusToggle(){
+      const el = document.getElementById('useVivus');
+      if (!el) return;
+      el.addEventListener('change', ()=>{
+        vivusMode = !!el.checked;
+        try { if (viv) { viv.stop(); viv = null; } } catch {}
+        // Recreate instance if turning on
+        if (vivusMode && window.Vivus) {
+          const svg = svgBox.querySelector('svg');
+          if (svg) {
+            try {
+              viv = new window.Vivus(svg, { type:'oneByOne', start:'manual', duration: Math.max(30, Math.min(400, Math.round((totalLen||1)/3))) });
+            } catch (e) { console.warn('Vivus init failed', e); }
+          }
+        }
+        const ep = Number(progressEl.value)/1000; pctEl.textContent = Math.round(ep*100)+'%'; update(ep);
+      });
+    })();
+    progressEl.addEventListener('input', ()=>{
+      const ep = Number(progressEl.value)/1000; pctEl.textContent = Math.round(ep*100)+'%'; update(ep);
+    });
+
+    function tick(ts0) {
+      if (!playing) return; const v = Number(progressEl.value);
+      const next = Math.min(1000, v + 8); // ~125 frames to full
+      progressEl.value = String(next);
+      const ep = next/1000; pctEl.textContent = Math.round(ep*100)+'%'; update(ep);
+      if (next >= 1000) { playing = false; return; }
+      raf = requestAnimationFrame(tick);
+    }
+    playBtn.addEventListener('click', ()=>{ if (!paths.length) return; playing = true; cancelAnimationFrame(raf); raf = requestAnimationFrame(tick); });
+    stopBtn.addEventListener('click', ()=>{ playing = false; cancelAnimationFrame(raf); });
+
+    // --- Resvg (WASM) integration ---
+    let resvgReady = null;
+    (async function initResvg(){
+      if (window.resvg && typeof window.resvg.initWasm === 'function') {
+        try {
+          // Prefer local if it truly exists and has correct content-type; else fallback to CDN
+          const localUrl = '/vendor/resvg/index_bg.wasm';
+          let wasmUrl = 'https://unpkg.com/@resvg/resvg-wasm/index_bg.wasm';
+          try {
+            const resp = await fetch(localUrl, { method: 'GET' });
+            const ct = resp.headers.get('content-type') || '';
+            if (resp.ok && ct.includes('application/wasm')) {
+              wasmUrl = localUrl;
+            }
+          } catch {}
+          resvgReady = window.resvg.initWasm(fetch(wasmUrl));
+          await resvgReady;
+        } catch (e) {
+          console.warn('Resvg init failed', e);
+        }
+      } else {
+        console.warn('Resvg WASM script not loaded');
+      }
+    })();
+
+    if (resvgBtn) {
+      resvgBtn.addEventListener('click', async () => {
+        const svgText = srcEl.value.trim();
+        if (!svgText) { alert('Paste SVG first.'); return; }
+        try {
+          if (!window.resvg || !window.resvg.Resvg) throw new Error('Resvg not available');
+          if (resvgReady) await resvgReady;
+          // Match output width to the left viewport for apples-to-apples
+          const rect = svgBox.getBoundingClientRect();
+          const opts = {
+            fitTo: { mode: 'width', value: Math.max(1, Math.floor(rect.width)) }
+          };
+          const r = new window.resvg.Resvg(svgText, opts);
+          const out = r.render();
+          const bytes = (out && typeof out.asPng === 'function') ? out.asPng() : out;
+          const blob = new Blob([bytes], { type: 'image/png' });
+          if (lastResvgUrl) { try { URL.revokeObjectURL(lastResvgUrl); } catch {} }
+          const url = URL.createObjectURL(blob);
+          lastResvgUrl = url;
+          if (resvgImg) resvgImg.src = url;
+        } catch (e) {
+          console.error(e);
+          alert('Resvg render failed: ' + (e && e.message ? e.message : e));
+        }
+      });
+    }
+
+    // Build a dashed SVG snapshot at progress ep and rasterize with Resvg
+    function buildSvgAt(ep) {
+      if (!paths.length) return '';
+      const header = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${vbState.x} ${vbState.y} ${vbState.w} ${vbState.h}" width="${vbState.w}" height="${vbState.h}">`;
+      const target = ep * totalLen;
+      let consumed = 0;
+      const body = paths.map((p, i) => {
+        const len = lens[i] || 0;
+        let fill = (p.fill && p.fill!=='none') ? p.fill : 'transparent';
+        let dash = '';
+        let dashOff = '';
+        if (len>0 && totalLen>0) {
+          const start = consumed;
+          const end = start + len;
+          if (target <= start) {
+            dash = ` stroke-dasharray="${len} ${len}"`;
+            dashOff = ` stroke-dashoffset="${len}"`;
+            fill = 'transparent';
+          } else if (target >= end) {
+            // fully revealed; keep fill
+          } else {
+            const local = Math.max(0, Math.min(len, target - start));
+            dash = ` stroke-dasharray="${len} ${len}"`;
+            dashOff = ` stroke-dashoffset="${Math.max(0, len - local)}"`;
+            fill = 'transparent';
+          }
+          consumed += len;
+        }
+        const stroke = p.stroke || '#111827';
+        const sw = p.strokeWidth || 2;
+        const tf = p.m ? ` transform="matrix(${p.m[0]} ${p.m[1]} ${p.m[2]} ${p.m[3]} ${p.m[4]} ${p.m[5]})"` : '';
+        return `<path d="${p.d.replace(/"/g,'&quot;')}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"${dash}${dashOff}${tf}/>`;
+      }).join('');
+      return header + body + '</svg>';
+    }
+
+    async function renderResvgAt(ep) {
+      try {
+        if (!window.resvg || !window.resvg.Resvg) return;
+        if (resvgReady) await resvgReady;
+        const svgText = buildSvgAt(ep);
+        if (!svgText) return;
+        const rect = svgBox.getBoundingClientRect();
+        const opts = { fitTo: { mode: 'width', value: Math.max(1, Math.floor(rect.width)) } };
+        const r = new window.resvg.Resvg(svgText, opts);
+        const out = r.render();
+        const bytes = (out && typeof out.asPng === 'function') ? out.asPng() : out;
+        const blob = new Blob([bytes], { type: 'image/png' });
+        if (lastResvgUrl) { try { URL.revokeObjectURL(lastResvgUrl); } catch {} }
+        const url = URL.createObjectURL(blob);
+        lastResvgUrl = url;
+        if (resvgImg) resvgImg.src = url;
+      } catch (e) {
+        console.warn('Resvg live render failed', e);
+      }
+    }
+
+    function queueResvg(ep) {
+      if (!resvgLive) return;
+      const now = performance.now();
+      // throttle to ~10 fps
+      if (now - lastResvgAt < 90) return;
+      lastResvgAt = now;
+      renderResvgAt(ep);
+    }
+  </script>
+</body>
+</html>

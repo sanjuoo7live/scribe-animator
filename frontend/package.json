@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@resvg/resvg-js": "2.6.2",
+    "@resvg/resvg-wasm": "^2.6.2",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.8.0",
     "@testing-library/react": "^16.3.0",
@@ -26,7 +28,7 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
-    "postinstall": "node scripts/copy-vtracer-wasm.js || echo 'skip copy'",
+    "postinstall": "node scripts/copy-vtracer-wasm.js || echo 'skip vtracer copy'; node scripts/copy-resvg-wasm.js || echo 'skip resvg copy'",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {

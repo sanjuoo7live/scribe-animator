@@ -806,6 +806,16 @@ const CanvasEditor: React.FC = () => {
     }
   }, [selectedObject]);
 
+  // Cleanup Vivus overlays when project objects change significantly to avoid stale nodes
+  React.useEffect(() => {
+    const overlay = overlayRef.current;
+    if (!overlay) return;
+    const validIds = new Set((currentProject?.objects || []).filter(o => o.type === 'svgPath' && !!o.properties?.svg).map(o => `vivus-${o.id}`));
+    Array.from(overlay.querySelectorAll('div[id^="vivus-"]')).forEach((el) => {
+      if (!validIds.has((el as HTMLElement).id)) el.remove();
+    });
+  }, [currentProject?.objects]);
+
   // Cleanup overlay iframes that no longer correspond to any objects
   React.useEffect(() => {
     const overlay = overlayRef.current;
@@ -1467,6 +1477,7 @@ const CanvasEditor: React.FC = () => {
                   const groupX = animatedProps.x ?? obj.x;
                   const groupY = animatedProps.y ?? obj.y;
                   const paths = Array.isArray(obj.properties?.paths) ? obj.properties.paths : [];
+                  const originalSvg: string | undefined = obj.properties?.svg;
                   const draw = obj.animationType === 'drawIn';
                   // Vivus-like sequential reveal across paths by cumulative length
                   const lengths = paths.map((p: any) => {
@@ -1475,7 +1486,7 @@ const CanvasEditor: React.FC = () => {
                   const totalLen = lengths.reduce((a: number, b: number) => a + b, 0);
                   const targetLen = draw ? ep * totalLen : totalLen;
                   let consumed = 0;
-                  return (
+                  const konvaGroup = (
                     <Group
                       key={obj.id}
                       id={obj.id}
@@ -1493,24 +1504,50 @@ const CanvasEditor: React.FC = () => {
                       {paths.map((p: any, idx: number) => {
                         const d = p.d as string;
                         const len = lengths[idx];
+                        const wantFill = !!(p.fill && p.fill !== 'none' && p.fill !== 'transparent');
                         let dash: number[] | undefined;
                         let dashOffset = 0;
+                        let fillColor: string | undefined = wantFill ? 'transparent' : undefined;
+                        let strokeColor: string = isSelected ? '#4f46e5' : (p.stroke || '#111827');
+
                         if (draw && len > 0 && totalLen > 0) {
-                          const remaining = Math.max(0, targetLen - consumed);
-                          const localReveal = Math.max(0, Math.min(len, remaining));
-                          dash = [len, len];
-                          dashOffset = len - localReveal;
-                          consumed += len;
+                          const start = consumed;
+                          const end = consumed + len;
+                          if (targetLen <= start) {
+                            // not started
+                            dash = [len, len];
+                            dashOffset = len;
+                            // if Vivus overlay is driving the animation, hide canvas stroke to avoid double rendering
+                            if (originalSvg && ep < 1) strokeColor = 'transparent';
+                          } else if (targetLen >= end) {
+                            // fully revealed – now allow fill
+                            dash = undefined;
+                            dashOffset = 0;
+                            fillColor = wantFill ? (p.fill as string) : undefined;
+                          } else {
+                            // in progress
+                            const localReveal = Math.max(0, Math.min(len, targetLen - start));
+                            dash = [len, len];
+                            dashOffset = Math.max(0, len - localReveal);
+                            if (originalSvg && ep < 1) strokeColor = 'transparent';
+                          }
+                        } else {
+                          // no animation: show full with fill
+                          dash = undefined;
+                          dashOffset = 0;
+                          fillColor = wantFill ? (p.fill as string) : undefined;
                         }
+                        consumed += len;
+
                         return (
                           <KonvaPath
                             key={`${obj.id}-p-${idx}`}
                             data={d}
                             x={0}
                             y={0}
-                            stroke={isSelected ? '#4f46e5' : (p.stroke || '#111827')}
+                            stroke={strokeColor}
                             strokeWidth={(p.strokeWidth ?? 3) + (isSelected ? 0.5 : 0)}
-                            fill={p.fill || 'transparent'}
+                            fill={fillColor || 'transparent'}
                             lineCap="round"
                             lineJoin="round"
                             dash={dash as any}
@@ -1522,6 +1559,78 @@ const CanvasEditor: React.FC = () => {
                       })}
                     </Group>
                   );
+
+                  // If we have an original SVG string, create a DOM overlay animated by Vivus for perfect stroke animation
+                  // The overlay is placed in overlayRef, aligned to the object's group transform (x,y,scale,rotation)
+                  if (originalSvg && overlayRef.current && stageRef.current) {
+                    requestAnimationFrame(async () => {
+                      const overlay = overlayRef.current!;
+                      const stage = stageRef.current!;
+                      const existing = overlay.querySelector(`#vivus-${obj.id}`) as HTMLDivElement | null;
+                      let holder = existing;
+                      // Remove overlay if not drawing or animation complete
+                      if (!(obj.animationType === 'drawIn') || ep >= 1) {
+                        if (holder) holder.remove();
+                        return;
+                      }
+                      if (!holder) {
+                        holder = document.createElement('div');
+                        holder.id = `vivus-${obj.id}`;
+                        holder.style.position = 'absolute';
+                        holder.style.pointerEvents = 'none';
+                        holder.style.willChange = 'transform, opacity';
+                        holder.style.transformOrigin = 'top left';
+                        overlay.appendChild(holder);
+                      }
+                      // Size holder to object box projected into screen coords
+                      const transform = stage.getAbsoluteTransform().copy();
+                      const p = transform.point({ x: groupX, y: groupY });
+                      const stageScaleX = stage.scaleX() || 1;
+                      const stageScaleY = stage.scaleY() || 1;
+                      const objScaleX = animatedProps.scaleX ?? 1;
+                      const objScaleY = animatedProps.scaleY ?? 1;
+                      const w = Math.max(1, obj.width || 1) * stageScaleX * objScaleX;
+                      const h = Math.max(1, obj.height || 1) * stageScaleY * objScaleY;
+                      holder.style.left = `${p.x}px`;
+                      holder.style.top = `${p.y}px`;
+                      holder.style.width = `${w}px`;
+                      holder.style.height = `${h}px`;
+                      holder.style.opacity = String(animatedProps.opacity ?? 1);
+                      holder.style.transform = `rotate(${obj.rotation || 0}deg)`;
+                      // Render SVG if not present or changed
+                      if (!holder.dataset.rendered) {
+                        holder.innerHTML = originalSvg;
+                        const svgEl = holder.querySelector('svg') as SVGSVGElement | null;
+                        if (svgEl) {
+                          svgEl.setAttribute('width', '100%');
+                          svgEl.setAttribute('height', '100%');
+                          try {
+                            const mod = await import('vivus');
+                            const Vivus: any = (mod as any).default || (mod as any);
+                            // Kick off Vivus animation synchronized approximately to current animation progress
+                            const inst = new Vivus(svgEl, {
+                              type: 'oneByOne',
+                              duration: Math.max(60, Math.round((obj.animationDuration || 2) * 90)),
+                              animTimingFunction: Vivus.EASE,
+                              start: 'manual',
+                              dashGap: 2,
+                              forceRender: true,
+                            });
+                            // Advance to current progress
+                            inst.setFrameProgress(ep);
+                            holder.dataset.rendered = '1';
+                          } catch {}
+                        }
+                      } else {
+                        const svgEl = holder.querySelector('svg') as any;
+                        if (svgEl && svgEl.vivus) {
+                          try { svgEl.vivus.setFrameProgress(ep); } catch {}
+                        }
+                      }
+                    });
+                  }
+
+                  return konvaGroup;
                 }
 
                 if (obj.type === 'drawPath') {

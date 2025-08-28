@@ -1,7 +1,9 @@
 import React from 'react';
+import Vivus from 'vivus';
+import { drawSvgOnCanvas } from '../utils/resvgCanvas';
 import { useAppStore } from '../store/appStore';
 import { traceImageDataToPaths } from '../vtrace/simpleTrace';
-import { segmentImageDataWithMediaPipe } from '../segmentation/mediapipe';
+// MediaPipe segmentation removed per UI simplification
 
 type ParsedPath = { d: string; stroke?: string; strokeWidth?: number; fill?: string; fillRule?: 'nonzero'|'evenodd' };
 
@@ -23,28 +25,23 @@ const SvgImporter: React.FC = () => {
   const [status, setStatus] = React.useState<string>('');
   const [traceThreshold, setTraceThreshold] = React.useState<number>(128);
   const [tracePreview, setTracePreview] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    return () => {
+      if (tracePreview) URL.revokeObjectURL(tracePreview);
+    };
+  }, [tracePreview]);
   const [busy, setBusy] = React.useState<boolean>(false);
-  const [maxDim, setMaxDim] = React.useState<number>(768);
+  const [maxDim] = React.useState<number>(768);
   const [engine, setEngine] = React.useState<'basic' | 'tiled' | 'wasm'>('wasm'); // Default to WASM
   const [addMode, setAddMode] = React.useState<'drawPathLayers' | 'svgCombined'>('drawPathLayers');
   // Layer selection heuristic (now default off; prefer foreground isolation below)
-  const [keepOnlyBiggest, setKeepOnlyBiggest] = React.useState<boolean>(false);
+  // Removed: keepOnlyBiggest UI; always keep multiple non-overlapping layers
   
   // Foreground isolation helpers
   // ROI is stored normalized to the displayed image content (0..1)
-  const [roi, setRoi] = React.useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  // Crop removed per request
   const imgRef = React.useRef<HTMLImageElement | null>(null);
-  const [dragStart, setDragStart] = React.useState<{ x: number; y: number } | null>(null);
-  const [pickKeyColor, setPickKeyColor] = React.useState<boolean>(false);
-  const [removeBgWhite, setRemoveBgWhite] = React.useState<boolean>(false);
-  const [whiteLevel, setWhiteLevel] = React.useState<number>(235); // 200..255
-  const [useKeyColor, setUseKeyColor] = React.useState<boolean>(false);
-  const [keyColor, setKeyColor] = React.useState<{ r: number; g: number; b: number } | null>(null);
-  const [keyTolerance, setKeyTolerance] = React.useState<number>(36); // 0..128
-  // MediaPipe integration toggles
-  const [useSegmentation, setUseSegmentation] = React.useState<boolean>(false);
-  const [segFeather, setSegFeather] = React.useState<number>(2);
-  const [segModel, setSegModel] = React.useState<0|1>(1);
+  // Removed: color keying, near-white removal, and MediaPipe segmentation
   // VTracer-style options (match demo controls)
   const [clusterMode, setClusterMode] = React.useState<'bw' | 'color'>('color');
   const [hierarchyMode, setHierarchyMode] = React.useState<'cutout' | 'stacked'>('stacked');
@@ -59,19 +56,52 @@ const SvgImporter: React.FC = () => {
   // Last SVG for download/export
   const [lastSvg, setLastSvg] = React.useState<string | null>(null);
   const lastSvgName = 'trace.svg';
-  // Vivus preview refs/state
-  const vivusBoxRef = React.useRef<HTMLDivElement | null>(null);
-  const vivusInstanceRef = React.useRef<any>(null);
-  const [vivusPlaying, setVivusPlaying] = React.useState(false);
+  // Draw preview controls
+  const [showDrawPreview, setShowDrawPreview] = React.useState(false);
+  const [splitMultiMove, setSplitMultiMove] = React.useState(true); // kit-of-parts default ON
+  // Frozen SVG used for Draw Preview; captured when the panel is opened so it never changes while drawing
+  const [drawSvgSnapshot, setDrawSvgSnapshot] = React.useState<string | null>(null);
+  const domSvgHolderRef = React.useRef<HTMLDivElement | null>(null);
+  const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
+  const vivusRef = React.useRef<any | null>(null);
+  // Normalized SVG string for responsive preview
+  const normalizedSvg = React.useMemo(() => {
+    if (!lastSvg) return '';
+    try {
+      const normalized = lastSvg.replace(/<svg([^>]*)>/i, (_m, attrs) => {
+        let a = String(attrs)
+          .replace(/\bwidth\s*=\s*"[^"]*"/ig, '')
+          .replace(/\bheight\s*=\s*"[^"]*"/ig, '');
+        if (!/style=/.test(a)) a += ' style="width:100%;height:100%;display:block;max-width:100%;max-height:100%"';
+        return `<svg${a}>`;
+      });
+      return normalized;
+    } catch (e) {
+  /* swallow */
+      return lastSvg;
+    }
+  }, [lastSvg]);
+
+  // Keep snapshot lifecycle aligned with preview visibility
+  React.useEffect(() => {
+    if (!showDrawPreview) {
+      // Clear snapshot when panel closes, so next open re-captures current value
+      setDrawSvgSnapshot(null);
+      return;
+    }
+    // When opened, verify snapshot equals the Copy SVG value (lastSvg)
+    if (showDrawPreview && lastSvg && drawSvgSnapshot) {
+      setStatus(drawSvgSnapshot === lastSvg
+        ? 'Verified: Draw preview equals Copy SVG.'
+        : 'Warning: Snapshot differs from Copy SVG.');
+    }
+  }, [showDrawPreview, lastSvg, drawSvgSnapshot]);
   // Runtime indicators
   const [lastEngine, setLastEngine] = React.useState<null | 'official' | 'npm' | 'local' | 'minimal'>(null);
   // Path Refinement modal state
   const [refineOpen, setRefineOpen] = React.useState(false);
   const [refineItems, setRefineItems] = React.useState<RefineItem[] | null>(null);
-  // Keep full, length-sorted list to allow toggling limits in the refiner
-  const [refineAllItems, setRefineAllItems] = React.useState<RefineItem[] | null>(null);
-  // Optional cap: limit refiner list to top 30 longest paths (off by default)
-  const [limitRefinerTop30, setLimitRefinerTop30] = React.useState<boolean>(false);
+  // Removed: top-30 cap toggle in refiner
   const [refineViewport, setRefineViewport] = React.useState<{ width: number; height: number } | null>(null);
   // Tracing presets for common use cases
   type Preset = 'photo-subject' | 'line-art' | 'logo-flat' | 'noisy-photo' | 'custom';
@@ -483,34 +513,112 @@ const SvgImporter: React.FC = () => {
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   }, [lastSvg, lastSvgName]);
 
-  // Animate the last traced SVG using Vivus in the preview box
-  const playVivus = React.useCallback(async () => {
-    if (!lastSvg || !vivusBoxRef.current) return;
+  const copyLastSvg = React.useCallback(async () => {
+    if (!lastSvg) return;
     try {
-      const mod = await import('vivus');
-      const Vivus: any = (mod as any).default || (mod as any);
-      vivusBoxRef.current.innerHTML = lastSvg;
-      const svgEl = vivusBoxRef.current.querySelector('svg');
-      if (!svgEl) return;
-      svgEl.setAttribute('width', '100%');
-      svgEl.setAttribute('height', '100%');
-      if (vivusInstanceRef.current && typeof vivusInstanceRef.current.stop === 'function') {
-        try { vivusInstanceRef.current.stop(); } catch {}
+      if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(lastSvg);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = lastSvg; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
       }
-      setVivusPlaying(true);
-      vivusInstanceRef.current = new Vivus(svgEl, {
-        type: 'oneByOne',
-        duration: 180,
-        animTimingFunction: Vivus.EASE,
-        start: 'autostart',
-        dashGap: 2,
-        forceRender: true,
-      }, () => setVivusPlaying(false));
-    } catch (e) {
-      console.warn('Vivus failed', e);
-      setVivusPlaying(false);
+      setStatus('SVG copied to clipboard');
+    } catch (e: any) {
+      setStatus(`Failed to copy SVG: ${e?.message || e}`);
     }
   }, [lastSvg]);
+
+  const copySvgPathsOnly = React.useCallback(async () => {
+    if (!lastSvg) return;
+    try {
+      const doc = new DOMParser().parseFromString(lastSvg, 'image/svg+xml');
+      const paths = Array.from(doc.querySelectorAll('path'));
+      const ds = paths.map(p => p.getAttribute('d') || '').filter(Boolean).join('\n');
+      if (!ds) { setStatus('No <path> elements found'); return; }
+      if (navigator && navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(ds);
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = ds; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
+      }
+      setStatus('Path data copied to clipboard');
+    } catch (e: any) {
+      setStatus(`Failed to copy paths: ${e?.message || e}`);
+    }
+  }, [lastSvg]);
+
+  // Enhanced Draw Preview rendering with better canvas sizing
+  React.useEffect(() => {
+    if (!showDrawPreview || !drawSvgSnapshot) return;
+    const svgMarkup = drawSvgSnapshot;
+    
+    // Clear vivus reference on new snapshot
+    vivusRef.current = null;
+    
+    // Render DOM-SVG for Vivus animation
+    const holder = domSvgHolderRef.current;
+    if (holder) {
+      holder.innerHTML = svgMarkup;
+      const svgEl = holder.querySelector('svg');
+      if (svgEl) {
+        // Ensure SVG fits container
+        svgEl.setAttribute('width', '100%');
+        svgEl.setAttribute('height', '100%');
+        svgEl.style.display = 'block';
+        // Don't auto-initialize Vivus here - wait for play button
+      }
+    }
+    
+    // Render Canvas via Resvg with proper sizing
+    const c = canvasRef.current;
+    if (c) {
+      const ctx = c.getContext('2d');
+      if (ctx) {
+        // Parse dimensions from SVG
+        const m = svgMarkup.match(/viewBox="([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+)"/);
+        let w = 300, h = 200;
+        if (m) {
+          w = Math.max(64, Math.round(parseFloat(m[3])));
+          h = Math.max(64, Math.round(parseFloat(m[4])));
+        } else {
+          const mw = svgMarkup.match(/\bwidth="([\d.]+)"/i);
+          const mh = svgMarkup.match(/\bheight="([\d.]+)"/i);
+          if (mw && mh) {
+            w = Math.max(64, Math.round(parseFloat(mw[1])));
+            h = Math.max(64, Math.round(parseFloat(mh[1])));
+          }
+        }
+        
+        // Set canvas to reasonable preview size (maintain aspect ratio)
+        const maxSize = 180; // Fit within 12rem container
+        const scale = Math.min(maxSize / w, maxSize / h);
+        const canvasW = Math.round(w * scale);
+        const canvasH = Math.round(h * scale);
+        
+        c.width = canvasW;
+        c.height = canvasH;
+        
+        // Clear and render
+        ctx.fillStyle = 'rgba(0,0,0,0)';
+        ctx.clearRect(0, 0, canvasW, canvasH);
+        
+        drawSvgOnCanvas(ctx, svgMarkup, {
+          fitTo: { mode: 'width', value: canvasW }
+        }).then(() => {
+          setStatus('✅ Preview rendered successfully');
+        }).catch((e) => {
+          // Fallback: show error indicator
+          ctx.fillStyle = '#444';
+          ctx.fillRect(0, 0, canvasW, canvasH);
+          ctx.fillStyle = '#ff6b6b';
+          ctx.font = '12px monospace';
+          ctx.textAlign = 'center';
+          ctx.fillText('Render Error', canvasW / 2, canvasH / 2);
+          setStatus('❌ Canvas render failed');
+        });
+      }
+    }
+  }, [showDrawPreview, drawSvgSnapshot]);
 
   const addPathsToCanvas = (paths: ParsedPath[]) => {
     if (!currentProject) {
@@ -610,7 +718,7 @@ const SvgImporter: React.FC = () => {
   <div className="p-3 text-white">
       <div className="mb-3 text-sm text-gray-300">Import SVG vectors as editable, animatable paths.</div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="p-3 bg-gray-800 rounded border border-gray-700">
           <div className="text-sm font-semibold mb-2">Upload .svg file</div>
           <input
@@ -644,7 +752,12 @@ const SvgImporter: React.FC = () => {
 
       {status && <div className="mt-3 text-xs text-gray-300">{status}</div>}
 
-      <div className="mt-4 p-3 bg-gray-800/70 rounded border border-gray-700">
+  <div className="mt-4 p-0 bg-gray-800/70 rounded border border-gray-700 overflow-hidden">
+              {/* Drag/resize helper bar (visual only) */}
+              <div className="text-[11px] text-gray-300/80 bg-gray-900/40 px-3 py-1 border-b border-gray-700/70 select-none">
+                Drag from header to move • Press ESC or use × to close • Drag edges to resize
+              </div>
+              <div className="p-3">
               <div className="text-sm font-semibold mb-2 flex items-center gap-3">
                 <span>Auto-trace (WASM with VTracer options)</span>
                 <span className="text-xs text-gray-400">Official engine is used. JS fallback only if needed.</span>
@@ -659,8 +772,8 @@ const SvgImporter: React.FC = () => {
                   Using minimal fallback engine; official build could not be initialized.
                 </div>
               )}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-start">
-          <div className="md:col-span-1">
+  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
+          <div className="lg:col-span-1">
             <div className="text-xs text-gray-300 mb-1">Upload raster (PNG/JPG)</div>
             <input
               type="file"
@@ -672,6 +785,7 @@ const SvgImporter: React.FC = () => {
                 setTracePreview(prev => { if (prev) URL.revokeObjectURL(prev); return prev; });
                 const url = URL.createObjectURL(f);
                 setTracePreview(url);
+                setStatus(`📁 Loaded file: ${f.name} (${Math.round(f.size/1024)}KB)`);
               }}
               className="block w-full text-sm text-gray-200 file:mr-3 file:py-2 file:px-3 file:rounded file:border-0 file:text-sm file:font-medium file:bg-blue-600 file:text-white hover:file:bg-blue-500"
             />
@@ -684,16 +798,7 @@ const SvgImporter: React.FC = () => {
               onChange={(e) => setTraceThreshold(Number(e.target.value))}
               className="w-full"
             />
-            <div className="mt-3 text-xs text-gray-300">Max size</div>
-            <select
-              value={maxDim}
-              onChange={(e) => setMaxDim(Number(e.target.value))}
-              className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs"
-            >
-              <option value={512}>512 px</option>
-              <option value={768}>768 px</option>
-              <option value={1024}>1024 px</option>
-            </select>
+            {/* Max size control removed per request; internal clamping remains */}
             <div className="mt-3 text-xs text-gray-300">Preset</div>
             <select
               value={preset}
@@ -774,179 +879,91 @@ const SvgImporter: React.FC = () => {
               )}
             </div>
           </div>
-          <div className="md:col-span-1">
+          <div className="lg:col-span-1">
             <div className="flex items-center justify-between">
               <div className="text-xs text-gray-300 mb-1">Preview</div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  className={`px-2 py-1 rounded text-xs ${lastSvg? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-gray-800 opacity-50 cursor-not-allowed'}`}
-                  disabled={!lastSvg}
-                  onClick={playVivus}
-                  title="Animate traced SVG with Vivus"
-                >{vivusPlaying ? 'Replay' : 'Play'}</button>
-                <button
-                  type="button"
                   className={`px-2 py-1 rounded text-xs ${lastSvg? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-800 opacity-50 cursor-not-allowed'}`}
-                  disabled={!lastSvg}
+                  disabled={!lastSvg || showDrawPreview}
                   onClick={downloadLastSvg}
                   title="Download last traced SVG"
                 >Download SVG</button>
+                <button
+                  type="button"
+                  className={`px-2 py-1 rounded text-xs ${lastSvg? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-800 opacity-50 cursor-not-allowed'}`}
+                  disabled={!lastSvg || showDrawPreview}
+                  onClick={copyLastSvg}
+                  title="Copy SVG markup to clipboard"
+                >Copy SVG</button>
+                <button
+                  type="button"
+                  className={`px-2 py-1 rounded text-xs ${lastSvg? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-800 opacity-50 cursor-not-allowed'}`}
+                  disabled={!lastSvg || showDrawPreview}
+                  onClick={copySvgPathsOnly}
+                  title="Copy all path d attributes"
+                >Copy path data</button>
+              </div>
+              {/* Draw Preview toggle */}
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  className="px-2 py-1 rounded text-xs bg-gray-700 hover:bg-gray-600"
+      onClick={() => {
+                    setShowDrawPreview((v) => {
+                      const willShow = !v;
+                      if (willShow) {
+        // When opening, freeze the SVG to the exact Copy SVG string
+        setDrawSvgSnapshot(lastSvg ?? null);
+        if (lastSvg) setStatus('Draw preview snapshot captured (exact Copy SVG).');
+                      }
+                      return willShow;
+                    });
+                  }}
+                >{showDrawPreview ? 'Hide' : 'Show'} Draw Preview</button>
+                <label className="text-xs text-gray-300 flex items-center gap-1">
+                  <input type="checkbox" checked={splitMultiMove} onChange={(e)=>setSplitMultiMove(e.target.checked)} disabled={showDrawPreview} />
+                  Split multi-move paths (kit-of-parts)
+                </label>
               </div>
             </div>
+            {/* Side-by-side image and traced SVG with debug indicators */}
             {tracePreview ? (
-              <div className="relative w-full max-h-48">
-                {/* Image */}
-                <img
-                  ref={imgRef}
-                  src={tracePreview}
-                  alt="preview"
-                  className="w-full max-h-48 object-contain rounded border border-gray-700 bg-gray-900 select-none"
-                  onLoad={() => {
-                    // Clear ROI when image changes
-                    setRoi(null);
-                  }}
-                  onMouseDown={(e) => {
-                    if (!imgRef.current) return;
-                    // Support either ROI drag or color pick
-                    if (pickKeyColor) return; // handled in onClick
-                    const rect = imgRef.current.getBoundingClientRect();
-                    const iw = imgRef.current.naturalWidth;
-                    const ih = imgRef.current.naturalHeight;
-                    const rectAspect = rect.width / rect.height;
-                    const imgAspect = iw / ih;
-                    let cx = rect.x, cy = rect.y, cw = rect.width, ch = rect.height;
-                    if (imgAspect > rectAspect) {
-                      // letterbox vertical
-                      ch = rect.width / imgAspect;
-                      cy = rect.y + (rect.height - ch) / 2;
-                    } else {
-                      // letterbox horizontal
-                      cw = rect.height * imgAspect;
-                      cx = rect.x + (rect.width - cw) / 2;
-                    }
-                    const px = (e.clientX - cx) / cw;
-                    const py = (e.clientY - cy) / ch;
-                    if (px < 0 || py < 0 || px > 1 || py > 1) return;
-                    setDragStart({ x: Math.max(0, Math.min(1, px)), y: Math.max(0, Math.min(1, py)) });
-                    setRoi({ x: Math.max(0, Math.min(1, px)), y: Math.max(0, Math.min(1, py)), w: 0, h: 0 });
-                  }}
-                  onMouseMove={(e) => {
-                    if (!imgRef.current || !dragStart) return;
-                    const rect = imgRef.current.getBoundingClientRect();
-                    const iw = imgRef.current.naturalWidth;
-                    const ih = imgRef.current.naturalHeight;
-                    const rectAspect = rect.width / rect.height;
-                    const imgAspect = iw / ih;
-                    let cx = rect.x, cy = rect.y, cw = rect.width, ch = rect.height;
-                    if (imgAspect > rectAspect) {
-                      ch = rect.width / imgAspect;
-                      cy = rect.y + (rect.height - ch) / 2;
-                    } else {
-                      cw = rect.height * imgAspect;
-                      cx = rect.x + (rect.width - cw) / 2;
-                    }
-                    const px = (e.clientX - cx) / cw;
-                    const py = (e.clientY - cy) / ch;
-                    const ex = Math.max(0, Math.min(1, px));
-                    const ey = Math.max(0, Math.min(1, py));
-                    const x = Math.min(dragStart.x, ex);
-                    const y = Math.min(dragStart.y, ey);
-                    const w = Math.abs(ex - dragStart.x);
-                    const h = Math.abs(ey - dragStart.y);
-                    setRoi({ x, y, w, h });
-                  }}
-                  onMouseUp={() => setDragStart(null)}
-                  onMouseLeave={() => setDragStart(null)}
-                  onClick={async (e) => {
-                    if (!pickKeyColor || !imgRef.current) return;
-                    const rect = imgRef.current.getBoundingClientRect();
-                    const iw = imgRef.current.naturalWidth;
-                    const ih = imgRef.current.naturalHeight;
-                    const rectAspect = rect.width / rect.height;
-                    const imgAspect = iw / ih;
-                    let cx = rect.x, cy = rect.y, cw = rect.width, ch = rect.height;
-                    if (imgAspect > rectAspect) {
-                      ch = rect.width / imgAspect;
-                      cy = rect.y + (rect.height - ch) / 2;
-                    } else {
-                      cw = rect.height * imgAspect;
-                      cx = rect.x + (rect.width - cw) / 2;
-                    }
-                    const px = (e.clientX - cx) / cw;
-                    const py = (e.clientY - cy) / ch;
-                    if (px < 0 || py < 0 || px > 1 || py > 1) return;
-                    // Sample color at natural resolution
-                    const tmp = document.createElement('canvas');
-                    tmp.width = iw; tmp.height = ih;
-                    const tctx = tmp.getContext('2d');
-                    if (!tctx) return;
-                    const im = new Image();
-                    im.src = imgRef.current.src;
-                    await im.decode().catch(()=>{});
-                    tctx.drawImage(im, 0, 0, iw, ih);
-                    const sx = Math.max(0, Math.min(iw - 1, Math.round(px * iw)));
-                    const sy = Math.max(0, Math.min(ih - 1, Math.round(py * ih)));
-                    const p = tctx.getImageData(sx, sy, 1, 1).data;
-                    setKeyColor({ r: p[0], g: p[1], b: p[2] });
-                    setUseKeyColor(true);
-                    setPickKeyColor(false);
-                  }}
-                />
-                {/* ROI rectangle overlay */}
-                {roi && roi.w > 0 && roi.h > 0 && (
-                  <div
-                    className="pointer-events-none absolute border-2 border-amber-400"
-                    style={(() => {
-                      if (!imgRef.current) return { display: 'none' } as React.CSSProperties;
-                      const rect = imgRef.current.getBoundingClientRect();
-                      const iw = imgRef.current.naturalWidth;
-                      const ih = imgRef.current.naturalHeight;
-                      const rectAspect = rect.width / rect.height;
-                      const imgAspect = iw / ih;
-                      let cx = 0, cy = 0, cw = rect.width, ch = rect.height;
-                      if (imgAspect > rectAspect) {
-                        ch = rect.width / imgAspect;
-                        cy = (rect.height - ch) / 2;
-                      } else {
-                        cw = rect.height * imgAspect;
-                        cx = (rect.width - cw) / 2;
-                      }
-                      return {
-                        position: 'absolute',
-                        left: `${cx + roi.x * cw}px`,
-                        top: `${cy + roi.y * ch}px`,
-                        width: `${roi.w * cw}px`,
-                        height: `${roi.h * ch}px`,
-                        boxSizing: 'border-box'
-                      } as React.CSSProperties;
-                    })()}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
+                <div className="relative w-full rounded border-2 border-blue-500 bg-gray-800 overflow-hidden" style={{height: '18rem', backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.15) 1px, transparent 1px)', backgroundSize: '20px 20px'}}>
+                  <div className="absolute top-1 left-1 text-xs text-blue-400 bg-black/50 px-1 rounded z-10">IMAGE</div>
+                  <img
+                    ref={imgRef}
+                    src={tracePreview}
+                    alt="uploaded"
+                    className="w-full h-full object-contain select-none"
+                    style={{ display: 'block', width: '100%', height: '100%' }}
+                    onLoad={() => setStatus('✅ Image preview loaded')}
+                    onError={() => setStatus('❌ Failed to load image preview')}
                   />
-                )}
+                  {!tracePreview && (
+                    <div className="absolute inset-0 flex items-center justify-center text-xs text-red-400 bg-red-900/20">NO IMAGE URL</div>
+                  )}
+                </div>
+                <div className="relative w-full rounded border-2 border-green-500 bg-gray-800 overflow-hidden" style={{height: '18rem', backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.15) 1px, transparent 1px)', backgroundSize: '20px 20px'}}>
+                  <div className="absolute top-1 left-1 text-xs text-green-400 bg-black/50 px-1 rounded z-10">SVG</div>
+                  <div className="p-1" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} dangerouslySetInnerHTML={{ __html: normalizedSvg }} />
+                  {!lastSvg && (
+                    <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400 bg-gray-900/50">Trace to vector to see SVG</div>
+                  )}
+                  {lastSvg && (
+                    <div className="absolute bottom-1 left-1 text-xs text-green-400 bg-black/50 px-1 rounded z-10">SVG: {lastSvg.length} chars</div>
+                  )}
+                </div>
               </div>
             ) : (
-              <div className="w-full h-32 flex items-center justify-center text-xs text-gray-500 border border-dashed border-gray-700 rounded">No image selected</div>
+              <div className="w-full h-32 flex items-center justify-center text-xs text-yellow-400 border border-dashed border-yellow-600 rounded bg-yellow-900/20">No image selected - tracePreview is null</div>
             )}
-            {/* Vivus SVG animation preview */}
-            <div className="mt-2">
-              <div ref={vivusBoxRef} className="w-full h-48 rounded border border-gray-700 bg-black/40 flex items-center justify-center overflow-hidden">
-                {!lastSvg && (<div className="text-xs text-gray-500">Trace to vector to preview animation</div>)}
-              </div>
-            </div>
-                    <div className="mt-3 text-xs text-gray-300">Preset</div>
-                    <select
-                      value={preset}
-                      onChange={(e)=>applyPreset(e.target.value as Preset)}
-                      className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs w-full"
-                    >
-                      <option value="photo-subject">Photo (Subject)</option>
-                      <option value="line-art">Sketch / Line Art</option>
-                      <option value="logo-flat">Logo / Flat</option>
-                      <option value="noisy-photo">Noisy Photo</option>
-                      <option value="custom">Custom</option>
-                    </select>
           </div>
-          <div className="md:col-span-1 flex flex-col gap-2 items-end">
+        </div>
+  {/* Full-width action column placed below controls/preview to match mock */}
+        <div className="mt-3 flex flex-col gap-2 items-end">
             <button
               className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 rounded text-sm font-medium disabled:opacity-50"
               disabled={!tracePreview || busy}
@@ -982,22 +999,6 @@ const SvgImporter: React.FC = () => {
                   if (!ctx) { setBusy(false); return; }
                   (ctx as any).imageSmoothingEnabled = true;
                   ctx.drawImage(img, 0, 0, w, h);
-                  // Apply ROI crop if provided
-                  let cropW = w, cropH = h, sx = 0, sy = 0;
-                  if (roi && roi.w > 0.02 && roi.h > 0.02) {
-                    sx = Math.max(0, Math.floor(roi.x * w));
-                    sy = Math.max(0, Math.floor(roi.y * h));
-                    cropW = Math.max(1, Math.floor(roi.w * w));
-                    cropH = Math.max(1, Math.floor(roi.h * h));
-                    const c2 = document.createElement('canvas');
-                    c2.width = cropW; c2.height = cropH;
-                    const c2x = c2.getContext('2d');
-                    if (c2x) c2x.drawImage(canvas, sx, sy, cropW, cropH, 0, 0, cropW, cropH);
-                    // Replace canvas/data with cropped content
-                    canvas.width = cropW; canvas.height = cropH;
-                    const ctx2 = canvas.getContext('2d');
-                    if (ctx2 && c2x) ctx2.drawImage(c2, 0, 0);
-                  }
                   let data = ctx.getImageData(0, 0, canvas.width, canvas.height);
                   // B/W quantization when B/W is selected (applies in all modes since wasm API lacks color_mode)
                   if (clusterMode === 'bw') {
@@ -1016,42 +1017,7 @@ const SvgImporter: React.FC = () => {
                     data = ctx.getImageData(0, 0, canvas.width, canvas.height);
                   }
 
-                  // Auto subject segmentation (MediaPipe) before other preprocessing
-          if (useSegmentation) {
-                    setStatus('✂️ Segmenting subject (MediaPipe)...');
-                    try {
-                      data = await segmentImageDataWithMediaPipe(data, { modelSelection: segModel, featherPx: segFeather });
-                      setStatus('✂️ Segmentation complete');
-                    } catch (e:any) {
-                      setStatus(`⚠️ Segmentation failed: ${e?.message || e}`);
-                    }
-                  }
-                  // Optional background removal
-                  if (removeBgWhite || (useKeyColor && keyColor)) {
-                    const d = data.data;
-                    const tol2 = keyTolerance * keyTolerance;
-                    for (let i = 0; i < d.length; i += 4) {
-                      const r = d[i], g = d[i + 1], b = d[i + 2];
-                      let makeTransparent = false;
-                      if (removeBgWhite) {
-                        if (r >= whiteLevel && g >= whiteLevel && b >= whiteLevel) makeTransparent = true;
-                      }
-                      if (!makeTransparent && useKeyColor && keyColor) {
-                        const dr = r - keyColor.r;
-                        const dg = g - keyColor.g;
-                        const db = b - keyColor.b;
-                        if (dr * dr + dg * dg + db * db <= tol2) makeTransparent = true;
-                      }
-                      if (makeTransparent) {
-                        d[i + 3] = 0; // zero alpha
-                      }
-                    }
-                    // Put back modified data
-                    const ctxm = canvas.getContext('2d');
-                    if (ctxm) ctxm.putImageData(data, 0, 0);
-                    // Re-read to ensure consistent buffer
-                    data = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                  }
+                  // Removed: MediaPipe segmentation and background keying/near-white removal
                   
                   // Image complexity analysis for debugging
                   const pixels = data.data;
@@ -1315,26 +1281,21 @@ const SvgImporter: React.FC = () => {
                       // Sort by area (largest first)
                       candidates.sort((a, b) => b.area - a.area || b.length - a.length);
 
-                      // Selection strategy: either keep only the biggest or keep several non-overlapping
+                      // Selection strategy: greedily keep non-overlapping boxes up to MAX_LAYERS
                       let kept: Cand[] = [];
-                      if (keepOnlyBiggest) {
-                        kept = [candidates[0]];
-                      } else {
-                        // Otherwise, greedily keep non-overlapping boxes up to MAX_LAYERS
-                        const iou = (a: Cand, b: Cand) => {
-                          const x1 = Math.max(a.bbox.x, b.bbox.x);
-                          const y1 = Math.max(a.bbox.y, b.bbox.y);
-                          const x2 = Math.min(a.bbox.x + a.bbox.width, b.bbox.x + b.bbox.width);
-                          const y2 = Math.min(a.bbox.y + a.bbox.height, b.bbox.y + b.bbox.height);
-                          const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
-                          const union = a.area + b.area - inter;
-                          return union > 0 ? inter / union : 0;
-                        };
-                        for (const c of candidates) {
-                          if (kept.length >= MAX_LAYERS) break;
-                          if (kept.some(k => iou(k, c) >= IOU_SKIP)) continue;
-                          kept.push(c);
-                        }
+                      const iou = (a: Cand, b: Cand) => {
+                        const x1 = Math.max(a.bbox.x, b.bbox.x);
+                        const y1 = Math.max(a.bbox.y, b.bbox.y);
+                        const x2 = Math.min(a.bbox.x + a.bbox.width, b.bbox.x + b.bbox.width);
+                        const y2 = Math.min(a.bbox.y + a.bbox.height, b.bbox.y + b.bbox.height);
+                        const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+                        const union = a.area + b.area - inter;
+                        return union > 0 ? inter / union : 0;
+                      };
+                      for (const c of candidates) {
+                        if (kept.length >= MAX_LAYERS) break;
+                        if (kept.some(k => iou(k, c) >= IOU_SKIP)) continue;
+                        kept.push(c);
                       }
 
                       let added = 0;
@@ -1365,7 +1326,6 @@ const SvgImporter: React.FC = () => {
                       setStatus(`Added ${added} draw-path layer${added !== 1 ? 's' : ''} ✔`);
                     } else {
                       // Enter Path Refinement; can optionally cap to top 30 longest paths
-                      const MAX_REFINER_ITEMS = 30;
                       const MAX_TO_MEASURE = 300; // limit expensive length/bbox work
                       // Cheap prefilter: use path command string length as a rough complexity proxy
                       const pre = ds
@@ -1388,12 +1348,11 @@ const SvgImporter: React.FC = () => {
                         kind: 'path'
                       }));
                       // Persist full list and apply optional top-30 cap based on UI toggle
-                      setRefineAllItems(allItems);
-                      const items = limitRefinerTop30 ? allItems.slice(0, Math.min(MAX_REFINER_ITEMS, allItems.length)) : allItems;
+                      const items = allItems;
                       setRefineItems(items);
                       setRefineViewport({ width: w, height: h });
                       setRefineOpen(true);
-                      setStatus(`Refine ${items.length} paths${limitRefinerTop30 ? ` (top ${MAX_REFINER_ITEMS})` : ''}: click to toggle, delete noise, connect gaps, then Generate Single Path.`);
+                      setStatus(`Refine ${items.length} paths: click to toggle, delete noise, connect gaps, then Generate Single Path.`);
                     }
                   } catch (e: any) {
                     setStatus(`❌ Trace failed: ${e?.message || e}`);
@@ -1406,59 +1365,7 @@ const SvgImporter: React.FC = () => {
               }}
             >{busy ? 'Tracing…' : 'Trace to Vector'}</button>
 
-            {/* Foreground isolation controls */}
-            <div className="w-full mt-2 p-2 rounded bg-gray-900/60 border border-gray-700">
-              <div className="text-[11px] text-gray-200 font-medium mb-1">Foreground isolation</div>
-              <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-300">
-                <label className="inline-flex items-center gap-1">
-                  
-                  <input type="checkbox" checked={useSegmentation} onChange={(e)=>setUseSegmentation(e.target.checked)} />
-                  <span>Auto-segment (MediaPipe)</span>
-                </label>
-                {useSegmentation && (
-                  <>
-                    <span className="text-gray-400">feather {segFeather}px</span>
-                    <input type="range" min={0} max={12} value={segFeather} onChange={(e)=>setSegFeather(Number(e.target.value))} />
-                    <span className="text-gray-400">model</span>
-                    <select className="bg-gray-900 border border-gray-700 rounded px-1 py-0.5"
-                      value={segModel}
-                      onChange={(e)=>setSegModel(Number(e.target.value) as 0|1)}
-                    >
-                      <option value={0}>General</option>
-                      <option value={1}>Landscape</option>
-                    </select>
-                  </>
-                )}
-                <button
-                  type="button"
-                  className={`px-2 py-1 rounded ${roi ? 'bg-amber-600' : 'bg-gray-700'}`}
-                  title="Drag a rectangle on the preview to crop before tracing"
-                  onClick={() => setRoi(null)}
-                >{roi ? 'Clear crop' : 'Crop: drag on preview'}</button>
-                <label className="inline-flex items-center gap-1">
-                  <input type="checkbox" checked={removeBgWhite} onChange={(e)=>setRemoveBgWhite(e.target.checked)} />
-                  <span>Remove near-white</span>
-                </label>
-                {removeBgWhite && (
-                  <>
-                    <span className="text-gray-400">thr {whiteLevel}</span>
-                    <input type="range" min={200} max={255} value={whiteLevel} onChange={(e)=>setWhiteLevel(Number(e.target.value))} />
-                  </>
-                )}
-                <label className="inline-flex items-center gap-1">
-                  <input type="checkbox" checked={useKeyColor} onChange={(e)=>setUseKeyColor(e.target.checked)} />
-                  <span>Key color</span>
-                </label>
-                <button type="button" className={`px-2 py-1 rounded ${pickKeyColor?'bg-blue-600':'bg-gray-700'}`} onClick={() => setPickKeyColor(v=>!v)}>Pick from image</button>
-                {keyColor && (
-                  <span className="inline-flex items-center gap-1">
-                    <span className="w-3 h-3 rounded-sm border border-gray-600 inline-block" style={{ backgroundColor: `rgb(${keyColor.r},${keyColor.g},${keyColor.b})` }} />
-                    <span className="text-gray-400">±{keyTolerance}</span>
-                  </span>
-                )}
-                <input type="range" min={0} max={128} value={keyTolerance} onChange={(e)=>setKeyTolerance(Number(e.target.value))} />
-              </div>
-            </div>
+            {/* Crop UI removed */}
 
             <div className="flex items-center gap-2 text-[11px] text-gray-300">
               <span>Add as:</span>
@@ -1466,33 +1373,138 @@ const SvgImporter: React.FC = () => {
               <button type="button" className={`px-2 py-1 rounded ${addMode==='svgCombined'?'bg-blue-600':'bg-gray-700'}`} onClick={()=>setAddMode('svgCombined')}>Combined SVG</button>
             </div>
 
-            <div className="flex items-center gap-2 mt-1 text-[11px] text-gray-300">
-              <label className="inline-flex items-center gap-1">
-                <input type="checkbox" checked={keepOnlyBiggest} onChange={(e)=>setKeepOnlyBiggest(e.target.checked)} />
-                <span>Keep only biggest shape</span>
-              </label>
-              <label className="inline-flex items-center gap-1">
-                <input
-                  type="checkbox"
-                  checked={limitRefinerTop30}
-                  onChange={(e)=>{
-                    const on = e.target.checked;
-                    setLimitRefinerTop30(on);
-                    // If refiner is open, apply cap/uncap live
-                    if (refineOpen && refineAllItems) {
-                      const cap = 30;
-                      setRefineItems(on ? refineAllItems.slice(0, Math.min(cap, refineAllItems.length)) : refineAllItems);
-                    }
-                  }}
-                />
-                <span>Limit Path Refinement to top 30</span>
-              </label>
-            </div>
-
             <div className="text-[11px] text-gray-400">WASM provides highest quality vector tracing. JS Fallback is used automatically if needed.</div>
-            <div className="text-[11px] text-gray-400">Path Refinement limit: {limitRefinerTop30 ? 'Top 30 paths' : 'No limit'}.</div>
           </div>
         </div>
+
+        {/* Enhanced Draw Preview section - fixed sizes, same row */}
+        {showDrawPreview && (
+          <div className="mt-4 p-3 bg-gray-900/50 rounded border border-gray-600">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-sm font-semibold text-white">Draw Preview Comparison</div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button" 
+                  className="px-2 py-1 rounded text-xs bg-purple-600 hover:bg-purple-500"
+                  onClick={() => {
+                    // Play or replay animation on DOM SVG (manual start)
+                    const holder = domSvgHolderRef.current;
+                    if (!holder) return;
+                    const svgEl = holder.querySelector('svg');
+                    if (!svgEl) return;
+                    try {
+                      // Always create fresh Vivus instance
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      vivusRef.current = new (Vivus as any)(svgEl as any, { 
+                        duration: 150, 
+                        type: 'delayed', 
+                        start: 'manual',
+                        animTimingFunction: (Vivus as any).EASE_OUT
+                      });
+                      vivusRef.current.play(1);
+                      setStatus('🎬 Drawing animation started');
+                    } catch (e) {
+                      setStatus('❌ Animation failed to start');
+                    }
+                  }}
+                >
+                  ▶ Play Draw
+                </button>
+                <button
+                  type="button"
+                  className="px-2 py-1 rounded text-xs bg-emerald-600 hover:bg-emerald-500"
+                  onClick={() => {
+                    if (!drawSvgSnapshot || !currentProject) return;
+                    // Add draw preview as a canvas object
+                    const doc = new DOMParser().parseFromString(drawSvgSnapshot, 'image/svg+xml');
+                    const paths = Array.from(doc.querySelectorAll('path'));
+                    const pathObjects = paths.map(p => ({
+                      d: p.getAttribute('d') || '',
+                      stroke: p.getAttribute('stroke') || '#111827',
+                      strokeWidth: Number(p.getAttribute('stroke-width') || '2'),
+                      fill: p.getAttribute('fill') || 'transparent'
+                    }));
+                    
+                    // Parse viewBox for sizing
+                    const m = drawSvgSnapshot.match(/viewBox="([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+)"/);
+                    let w = 400, h = 300;
+                    if (m) {
+                      w = Math.max(64, Math.round(parseFloat(m[3])));
+                      h = Math.max(64, Math.round(parseFloat(m[4])));
+                    }
+                    
+                    addObject({
+                      id: `draw-preview-${Date.now()}`,
+                      type: 'svgPath',
+                      x: 150,
+                      y: 150,
+                      width: w,
+                      height: h,
+                      rotation: 0,
+                      properties: { paths: pathObjects },
+                      animationType: 'drawIn',
+                      animationStart: 0,
+                      animationDuration: 3,
+                      animationEasing: 'easeOut'
+                    });
+                    setStatus('✅ Draw preview added to canvas');
+                  }}
+                >
+                  ➕ Add to Canvas
+                </button>
+              </div>
+            </div>
+            
+            {/* Fixed-size preview row */}
+            <div className="grid grid-cols-4 gap-3">
+              {/* Original uploaded image */}
+              <div className="rounded border border-blue-500 bg-gray-800 overflow-hidden" style={{height: '12rem', position: 'relative'}}>
+                <div className="absolute top-1 left-1 text-xs text-blue-400 bg-black/60 px-1 rounded z-10">Original</div>
+                <div className="w-full h-full flex items-center justify-center" style={{backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '12px 12px'}}>
+                  {tracePreview ? (
+                    <img
+                      src={tracePreview}
+                      alt="original"
+                      className="max-w-full max-h-full object-contain"
+                    />
+                  ) : (
+                    <div className="text-xs text-gray-500">No image</div>
+                  )}
+                </div>
+              </div>
+              
+              {/* SVG Static preview */}
+              <div className="rounded border border-green-500 bg-gray-800 overflow-hidden" style={{height: '12rem', position: 'relative'}}>
+                <div className="absolute top-1 left-1 text-xs text-green-400 bg-black/60 px-1 rounded z-10">SVG Static</div>
+                <div className="w-full h-full p-1" style={{backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '12px 12px'}}>
+                  <div className="w-full h-full" dangerouslySetInnerHTML={{ __html: normalizedSvg || '<div class="flex items-center justify-center h-full text-xs text-gray-500">No SVG</div>' }} />
+                </div>
+              </div>
+
+              {/* DOM SVG (Vivus) animated */}
+              <div className="rounded border border-purple-500 bg-gray-800 overflow-hidden" style={{height: '12rem', position: 'relative'}}>
+                <div className="absolute top-1 left-1 text-xs text-purple-400 bg-black/60 px-1 rounded z-10">DOM SVG (Vivus)</div>
+                <div className="w-full h-full p-1" style={{backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '12px 12px'}}>
+                  <div ref={domSvgHolderRef} className="w-full h-full flex items-center justify-center" />
+                </div>
+              </div>
+
+              {/* Canvas (Resvg) rasterized */}
+              <div className="rounded border border-orange-500 bg-gray-800 overflow-hidden" style={{height: '12rem', position: 'relative'}}>
+                <div className="absolute top-1 left-1 text-xs text-orange-400 bg-black/60 px-1 rounded z-10">Canvas (Resvg)</div>
+                <div className="w-full h-full p-1" style={{backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '12px 12px'}}>
+                  <div className="w-full h-full flex items-center justify-center">
+                    <canvas ref={canvasRef} style={{maxWidth:'100%', maxHeight:'100%', display:'block'}} />
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div className="mt-2 text-xs text-gray-400 text-center">
+              Original → SVG Static → DOM SVG (vector animation) → Canvas (rasterized)
+            </div>
+          </div>
+        )}
       </div>
     </div>
   {refineOpen && !!refineItems && !!refineViewport && (
@@ -1502,15 +1514,6 @@ const SvgImporter: React.FC = () => {
         viewport={refineViewport!}
         items={refineItems!}
         setItems={(updater) => setRefineItems(prev => prev ? updater(prev) : prev)}
-        limitRefinerTop30={limitRefinerTop30}
-        onToggleLimit={(on: boolean) => {
-          setLimitRefinerTop30(on);
-          if (refineAllItems) {
-            const cap = 30;
-            setRefineItems(on ? refineAllItems.slice(0, Math.min(cap, refineAllItems.length)) : refineAllItems);
-          }
-        }}
-        fullItems={refineAllItems}
         onApplySingle={(combinedD) => {
           // Add a single svgPath with one combined path
           useAppStore.getState().addObject({
@@ -1552,11 +1555,9 @@ const PathRefiner: React.FC<{
   viewport: { width: number; height: number };
   items: RefineItem[];
   setItems: (updater: (prev: RefineItem[]) => RefineItem[]) => void;
-  limitRefinerTop30: boolean;
-  onToggleLimit: (on: boolean) => void;
-  fullItems: RefineItem[] | null;
+  // simplified props; limit toggle removed
   onApplySingle: (combinedD: string) => void;
-}> = ({ open, onClose, viewport, items, setItems, limitRefinerTop30, onToggleLimit, fullItems, onApplySingle }) => {
+}> = ({ open, onClose, viewport, items, setItems, onApplySingle }) => {
   const [hoverId, setHoverId] = React.useState<string | null>(null);
 
   // Compute combined bbox to center/fit content so it doesn't hide off-screen
@@ -1664,15 +1665,7 @@ const PathRefiner: React.FC<{
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
               <div className="text-xs text-gray-300">Paths: {items.length} | Selected: {items.filter(i=>i.selected).length}</div>
-              <label className="inline-flex items-center gap-1 text-[11px] text-gray-300">
-                <input
-                  type="checkbox"
-                  checked={!!limitRefinerTop30}
-                  onChange={(e) => onToggleLimit(e.target.checked)}
-                  title="Limit displayed items to top 30 longest paths"
-                />
-                <span>Limit to 30</span>
-              </label>
+              <div />
             </div>
             <div className="flex gap-2">
               <button className="px-2 py-1 rounded bg-gray-700 text-gray-200" onClick={() => selectAll(true)}>Select all</button>

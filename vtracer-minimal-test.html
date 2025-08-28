@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>VTracer Minimal Test</title>
+    <style>
+        body {
+            font-family: monospace;
+            padding: 20px;
+            background: #f0f0f0;
+        }
+        .log {
+            background: white;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+            border-left: 4px solid #007bff;
+        }
+        .error {
+            border-left-color: #dc3545;
+            background: #f8d7da;
+        }
+        .success {
+            border-left-color: #28a745;
+            background: #d4edda;
+        }
+        .warning {
+            border-left-color: #ffc107;
+            background: #fff3cd;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔬 VTracer Minimal Test</h1>
+    <button id="test-direct">Test Direct WASM</button>
+    <button id="test-worker">Test Worker</button>
+    <button id="test-bear">Test with Bear-like Image</button>
+    <div id="output"></div>
+
+    <script type="module">
+        const output = document.getElementById('output');
+        
+        const log = (message, type = 'log') => {
+            const div = document.createElement('div');
+            div.className = `log ${type}`;
+            div.textContent = `${new Date().toLocaleTimeString()}: ${message}`;
+            output.appendChild(div);
+            console.log(message);
+            output.scrollTop = output.scrollHeight;
+        };
+
+        // Create test image that mimics the bear complexity
+        const createBearLikeImage = (size = 128) => {
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            
+            // Create a complex pattern similar to bear image
+            ctx.fillStyle = '#D2B48C'; // Light brown background
+            ctx.fillRect(0, 0, size, size);
+            
+            // Add some circular patterns (bear features)
+            const centerX = size / 2;
+            const centerY = size / 2;
+            
+            // Main head
+            ctx.fillStyle = '#8B4513'; // Saddle brown
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, size * 0.3, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // Ears
+            ctx.fillStyle = '#654321';
+            ctx.beginPath();
+            ctx.arc(centerX - size * 0.2, centerY - size * 0.25, size * 0.1, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(centerX + size * 0.2, centerY - size * 0.25, size * 0.1, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // Eyes
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.arc(centerX - size * 0.1, centerY - size * 0.05, size * 0.03, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(centerX + size * 0.1, centerY - size * 0.05, size * 0.03, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            // Nose
+            ctx.fillStyle = '#000';
+            ctx.beginPath();
+            ctx.arc(centerX, centerY + size * 0.05, size * 0.02, 0, 2 * Math.PI);
+            ctx.fill();
+            
+            return ctx.getImageData(0, 0, size, size);
+        };
+
+        // Test direct WASM
+        document.getElementById('test-direct').onclick = async () => {
+            output.innerHTML = '';
+            log('🚀 Testing direct WASM...');
+            
+            try {
+                log('📦 Importing WASM module...');
+                const mod = await import('/assets/tools/vtracer/vtracer_real.js');
+                
+                log('✅ WASM module imported');
+                log(`📋 Available exports: ${Object.keys(mod).join(', ')}`);
+                
+                if (typeof mod.default === 'function') {
+                    log('🔧 Initializing WASM...');
+                    await mod.default('/assets/tools/vtracer/vtracer_real_bg.wasm');
+                    log('✅ WASM initialized');
+                }
+                
+                if (typeof mod.convert_image_to_svg === 'function') {
+                    log('🎯 Testing convert_image_to_svg function...');
+                    
+                    // Create minimal test image (2x2 red square)
+                    const testData = new Uint8Array(4 * 4 * 4); // 4x4 RGBA
+                    for (let i = 0; i < testData.length; i += 4) {
+                        testData[i] = 255;     // R
+                        testData[i + 1] = 0;   // G
+                        testData[i + 2] = 0;   // B  
+                        testData[i + 3] = 255; // A
+                    }
+                    
+                    log(`🖼️ Testing with 4x4 red square (${testData.length} bytes)`);
+                    
+                    const result = mod.convert_image_to_svg(
+                        testData, 4, 4,
+                        6, 4, 16, 60, 4.0, 45, "spline", "stacked"
+                    );
+                    
+                    log(`✅ Conversion successful!`, 'success');
+                    log(`📐 Result: ${result.width}x${result.height}`, 'success');
+                    log(`📄 SVG length: ${result.svg_data.length} chars`, 'success');
+                    log(`🔍 SVG preview: ${result.svg_data.substring(0, 100)}...`, 'success');
+                    
+                } else {
+                    log('❌ convert_image_to_svg function not found', 'error');
+                }
+                
+            } catch (error) {
+                log(`💥 Direct WASM test failed: ${error.message}`, 'error');
+                log(`🔍 Error details: ${error.stack}`, 'error');
+            }
+        };
+
+        // Test worker
+        document.getElementById('test-worker').onclick = async () => {
+            output.innerHTML = '';
+            log('🏗️ Testing worker...');
+            
+            try {
+                // Create simple test image
+                const imageData = createBearLikeImage(32); // Small bear-like image
+                log(`🖼️ Created ${imageData.width}x${imageData.height} test image`);
+                
+                const worker = new Worker('/src/vtrace/vtracerWorker.ts', { type: 'module' });
+                
+                const timeout = setTimeout(() => {
+                    worker.terminate();
+                    log('⏰ Worker timeout after 15 seconds', 'error');
+                }, 15000);
+                
+                worker.onmessage = (e) => {
+                    clearTimeout(timeout);
+                    worker.terminate();
+                    
+                    if (e.data.error) {
+                        log(`❌ Worker error: ${e.data.error}`, 'error');
+                    } else {
+                        const paths = e.data.paths || [];
+                        const svg = e.data.svg || '';
+                        
+                        log(`✅ Worker success!`, 'success');
+                        log(`🔢 Generated ${paths.length} paths`, 'success');
+                        log(`📄 SVG length: ${svg.length} chars`, 'success');
+                        
+                        if (paths.length > 0) {
+                            log(`🔍 First path: ${paths[0].substring(0, 50)}...`, 'success');
+                        }
+                        
+                        if (svg.length > 0) {
+                            log(`🔍 SVG preview: ${svg.substring(0, 100)}...`, 'success');
+                        }
+                    }
+                };
+                
+                worker.onerror = (error) => {
+                    clearTimeout(timeout);
+                    worker.terminate();
+                    log(`💥 Worker error: ${error.message}`, 'error');
+                };
+                
+                log('📤 Sending data to worker...');
+                worker.postMessage({
+                    imageData,
+                    options: {
+                        mode: 'spline',
+                        hierarchical: 'stacked',
+                        filter_speckle: 4,
+                        color_precision: 6,
+                        layer_difference: 16,
+                        corner_threshold: 60,
+                        length_threshold: 4.0,
+                        splice_threshold: 45
+                    }
+                });
+                
+            } catch (error) {
+                log(`💥 Worker test failed: ${error.message}`, 'error');
+            }
+        };
+
+        // Test with bear-like image (more complex)
+        document.getElementById('test-bear').onclick = async () => {
+            output.innerHTML = '';
+            log('🐻 Testing with bear-like complex image...');
+            
+            try {
+                const imageData = createBearLikeImage(128); // Larger, more complex
+                log(`🖼️ Created ${imageData.width}x${imageData.height} bear-like image`);
+                
+                // Show the test image
+                const canvas = document.createElement('canvas');
+                canvas.width = imageData.width;
+                canvas.height = imageData.height;
+                canvas.style.border = '1px solid #ccc';
+                canvas.style.margin = '10px';
+                const ctx = canvas.getContext('2d');
+                ctx.putImageData(imageData, 0, 0);
+                
+                const imageDiv = document.createElement('div');
+                imageDiv.appendChild(document.createTextNode('Test Image: '));
+                imageDiv.appendChild(canvas);
+                output.appendChild(imageDiv);
+                
+                const worker = new Worker('/src/vtrace/vtracerWorker.ts', { type: 'module' });
+                
+                const timeout = setTimeout(() => {
+                    worker.terminate();
+                    log('⏰ Bear test timeout after 30 seconds', 'error');
+                }, 30000);
+                
+                worker.onmessage = (e) => {
+                    clearTimeout(timeout);
+                    worker.terminate();
+                    
+                    if (e.data.error) {
+                        log(`❌ Bear test error: ${e.data.error}`, 'error');
+                        
+                        // Try to diagnose the error
+                        if (e.data.error.includes('out of memory') || e.data.error.includes('OOM')) {
+                            log('💡 Diagnosis: Out of memory - image too complex', 'warning');
+                        } else if (e.data.error.includes('unreachable') || e.data.error.includes('RuntimeError')) {
+                            log('💡 Diagnosis: WASM runtime error - possible bug in our module', 'warning');
+                        }
+                    } else {
+                        const paths = e.data.paths || [];
+                        const svg = e.data.svg || '';
+                        
+                        log(`✅ Bear test success!`, 'success');
+                        log(`🔢 Generated ${paths.length} paths`, 'success');
+                        log(`📄 SVG length: ${svg.length} chars`, 'success');
+                        
+                        // Show result
+                        if (svg.length > 0) {
+                            const svgDiv = document.createElement('div');
+                            svgDiv.innerHTML = 'Result SVG: ' + svg;
+                            svgDiv.style.border = '1px solid #ccc';
+                            svgDiv.style.margin = '10px';
+                            svgDiv.style.padding = '10px';
+                            svgDiv.style.background = 'white';
+                            output.appendChild(svgDiv);
+                        }
+                    }
+                };
+                
+                worker.onerror = (error) => {
+                    clearTimeout(timeout);
+                    worker.terminate();
+                    log(`💥 Bear test worker error: ${error.message}`, 'error');
+                };
+                
+                log('📤 Sending bear-like image to worker...');
+                worker.postMessage({
+                    imageData,
+                    options: {
+                        mode: 'spline',
+                        hierarchical: 'stacked', 
+                        filter_speckle: 4,
+                        color_precision: 6,
+                        layer_difference: 16,
+                        corner_threshold: 60,
+                        length_threshold: 4.0,
+                        splice_threshold: 45
+                    }
+                });
+                
+            } catch (error) {
+                log(`💥 Bear test failed: ${error.message}`, 'error');
+            }
+        };
+    </script>
+</body>
+</html>

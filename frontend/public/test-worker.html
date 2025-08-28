@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>VTracer Worker Test</title>
+</head>
+<body>
+    <h1>VTracer Worker Test</h1>
+    <button id="testWorker">Test Worker Loading</button>
+    <div id="results"></div>
+
+    <script>
+        document.getElementById('testWorker').addEventListener('click', async () => {
+            const results = document.getElementById('results');
+            results.innerHTML = 'Testing worker...';
+            
+            try {
+                // Test if files are accessible
+                const jsResponse = await fetch('/assets/tools/vtracer/vtracer_minimal.js');
+                const wasmResponse = await fetch('/assets/tools/vtracer/vtracer_minimal.wasm');
+                
+                results.innerHTML += `<br>JS file status: ${jsResponse.status}`;
+                results.innerHTML += `<br>WASM file status: ${wasmResponse.status}`;
+                
+                if (jsResponse.ok && wasmResponse.ok) {
+                    // Create test canvas with dummy data
+                    const canvas = new OffscreenCanvas(100, 100);
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#ff0000';
+                    ctx.fillRect(0, 0, 100, 100);
+                    const imageData = ctx.getImageData(0, 0, 100, 100);
+                    
+                    // Test worker
+                    const worker = new Worker('/workers/vtracer-worker.js', { type: 'module' });
+                    
+                    worker.postMessage({
+                        imageData: imageData,
+                        options: { filter_speckle: 4, color_precision: 6, layer_difference: 16 }
+                    });
+                    
+                    worker.onmessage = (e) => {
+                        results.innerHTML += `<br>Worker response: ${JSON.stringify(e.data)}`;
+                        worker.terminate();
+                    };
+                    
+                    worker.onerror = (e) => {
+                        results.innerHTML += `<br>Worker error: ${e.message}`;
+                        worker.terminate();
+                    };
+                } else {
+                    results.innerHTML += '<br>❌ Files not accessible';
+                }
+            } catch (error) {
+                results.innerHTML += `<br>Error: ${error.message}`;
+            }
+        });
+    </script>
+</body>
+</html>

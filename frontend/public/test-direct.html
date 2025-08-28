@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Direct VTracer WASM Test</title>
+</head>
+<body>
+    <h1>Direct VTracer WASM Test</h1>
+    <button id="testDirect">Test Direct Loading</button>
+    <div id="results"></div>
+
+    <script type="module">
+        document.getElementById('testDirect').addEventListener('click', async () => {
+            const results = document.getElementById('results');
+            results.innerHTML = 'Testing direct WASM loading...<br>';
+            
+            try {
+                // Test direct import (similar to what the worker does)
+                const moduleUrl = window.location.origin + '/assets/tools/vtracer/web/vtracer_web.js';
+                const wasmUrl = window.location.origin + '/assets/tools/vtracer/web/vtracer_web_bg.wasm';
+                
+                results.innerHTML += `Module URL: ${moduleUrl}<br>`;
+                results.innerHTML += `WASM URL: ${wasmUrl}<br>`;
+                
+                const mod = await import(moduleUrl);
+                results.innerHTML += `✅ Module imported successfully<br>`;
+                results.innerHTML += `Module keys: ${Object.keys(mod).join(', ')}<br>`;
+                
+                // Try to initialize
+                if (typeof mod?.default === 'function') {
+                    results.innerHTML += `Initializing with mod.default()...<br>`;
+                    await mod.default(wasmUrl);
+                    results.innerHTML += `✅ WASM initialized with default()<br>`;
+                } else if (typeof mod?.init === 'function') {
+                    results.innerHTML += `Initializing with mod.init()...<br>`;
+                    await mod.init(wasmUrl);
+                    results.innerHTML += `✅ WASM initialized with init()<br>`;
+                } else {
+                    results.innerHTML += `❌ No init function found<br>`;
+                }
+                
+                // Check for convert function
+                if (typeof mod?.convert_image_to_svg === 'function') {
+                    results.innerHTML += `✅ convert_image_to_svg function found<br>`;
+                    
+                    // Create test image data
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 100;
+                    canvas.height = 100;
+                    const ctx = canvas.getContext('2d');
+                    ctx.fillStyle = '#ff0000';
+                    ctx.fillRect(0, 0, 100, 100);
+                    ctx.fillStyle = '#0000ff';
+                    ctx.fillRect(25, 25, 50, 50);
+                    const imageData = ctx.getImageData(0, 0, 100, 100);
+                    
+                    results.innerHTML += `Testing with ${imageData.width}x${imageData.height} image...<br>`;
+                    
+                    // Test conversion
+                    const result = mod.convert_image_to_svg(
+                        new Uint8Array(imageData.data), 
+                        imageData.width, 
+                        imageData.height, 
+                        6,    // color_precision
+                        4,    // filter_speckle
+                        16,   // layer_difference
+                        60,   // corner_threshold
+                        4.0,  // length_threshold
+                        45,   // splice_threshold
+                        "spline",  // mode
+                        "stacked"  // hierarchical
+                    );
+                    
+                    results.innerHTML += `✅ Conversion successful!<br>`;
+                    results.innerHTML += `Result type: ${typeof result}<br>`;
+                    results.innerHTML += `Result keys: ${Object.keys(result).join(', ')}<br>`;
+                    
+                    if (result && result.svg_data) {
+                        results.innerHTML += `SVG length: ${result.svg_data.length}<br>`;
+                        results.innerHTML += `First 200 chars: ${result.svg_data.substring(0, 200)}...<br>`;
+                        
+                        // Display the SVG
+                        const svgDiv = document.createElement('div');
+                        svgDiv.innerHTML = result.svg_data;
+                        results.appendChild(svgDiv);
+                    } else {
+                        results.innerHTML += `❌ No svg_data property in result<br>`;
+                    }
+                } else {
+                    results.innerHTML += `❌ convert_image_to_svg function not found<br>`;
+                    results.innerHTML += `Available functions: ${Object.keys(mod).filter(k => typeof mod[k] === 'function').join(', ')}<br>`;
+                }
+                
+            } catch (error) {
+                results.innerHTML += `❌ Error: ${error.message}<br>`;
+                console.error('Direct test error:', error);
+            }
+        });
+    </script>
+</body>
+</html>

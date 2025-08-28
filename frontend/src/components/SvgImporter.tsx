@@ -55,8 +55,7 @@ const SvgImporter: React.FC = () => {
   const [cornerThreshold, setCornerThreshold] = React.useState<number>(60);
   const [segmentLength, setSegmentLength] = React.useState<number>(4.0);
   const [spliceThreshold, setSpliceThreshold] = React.useState<number>(45);
-  // Demo parity toggle: force exact VisionCortex demo behavior
-  const [demoCompat, setDemoCompat] = React.useState<boolean>(false);
+  // Demo parity removed: keep a single, consistent pipeline
   // Last SVG for download/export
   const [lastSvg, setLastSvg] = React.useState<string | null>(null);
   const lastSvgName = 'trace.svg';
@@ -375,7 +374,9 @@ const SvgImporter: React.FC = () => {
         if (!d) return;
         const stroke = el.getAttribute('stroke') || undefined;
         const sw = Number(el.getAttribute('stroke-width') || '3');
-        const fill = (el.getAttribute('fill') || 'transparent').toLowerCase() === 'none' ? 'transparent' : (el.getAttribute('fill') || 'transparent');
+        // SVG default fill is black if not specified; only treat explicit 'none' as transparent
+        const fillAttr = el.getAttribute('fill');
+        const fill = (fillAttr ? fillAttr : '#000').toLowerCase() === 'none' ? 'transparent' : (fillAttr || '#000');
         const fillRule = (el.getAttribute('fill-rule') as any) || undefined;
         out.push({ d, stroke, strokeWidth: isNaN(sw) ? 3 : sw, fill, fillRule });
       };
@@ -613,22 +614,13 @@ const SvgImporter: React.FC = () => {
       <div className="mt-4 p-3 bg-gray-800/70 rounded border border-gray-700">
               <div className="text-sm font-semibold mb-2 flex items-center gap-3">
                 <span>Auto-trace (WASM with VTracer options)</span>
-                <label className="flex items-center gap-1 text-xs">
-                  <input type="checkbox" checked={demoCompat} onChange={e => setDemoCompat(e.target.checked)} />
-                  <span className="opacity-80">Demo parity</span>
-                </label>
-                <span className="text-xs text-gray-400">Official engine is used. Minimal fallback only if needed.</span>
+                <span className="text-xs text-gray-400">Official engine is used. JS fallback only if needed.</span>
                 {lastEngine && (
                   <span className="text-[11px] px-2 py-0.5 rounded bg-gray-700 text-gray-200" title="Engine actually used on last run">
                     Engine: {lastEngine}
                   </span>
                 )}
               </div>
-              {demoCompat && (
-                <div className="text-[11px] text-amber-300 mb-2">
-                  Demo parity is ON: forces VisionCortex demo settings and ignores crop, segmentation, and background-keying to match their output.
-                </div>
-              )}
               {lastEngine === 'minimal' && (
                 <div className="text-[11px] text-amber-300 mb-2">
                   Using minimal fallback engine; official build could not be initialized.
@@ -924,8 +916,8 @@ const SvgImporter: React.FC = () => {
                   setStatus(`📊 Image: ${img.width}×${img.height}px, analyzing complexity...`);
                   // Clamp size based on selected engine. In demo parity, avoid clamping to match demo.
                   const HARD_MAX_WASM_DIM = 896;
-                  let scale = demoCompat ? 1 : Math.min(maxDim / img.width, maxDim / img.height, 1);
-                  if (engine === 'wasm' && !demoCompat) {
+                  let scale = Math.min(maxDim / img.width, maxDim / img.height, 1);
+                  if (engine === 'wasm') {
                     const wasmScale = Math.min(
                       HARD_MAX_WASM_DIM / img.width,
                       HARD_MAX_WASM_DIM / img.height,
@@ -942,12 +934,11 @@ const SvgImporter: React.FC = () => {
                   canvas.width = w; canvas.height = h;
                   const ctx = canvas.getContext('2d');
                   if (!ctx) { setBusy(false); return; }
-                  // Disable smoothing in demo parity for pixel-exact sampling
-                  (ctx as any).imageSmoothingEnabled = !demoCompat;
+                  (ctx as any).imageSmoothingEnabled = true;
                   ctx.drawImage(img, 0, 0, w, h);
-                  // Apply ROI crop if provided (ignored under demo parity)
+                  // Apply ROI crop if provided
                   let cropW = w, cropH = h, sx = 0, sy = 0;
-                  if (!demoCompat && roi && roi.w > 0.02 && roi.h > 0.02) {
+                  if (roi && roi.w > 0.02 && roi.h > 0.02) {
                     sx = Math.max(0, Math.floor(roi.x * w));
                     sy = Math.max(0, Math.floor(roi.y * h));
                     cropW = Math.max(1, Math.floor(roi.w * w));
@@ -961,16 +952,16 @@ const SvgImporter: React.FC = () => {
                     const ctx2 = canvas.getContext('2d');
                     if (ctx2 && c2x) ctx2.drawImage(c2, 0, 0);
                   }
-                  // In demo parity mode, skip ROI/keying/segmentation pre-processing and read raw pixels
                   let data = ctx.getImageData(0, 0, canvas.width, canvas.height);
-                  // Optional B/W quantization when B/W is selected (outside demo parity)
-                  if (!demoCompat && clusterMode === 'bw') {
+                  // B/W quantization when B/W is selected (applies in all modes since wasm API lacks color_mode)
+                  if (clusterMode === 'bw') {
                     const d = data.data;
                     const thr = traceThreshold; // reuse user threshold slider (0..255)
                     for (let i = 0; i < d.length; i += 4) {
-                      const r = d[i], g = d[i + 1], b = d[i + 2], a = d[i + 3];
-                      const y = (0.299 * r + 0.587 * g + 0.114 * b);
-                      const v = y >= thr ? 255 : 0;
+            const r = d[i];
+            const a = d[i + 3];
+            // Use red-channel threshold to match official demo
+            const v = (r < thr) ? 0 : 255;
                       d[i] = d[i + 1] = d[i + 2] = v; // bw
                       d[i + 3] = a; // preserve alpha
                     }
@@ -980,7 +971,7 @@ const SvgImporter: React.FC = () => {
                   }
 
                   // Auto subject segmentation (MediaPipe) before other preprocessing
-                  if (!demoCompat && useSegmentation) {
+          if (useSegmentation) {
                     setStatus('✂️ Segmenting subject (MediaPipe)...');
                     try {
                       data = await segmentImageDataWithMediaPipe(data, { modelSelection: segModel, featherPx: segFeather });
@@ -990,7 +981,7 @@ const SvgImporter: React.FC = () => {
                     }
                   }
                   // Optional background removal
-                  if (!demoCompat && (removeBgWhite || (useKeyColor && keyColor))) {
+                  if (removeBgWhite || (useKeyColor && keyColor)) {
                     const d = data.data;
                     const tol2 = keyTolerance * keyTolerance;
                     for (let i = 0; i < d.length; i += 4) {
@@ -1041,8 +1032,8 @@ const SvgImporter: React.FC = () => {
                   
                                     setStatus(`📊 Scaled: ${w}×${h}, Colors: ${uniqueColors.size}, Avg brightness: ${Math.round(avgLuma)}, Edge density: ${(complexity * 100).toFixed(1)}%`);
                   
-                  // Smart preprocessing disabled in demo parity to match demo site
-                  if (!demoCompat && uniqueColors.size > 100000) {
+                  // Smart preprocessing for ultra-complex images
+                  if (uniqueColors.size > 100000) {
                     setStatus(`🔧 Ultra-complex image detected (${uniqueColors.size} colors). Applying minimal preprocessing for stability...`);
                     
                     // Gentle preprocessing that preserves detail but prevents crashes
@@ -1088,7 +1079,7 @@ const SvgImporter: React.FC = () => {
                       // Helper runners populate and return arrays of path d strings
                       
                       // use outer-scoped `ds` defined above to collect results
-          const runWasm = async (): Promise<string[]> => {
+          const runWasm = async (modeOverride?: 'pixel'|'polygon'|'spline', altImage?: ImageData): Promise<{ paths: string[]; svg?: string }> => {
                       setStatus(`🤖 Starting WASM trace (threshold: ${traceThreshold})...`);
                       const startTime = Date.now();
                       const worker = new Worker(new URL('../vtrace/vtracerWorker.ts', import.meta.url), { type: 'module' });
@@ -1103,21 +1094,21 @@ const SvgImporter: React.FC = () => {
                           };
                           worker.addEventListener('message', onMessage);
               worker.postMessage({ 
-                            imageData: data, 
+                            imageData: altImage || data, 
                             options: {
                               // Real VTracer parameter names from UI
-                              mode: demoCompat ? 'pixel' : curveMode,
-                              hierarchical: demoCompat ? 'stacked' : hierarchyMode,
-                filter_speckle: demoCompat ? 123 : filterSpeckle,
-                color_precision: demoCompat ? 8 : (clusterMode === 'bw' ? 1 : colorPrecision),
-                layer_difference: demoCompat ? 128 : (clusterMode === 'bw' ? 255 : gradientStep),
+                              mode: (modeOverride || curveMode),
+                              hierarchical: hierarchyMode,
+                              filter_speckle: filterSpeckle,
+                              color_precision: (clusterMode === 'bw') ? 6 : colorPrecision,
+                              // Smaller layer difference for B/W to avoid merging everything
+                              layer_difference: (clusterMode === 'bw') ? 16 : gradientStep,
                               // Only meaningful for spline mode
                               ...(curveMode === 'spline' ? {
                                 corner_threshold: cornerThreshold,
                                 length_threshold: segmentLength,
                                 splice_threshold: spliceThreshold
                               } : {}),
-                              demoCompat
                             }
                           });
                         });
@@ -1125,24 +1116,24 @@ const SvgImporter: React.FC = () => {
                         const engineUsed = (result as any).engine || 'official';
                         setLastEngine(engineUsed);
                         setStatus(`🤖 WASM (${engineUsed}) completed in ${elapsed}ms, found ${(result as any).paths.length} paths`);
-            // Keep last SVG for download (prefer engine SVG)
-            if ((result as any).svg) setLastSvg((result as any).svg as string);
+                        // Keep last SVG for download (prefer engine SVG)
+                        const engineSvg: string | undefined = (result as any).svg;
+                        if (engineSvg) setLastSvg(engineSvg);
                         // Use worker extracted paths
-                        let out = (result as any).paths.slice(0, demoCompat ? 2000 : 600);
+                        let out = (result as any).paths.slice(0, 600);
                         // If WASM returned SVG with non-path elements, try to parse to paths
-                        if (out.length === 0 && (result as any).svg) {
+                        if (out.length === 0 && engineSvg) {
                           setStatus(`🔧 WASM returned SVG with no paths, parsing shapes...`);
-                          const parsed = parseSvgString((result as any).svg);
+                          const parsed = parseSvgString(engineSvg);
                           out = parsed.paths.map(p => p.d).slice(0, 600);
                         }
                         // Explode complex path d into subpaths so we can create multiple layers
-                        // For demo parity, do not split or cap nearly as aggressively
-                        out = demoCompat ? (result as any).paths.slice(0, 2000) : out.flatMap((d: string) => splitPathD(d)).filter(Boolean).slice(0, 800);
+                        out = out.flatMap((d: string) => splitPathD(d)).filter(Boolean).slice(0, 800);
                         // If we didn’t get an engine SVG, build one from paths so Download works
-                        if (!(result as any).svg && out.length) {
+                        if (!engineSvg && out.length) {
                           setLastSvg(makeSvgFromPaths(out));
                         }
-                        return out;
+                        return { paths: out, svg: engineSvg };
                       } finally {
                         worker.terminate();
                       }
@@ -1173,18 +1164,24 @@ const SvgImporter: React.FC = () => {
                       }
                     };
 
+                    // Engine SVG is captured in lastSvg when present
                     try {
                       // Reuse outer-scoped `ds` to carry results beyond this block
-                      
                       if (engine === 'wasm') {
                         // Use real VTracer WASM
                         setStatus(`🤖 Starting Real VTracer WASM...`);
-                        ds = await runWasm();
+                        const res = await runWasm();
+                        ds = res.paths;
+                        if (res.svg && !lastSvg) setLastSvg(res.svg);
                         if (ds.length > 0) {
                           setStatus(`✅ Real VTracer WASM SUCCESS: Found ${ds.length} paths`);
                         } else {
                           setStatus(`⚠️ Real VTracer returned 0 paths, trying JS fallback...`);
                           ds = await runJs('tiled', traceThreshold);
+                        }
+                        // If B/W + Pixel returns very few paths, suggest user actions instead of auto-invert
+                        if (clusterMode === 'bw' && curveMode === 'pixel' && ds.length <= 1) {
+                          setStatus('ℹ️ Pixel produced very few paths. Try Polygon or Spline, or adjust Threshold.');
                         }
                       } else {
                         // JS fallback mode  
@@ -1321,35 +1318,6 @@ const SvgImporter: React.FC = () => {
                       }
                       setStatus(`Added ${added} draw-path layer${added !== 1 ? 's' : ''} ✔`);
                     } else {
-                      if (demoCompat) {
-                        // In demo compatibility mode: combine exactly what VTracer returned (no splitting/filtering/refining)
-                        const combined = ds.join(' ');
-                        const svgBBox = measureSvgPathsBBox(ds.map(d => ({ d })));
-                        useAppStore.getState().addObject({
-                          id: `svg-${Date.now()}`,
-                          type: 'svgPath',
-                          x: 100,
-                          y: 100,
-                          width: svgBBox.width,
-                          height: svgBBox.height,
-                          rotation: 0,
-                          properties: {
-                            pathName: 'VTracer Demo Output',
-                            d: combined,
-                            strokeColor: '#000',
-                            strokeWidth: 1,
-                            fill: 'none'
-                          },
-                          animationType: 'none',
-                          animationStart: 0,
-                          animationDuration: 0,
-                          animationEasing: 'linear'
-                        });
-                        setStatus(`✅ Added combined SVG with ${ds.length} paths (demo parity)`);
-                        if (!lastSvg) setLastSvg(makeSvgFromPaths(ds));
-                        setBusy(false);
-                        return;
-                      }
                       // Enter Path Refinement; can optionally cap to top 30 longest paths
                       const MAX_REFINER_ITEMS = 30;
                       const MAX_TO_MEASURE = 300; // limit expensive length/bbox work

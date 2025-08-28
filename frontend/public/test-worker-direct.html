@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Direct Worker Test</title>
+</head>
+<body>
+    <h1>Direct Worker Test</h1>
+    <input type="file" id="fileInput" accept="image/*">
+    <button id="testWorkerDirect">Test Worker with Image</button>
+    <div id="results"></div>
+
+    <script type="module">
+        document.getElementById('testWorkerDirect').addEventListener('click', async () => {
+            const results = document.getElementById('results');
+            const fileInput = document.getElementById('fileInput');
+            
+            results.innerHTML = 'Testing worker with real image...<br>';
+            
+            try {
+                let imageData;
+                
+                if (fileInput.files && fileInput.files[0]) {
+                    // Use uploaded image
+                    const file = fileInput.files[0];
+                    const img = new Image();
+                    img.src = URL.createObjectURL(file);
+                    
+                    await new Promise((resolve) => {
+                        img.onload = resolve;
+                    });
+                    
+                    const canvas = document.createElement('canvas');
+                    canvas.width = Math.min(img.width, 300);  // Limit size
+                    canvas.height = Math.min(img.height, 300);
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                    imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    
+                    results.innerHTML += `Using uploaded image: ${canvas.width}x${canvas.height}<br>`;
+                } else {
+                    // Create test canvas
+                    const canvas = document.createElement('canvas');
+                    canvas.width = 100;
+                    canvas.height = 100;
+                    const ctx = canvas.getContext('2d');
+                    
+                    // Create a simple test pattern
+                    ctx.fillStyle = '#ff0000';
+                    ctx.fillRect(0, 0, 100, 100);
+                    ctx.fillStyle = '#00ff00';
+                    ctx.fillRect(20, 20, 60, 60);
+                    ctx.fillStyle = '#0000ff';
+                    ctx.fillRect(40, 40, 20, 20);
+                    
+                    imageData = ctx.getImageData(0, 0, 100, 100);
+                    results.innerHTML += `Using test pattern: 100x100<br>`;
+                }
+                
+                // Create the worker from public folder (avoids TS transpile for static page)
+                const worker = new Worker(
+                    new URL('/workers/vtracer-worker.js', window.location.origin),
+                    { type: 'module' }
+                );
+                
+                let responseReceived = false;
+                
+                // Set up timeout
+                const timeout = setTimeout(() => {
+                    if (!responseReceived) {
+                        results.innerHTML += '⏰ Worker timeout (30s)<br>';
+                        worker.terminate();
+                    }
+                }, 30000);
+                
+                worker.onmessage = (e) => {
+                    responseReceived = true;
+                    clearTimeout(timeout);
+                    
+                    const response = e.data;
+                    results.innerHTML += `✅ Worker response received<br>`;
+                    results.innerHTML += `SVG: ${response.svg ? 'Yes (' + response.svg.length + ' chars)' : 'No'}<br>`;
+                    results.innerHTML += `Paths: ${response.paths ? response.paths.length : 0}<br>`;
+                    if (response.error) {
+                        results.innerHTML += `❌ Worker reported error: ${response.error}<br>`;
+                    }
+                    
+                    if (response.warnings && response.warnings.length) {
+                        results.innerHTML += `Warnings: ${response.warnings.join(', ')}<br>`;
+                    }
+                    
+                    if (response.svg) {
+                        // Display the SVG
+                        const svgDiv = document.createElement('div');
+                        svgDiv.innerHTML = `<h3>Result SVG:</h3>${response.svg}`;
+                        results.appendChild(svgDiv);
+                    }
+                    
+                    worker.terminate();
+                };
+                
+                worker.onerror = (e) => {
+                    responseReceived = true;
+                    clearTimeout(timeout);
+                    results.innerHTML += `❌ Worker error: ${e.message}<br>`;
+                    worker.terminate();
+                };
+                
+                // Send the message
+                worker.postMessage({
+                    imageData: imageData,
+                    options: {
+                        filter_speckle: 4,
+                        color_precision: 6,
+                        layer_difference: 16,
+                        corner_threshold: 60,
+                        length_threshold: 4.0,
+                        splice_threshold: 45,
+                        mode: "spline",
+                        hierarchical: "stacked"
+                    }
+                });
+                
+                results.innerHTML += '📤 Message sent to worker<br>';
+                
+            } catch (error) {
+                results.innerHTML += `❌ Error: ${error.message}<br>`;
+                console.error('Worker test error:', error);
+            }
+        });
+    </script>
+</body>
+</html>

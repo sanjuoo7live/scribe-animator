@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Direct Worker Test (B/W)</title>
+  <style>
+    body { font-family: sans-serif; }
+    .row { display: flex; gap: 16px; align-items: center; }
+    .col { display: flex; flex-direction: column; gap: 8px; }
+    input[type=range] { width: 200px; }
+    #preview { max-width: 320px; max-height: 240px; border: 1px solid #ccc; object-fit: contain; }
+    #results { margin-top: 12px; }
+    .svg-wrap { background: #fff; padding: 8px; display: inline-block; }
+  </style>
+</head>
+<body>
+  <h1>Direct Worker Test (B/W)</h1>
+  <div class="row">
+    <div class="col">
+      <input type="file" id="fileInput" accept="image/*">
+      <img id="preview" alt="preview" />
+    </div>
+    <div class="col">
+  <label>Threshold (R channel): <span id="thrVal">128</span></label>
+      <input id="thr" type="range" min="0" max="255" value="128">
+      <label><input id="invert" type="checkbox"> Invert</label>
+      <label>Curve mode:
+        <select id="mode">
+          <option value="none">Pixel (none)</option>
+          <option value="polygon">Polygon</option>
+          <option value="spline">Spline</option>
+        </select>
+      </label>
+  <label>Filter speckle: <input id="speckle" type="number" value="4" min="0" step="1" style="width:80px"></label>
+      <button id="run">Run Worker (B/W)</button>
+    </div>
+  </div>
+  <div id="results"></div>
+
+  <script type="module">
+    const q = id => document.getElementById(id);
+    const fileInput = q('fileInput');
+    const preview = q('preview');
+    const thr = q('thr');
+    const thrVal = q('thrVal');
+    const invert = q('invert');
+    const modeSel = q('mode');
+    const speckle = q('speckle');
+    const results = q('results');
+
+    thr.addEventListener('input', () => thrVal.textContent = thr.value);
+
+    fileInput.addEventListener('change', () => {
+      const f = fileInput.files && fileInput.files[0];
+      if (!f) return;
+      const url = URL.createObjectURL(f);
+      preview.src = url;
+    });
+
+    function toImageData(img) {
+      const maxW = 896, maxH = 896; // keep modest
+      const scale = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight, 1);
+      const w = Math.max(1, Math.floor(img.naturalWidth * scale));
+      const h = Math.max(1, Math.floor(img.naturalHeight * scale));
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      return ctx.getImageData(0, 0, w, h);
+    }
+
+    // Match official BinaryImageConverter behavior: threshold on red channel
+    function binarizeRedChannel(idata, thr, invertFlag) {
+      const a = new Uint8ClampedArray(idata.data);
+      for (let i = 0; i < a.length; i += 4) {
+        const r = a[i];
+        const al = a[i+3];
+        let v = (r < thr) ? 0 : 255; // same sense as demo (x.r < 128 is black)
+        if (invertFlag) v = 255 - v;
+        a[i] = a[i+1] = a[i+2] = v;
+        a[i+3] = al;
+      }
+      return new ImageData(a, idata.width, idata.height);
+    }
+
+    q('run').addEventListener('click', async () => {
+      results.innerHTML = '';
+      if (!preview.src) { results.textContent = 'Select an image first'; return; }
+      const img = new Image();
+      img.src = preview.src;
+      await img.decode();
+      let idata = toImageData(img);
+      idata = binarizeRedChannel(idata, +thr.value, invert.checked);
+
+      const worker = new Worker(new URL('/workers/vtracer-worker.js', window.location.origin), { type: 'module' });
+      const opts = {
+        // Keep in sync with CLI bw preset defaults where applicable
+        filter_speckle: Math.max(0, parseInt(speckle.value || '4', 10)),
+        color_precision: 6,
+        layer_difference: 16,
+        corner_threshold: 60,
+        length_threshold: 4.0,
+        splice_threshold: 45,
+        mode: modeSel.value,   // 'none' (Pixel), 'polygon', 'spline'
+        hierarchical: 'stacked'
+      };
+
+      const t0 = performance.now();
+      const done = await new Promise(resolve => {
+        const timeout = setTimeout(() => resolve({ error: 'timeout' }), 30000);
+        worker.onmessage = (ev) => { clearTimeout(timeout); resolve(ev.data); };
+        worker.onerror = (e) => { clearTimeout(timeout); resolve({ error: e.message }); };
+        worker.postMessage({ imageData: idata, options: opts });
+      });
+      const dt = Math.round(performance.now() - t0);
+
+      if (done.error) {
+        results.innerHTML += `❌ ${done.error}<br/>`;
+      } else {
+        results.innerHTML += `✅ Done in ${dt} ms<br/>`;
+        results.innerHTML += `Paths: ${done.paths?.length || 0}<br/>`;
+        results.innerHTML += `SVG length: ${done.svg?.length || 0}<br/>`;
+        if ((done.paths?.length || 0) <= 1) {
+          results.innerHTML += `Hint: Try Invert, or switch to Polygon/Spline to see if segmentation improves.<br/>`;
+        }
+        if (done.svg) {
+          const svgDiv = document.createElement('div');
+          svgDiv.innerHTML = `<h3>Result SVG</h3><div class="svg-wrap">${done.svg}</div>`;
+          results.appendChild(svgDiv);
+        }
+      }
+
+      worker.terminate();
+    });
+  </script>
+</body>
+</html>

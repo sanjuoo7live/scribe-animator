@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>VTracer API Test</title>
+</head>
+<body>
+    <script type="module">
+        import init, { BinaryImageConverter, ColorImageConverter, main } from './frontend/public/assets/tools/vtracer/vtracer.js';
+        
+        async function test() {
+            await init('./frontend/public/assets/tools/vtracer/vtracer_bg.wasm');
+            
+            console.log('VTracer initialized');
+            console.log('BinaryImageConverter:', BinaryImageConverter);
+            console.log('ColorImageConverter:', ColorImageConverter);
+            console.log('main function:', main);
+            
+            // Test ColorImageConverter
+            const params = JSON.stringify({
+                color_precision: 6,
+                filter_speckle: 4,
+                gradient_step: 16,
+                corner_threshold: 60,
+                segment_length: 4,
+                splice_threshold: 45,
+                mode: "spline"
+            });
+            
+            const converter = ColorImageConverter.new_with_string(params);
+            console.log('ColorImageConverter instance:', converter);
+            console.log('Methods:', Object.getOwnPropertyNames(converter.constructor.prototype));
+        }
+        
+        test();
+    </script>
+</body>
+</html>

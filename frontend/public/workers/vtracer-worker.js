@@ -42,6 +42,7 @@ G.onmessage = async (e) => {
     }
 
     const opts = options || {};
+    // Pass-through to match wasm signature exactly; 'none' => pixel mode passthrough
     const result = v.convert_image_to_svg(
       bytes,
       width,
@@ -56,9 +57,21 @@ G.onmessage = async (e) => {
       opts.hierarchical ?? 'stacked'
     );
 
-    const svg = result?.svg_data;
+    let svg = result?.svg_data;
     const paths = typeof svg === 'string' ? extractPathsFromSvg(svg).slice(0, 800) : [];
-  G.postMessage({ paths, svg });
+    // If B/W often yields black-on-transparent on dark page, wrap with white background for visibility
+    if (typeof svg === 'string') {
+      const viewBoxMatch = svg.match(/viewBox="([^"]+)"/i);
+      if (viewBoxMatch) {
+  const vb = viewBoxMatch[1];
+  const [, , w, h] = vb.split(/\s+/).map(Number);
+        if (!Number.isNaN(w) && !Number.isNaN(h)) {
+          svg = svg.replace('<svg', '<svg style="background:white"');
+          // Alternatively, could inject a rect; style is simpler and non-destructive.
+        }
+      }
+    }
+    G.postMessage({ paths, svg });
   } catch (err) {
   const msg = (err && (err.message || String(err))) || 'Unknown error';
   G.postMessage({ paths: [], error: msg });

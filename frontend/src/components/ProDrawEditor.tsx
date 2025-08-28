@@ -707,18 +707,14 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
   // Save & Apply to canvas
   const applyToCanvas = () => {
     if (!currentProject || paths.length === 0) { onClose(); return; }
-    const allPoints: Point[] = [];
-    // Concatenate all paths in order with small gap to lift pen
-    paths.forEach((p, idx) => {
-      p.nodes.forEach(n => allPoints.push({ x: n.p.x, y: n.p.y }));
-      if (idx < paths.length - 1) allPoints.push({ x: allPoints[allPoints.length-1].x + 0.001, y: allPoints[allPoints.length-1].y + 0.001 });
-    });
+    // Build segments: one array of points per path to naturally lift the pen between them
+    const segments: Point[][] = paths.map(p => p.nodes.map(n => ({ x: n.p.x, y: n.p.y })));
     if (editTarget) {
       // Update existing object
       const existing = currentProject.objects?.find((o: any) => o.id === editTarget.id);
       const newProps = {
         ...(existing?.properties || {}),
-        points: allPoints,
+        segments,
         strokeColor,
         strokeWidth,
     assetSrc: editTarget.assetSrc,
@@ -751,7 +747,7 @@ const ProDrawEditor: React.FC<ProDrawEditorProps> = ({ isOpen, onClose, assetId,
       height: (originalRectRef.current?.h ?? imgRect.h),
       properties: {
         pathName: `Pro Path ${new Date().toLocaleTimeString()}`,
-        points: allPoints,
+  segments,
         strokeColor: strokeColor,
   strokeWidth: strokeWidth,
     assetSrc: resolvedAssetSrc,

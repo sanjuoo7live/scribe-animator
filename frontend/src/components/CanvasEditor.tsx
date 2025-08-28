@@ -218,10 +218,8 @@ const CanvasEditor: React.FC = () => {
   const openProEditorFromImage = React.useCallback((_obj: any) => { /* no-op */ }, []);
 
   // Scroll handler for canvas container
-  const handleCanvasScroll = React.useCallback((event: Event) => {
-    const target = event.target as HTMLDivElement;
-    // Track scroll position if needed for future features
-    // Currently just handling the scroll event
+  const handleCanvasScroll = React.useCallback((_event: Event) => {
+    // Reserved for future scroll-based features
   }, []);
 
   // Setup scroll listener for canvas container
@@ -605,28 +603,54 @@ const CanvasEditor: React.FC = () => {
       const oy = typeof node.offsetY === 'function' ? node.offsetY() : node.offsetY || 0;
       const sx = baseWidth ? newWidth / baseWidth : 1;
       const sy = baseHeight ? newHeight / baseHeight : 1;
-      const prevPoints = Array.isArray(obj.properties?.points) ? obj.properties.points : [];
-      let scaledPoints = prevPoints.map((p: any) => ({ x: p.x * sx, y: p.y * sy }));
+
+      const hasSegments = Array.isArray(obj.properties?.segments);
+      const prevSegments: { x: number; y: number }[][] = hasSegments ? obj.properties.segments : [];
+      const prevPoints: { x: number; y: number }[] = Array.isArray(obj.properties?.points) ? obj.properties.points : [];
+
+      let scaledSegments: { x: number; y: number }[][] = [];
+      let scaledPoints: { x: number; y: number }[] = [];
+
+      if (hasSegments && prevSegments.length > 0) {
+        scaledSegments = prevSegments.map(seg => seg.map(p => ({ x: p.x * sx, y: p.y * sy })));
+      } else {
+        scaledPoints = prevPoints.map(p => ({ x: p.x * sx, y: p.y * sy }));
+      }
 
       // Normalize to a tight bounding box so the group frame matches visible content
-      if (scaledPoints.length > 0) {
-        const minX = Math.min(...scaledPoints.map((p: any) => p.x));
-        const minY = Math.min(...scaledPoints.map((p: any) => p.y));
-        const maxX = Math.max(...scaledPoints.map((p: any) => p.x));
-        const maxY = Math.max(...scaledPoints.map((p: any) => p.y));
+      const allPoints = hasSegments
+        ? scaledSegments.flat()
+        : scaledPoints;
+
+      if (allPoints.length > 0) {
+        const minX = Math.min(...allPoints.map((p: any) => p.x));
+        const minY = Math.min(...allPoints.map((p: any) => p.y));
+        const maxX = Math.max(...allPoints.map((p: any) => p.x));
+        const maxY = Math.max(...allPoints.map((p: any) => p.y));
         const tightW = Math.max(1, maxX - minX);
         const tightH = Math.max(1, maxY - minY);
-        // Rebase points to (0,0) within the group
-        scaledPoints = scaledPoints.map((p: any) => ({ x: p.x - minX, y: p.y - minY }));
 
-        updateObject(id, {
-          x: nx - ox + minX,
-          y: ny - oy + minY,
-          width: tightW,
-          height: tightH,
-          rotation,
-          properties: { ...obj.properties, points: scaledPoints },
-        });
+        if (hasSegments) {
+          const rebasedSegments = scaledSegments.map(seg => seg.map(p => ({ x: p.x - minX, y: p.y - minY })));
+          updateObject(id, {
+            x: nx - ox + minX,
+            y: ny - oy + minY,
+            width: tightW,
+            height: tightH,
+            rotation,
+            properties: { ...obj.properties, segments: rebasedSegments },
+          });
+        } else {
+          const rebasedPoints = scaledPoints.map((p: any) => ({ x: p.x - minX, y: p.y - minY }));
+          updateObject(id, {
+            x: nx - ox + minX,
+            y: ny - oy + minY,
+            width: tightW,
+            height: tightH,
+            rotation,
+            properties: { ...obj.properties, points: rebasedPoints },
+          });
+        }
       } else {
         updateObject(id, {
           x: nx - ox,
@@ -634,7 +658,7 @@ const CanvasEditor: React.FC = () => {
           width: newWidth,
           height: newHeight,
           rotation,
-          properties: { ...obj.properties, points: scaledPoints },
+          properties: { ...obj.properties, ...(hasSegments ? { segments: scaledSegments } : { points: scaledPoints }) },
         });
       }
   } else {
@@ -660,25 +684,39 @@ const CanvasEditor: React.FC = () => {
 
     // Auto-trim legacy drawPath bounds to tight box to fix oversized selectors
     const obj = currentProject?.objects.find(o => o.id === id);
-    if (obj && obj.type === 'drawPath' && Array.isArray(obj.properties?.points) && obj.properties.points.length > 0) {
-      const pts = obj.properties.points as { x: number; y: number }[];
-      const minX = Math.min(...pts.map(p => p.x));
-      const minY = Math.min(...pts.map(p => p.y));
-      const maxX = Math.max(...pts.map(p => p.x));
-      const maxY = Math.max(...pts.map(p => p.y));
-      const tightW = Math.max(1, maxX - minX);
-      const tightH = Math.max(1, maxY - minY);
-      if (minX !== 0 || minY !== 0) {
-        const normPoints = pts.map(p => ({ x: p.x - minX, y: p.y - minY }));
-        updateObject(id, {
-          x: obj.x + minX,
-          y: obj.y + minY,
-          width: tightW,
-          height: tightH,
-          properties: { ...obj.properties, points: normPoints },
-        });
-      } else if (!obj.width || !obj.height) {
-        updateObject(id, { width: tightW, height: tightH });
+    if (obj && obj.type === 'drawPath') {
+      const hasSegments = Array.isArray(obj.properties?.segments) && obj.properties.segments.length > 0;
+      const pts = hasSegments ? (obj.properties.segments as {x:number;y:number}[][]).flat() : (obj.properties.points as {x:number;y:number}[] || []);
+      if (pts.length > 0) {
+        const minX = Math.min(...pts.map(p => p.x));
+        const minY = Math.min(...pts.map(p => p.y));
+        const maxX = Math.max(...pts.map(p => p.x));
+        const maxY = Math.max(...pts.map(p => p.y));
+        const tightW = Math.max(1, maxX - minX);
+        const tightH = Math.max(1, maxY - minY);
+        if (minX !== 0 || minY !== 0) {
+          if (hasSegments) {
+            const normSegments = (obj.properties.segments as {x:number;y:number}[][]).map(seg => seg.map(p => ({ x: p.x - minX, y: p.y - minY })));
+            updateObject(id, {
+              x: obj.x + minX,
+              y: obj.y + minY,
+              width: tightW,
+              height: tightH,
+              properties: { ...obj.properties, segments: normSegments },
+            });
+          } else {
+            const normPoints = (obj.properties.points as {x:number;y:number}[]).map(p => ({ x: p.x - minX, y: p.y - minY }));
+            updateObject(id, {
+              x: obj.x + minX,
+              y: obj.y + minY,
+              width: tightW,
+              height: tightH,
+              properties: { ...obj.properties, points: normPoints },
+            });
+          }
+        } else if (!obj.width || !obj.height) {
+          updateObject(id, { width: tightW, height: tightH });
+        }
       }
     }
   };
@@ -1430,6 +1468,13 @@ const CanvasEditor: React.FC = () => {
                   const groupY = animatedProps.y ?? obj.y;
                   const paths = Array.isArray(obj.properties?.paths) ? obj.properties.paths : [];
                   const draw = obj.animationType === 'drawIn';
+                  // Vivus-like sequential reveal across paths by cumulative length
+                  const lengths = paths.map((p: any) => {
+                    const d = p.d as string; return getPathTotalLength(d) || 0;
+                  });
+                  const totalLen = lengths.reduce((a: number, b: number) => a + b, 0);
+                  const targetLen = draw ? ep * totalLen : totalLen;
+                  let consumed = 0;
                   return (
                     <Group
                       key={obj.id}
@@ -1447,10 +1492,17 @@ const CanvasEditor: React.FC = () => {
                     >
                       {paths.map((p: any, idx: number) => {
                         const d = p.d as string;
-                        const len = getPathTotalLength(d) || 0;
-                        const dash = draw && len > 0 ? [len, len] : undefined;
-                        const dashOffset = draw && len > 0 ? (1 - ep) * len : 0;
-            return (
+                        const len = lengths[idx];
+                        let dash: number[] | undefined;
+                        let dashOffset = 0;
+                        if (draw && len > 0 && totalLen > 0) {
+                          const remaining = Math.max(0, targetLen - consumed);
+                          const localReveal = Math.max(0, Math.min(len, remaining));
+                          dash = [len, len];
+                          dashOffset = len - localReveal;
+                          consumed += len;
+                        }
+                        return (
                           <KonvaPath
                             key={`${obj.id}-p-${idx}`}
                             data={d}
@@ -1463,8 +1515,8 @@ const CanvasEditor: React.FC = () => {
                             lineJoin="round"
                             dash={dash as any}
                             dashOffset={dashOffset}
-              listening={false}
-              perfectDrawEnabled={false}
+                            listening={false}
+                            perfectDrawEnabled={false}
                           />
                         );
                       })}
@@ -1473,31 +1525,68 @@ const CanvasEditor: React.FC = () => {
                 }
 
                 if (obj.type === 'drawPath') {
-                  const pts = obj.properties.points || [];
                   const assetSrc = obj.properties.assetSrc;
-                  let renderPoints = pts;
-                  
-                  // Handle drawIn animation by progressively revealing points
-                  if (obj.animationType === 'drawIn') {
-                    const totalPoints = pts.length;
-                    if (totalPoints > 1) {
-                      const revealedPointCount = Math.floor(ep * totalPoints);
-                      renderPoints = pts.slice(0, Math.max(1, revealedPointCount + 1));
-                    }
-                  }
-                  
-                  const flat = renderPoints.reduce((acc: number[], p: { x: number; y: number }) => acc.concat([p.x, p.y]), [] as number[]);
+                  const hasSegments = Array.isArray(obj.properties?.segments) && obj.properties.segments.length > 0;
+                  const segments: { x: number; y: number }[][] = hasSegments
+                    ? obj.properties.segments
+                    : [obj.properties.points || []];
 
-                  // Compute tangent and current point for tool rendering
-                  let head = renderPoints[renderPoints.length - 1];
-                  let prev = renderPoints[renderPoints.length - 2] || head;
+                  // Compute total points for animation timing
+                  const totalPoints = segments.reduce((sum, seg) => sum + seg.length, 0);
+                  // Determine how many points should be visible globally
+                  const globalReveal = obj.animationType === 'drawIn' && totalPoints > 1
+                    ? Math.max(1, Math.floor(ep * totalPoints + 0.00001))
+                    : totalPoints;
+
+                  // Build per-segment revealed points
+                  let remaining = globalReveal;
+                  const revealedSegments = segments.map((seg) => {
+                    if (remaining <= 0) return seg.slice(0, 0);
+                    const take = Math.min(seg.length, remaining);
+                    remaining -= take;
+                    return seg.slice(0, Math.max(1, take));
+                  });
+
+                  // Current head for tool follower
+                  let head: { x: number; y: number } | undefined;
+                  for (let i = revealedSegments.length - 1; i >= 0 && !head; i--) {
+                    const seg = revealedSegments[i];
+                    if (seg.length > 0) head = seg[seg.length - 1];
+                  }
+                  const prev = head && (() => {
+                    for (let i = revealedSegments.length - 1; i >= 0; i--) {
+                      const seg = revealedSegments[i];
+                      if (seg.length > 1) return seg[seg.length - 2];
+                    }
+                    return head;
+                  })();
                   const dx = (head?.x ?? 0) - (prev?.x ?? 0);
                   const dy = (head?.y ?? 0) - (prev?.y ?? 0);
                   const angleDeg = Math.atan2(dy, dx) * 180 / Math.PI;
 
-                  
+                  // Helper to render segments as Lines relative to group origin
+                  const renderSegmentLines = (segList: { x: number; y: number }[][], opts: { stroke: string; strokeWidth: number; composite?: GlobalCompositeOperation; }) => (
+                    segList.map((seg, si) => {
+                      if (seg.length < 2) return null;
+                      const flat = seg.reduce((acc: number[], p) => acc.concat([p.x, p.y]), [] as number[]);
+                      return (
+                        <Line
+                          key={`${obj.id}-seg-${si}`}
+                          points={flat}
+                          stroke={opts.stroke}
+                          strokeWidth={opts.strokeWidth}
+                          lineCap="round"
+                          lineJoin="round"
+                          perfectDrawEnabled={false}
+                          globalCompositeOperation={opts.composite as any}
+                          listening={false}
+                        />
+                      );
+                    })
+                  );
+
                   // If there's a background asset, create a masked reveal effect
-                  if (assetSrc && flat.length > 3) {
+                  if (assetSrc && totalPoints > 1) {
                     return (
                       <Group
                         key={obj.id}
@@ -1516,9 +1605,7 @@ const CanvasEditor: React.FC = () => {
                         clipY={0}
                         clipWidth={Math.max(1, obj.width || 1)}
                         clipHeight={Math.max(1, obj.height || 1)}
-                        // onDblClick disabled; re-edit from new flow
                       >
-                        {/* Full opacity background image */}
                         <CanvasImage
                           key={`${obj.id}-masked`}
                           id={`${obj.id}-masked`}
@@ -1526,12 +1613,12 @@ const CanvasEditor: React.FC = () => {
                             ...obj,
                             id: `${obj.id}-masked`,
                             type: 'image',
-                            x: 0, // Relative to group
-                            y: 0, // Relative to group
+                            x: 0,
+                            y: 0,
                             properties: {
                               ...obj.properties,
                               src: assetSrc,
-                              opacity: 1.0 // Full opacity
+                              opacity: 1.0
                             }
                           }}
                           animatedProps={{ x: 0, y: 0, scaleX: 1, scaleY: 1, opacity: 1.0 }}
@@ -1542,70 +1629,45 @@ const CanvasEditor: React.FC = () => {
                           onTransformEnd={() => {}}
                           interactive={false}
                         />
-                        
-                        {/* Mask: White path that reveals the image */}
-                        <Line
-                          key={`${obj.id}-mask`}
-                          points={flat}
-                          stroke="white"
-                          strokeWidth={(obj.properties.strokeWidth || 2) * 3} // Wider reveal area
-                          lineCap="round"
-                          lineJoin="round"
-                          perfectDrawEnabled={false}
-                          globalCompositeOperation="destination-in"
-                          listening={false}
-                        />
-                        
-                        {/* Hand/Pen Asset - follows the drawing path */}
-                        {obj.animationType === 'drawIn' && renderPoints.length > 0 && (
-                          <>
-                            <ToolFollower
-                              x={head?.x || 0}
-                              y={head?.y || 0}
-                              angle={angleDeg}
-                              penType={obj.properties.selectedPenType}
-                              handAsset={obj.properties.selectedHandAsset}
-                              handOffset={obj.properties.handOffset}
-                              handScale={obj.properties.handScale}
-                              penOffset={obj.properties.penOffset}
-                              penScale={obj.properties.penScale}
-                            />
-                          </>
+                        {/* Mask segments */}
+                        {renderSegmentLines(revealedSegments, { stroke: 'white', strokeWidth: (obj.properties.strokeWidth || 2) * 3, composite: 'destination-in' })}
+                        {/* Hand/Pen follower */}
+                        {obj.animationType === 'drawIn' && head && (
+                          <ToolFollower
+                            x={head.x}
+                            y={head.y}
+                            angle={angleDeg}
+                            penType={obj.properties.selectedPenType}
+                            handAsset={obj.properties.selectedHandAsset}
+                            handOffset={obj.properties.handOffset}
+                            handScale={obj.properties.handScale}
+                            penOffset={obj.properties.penOffset}
+                            penScale={obj.properties.penScale}
+                          />
                         )}
-                        
-                        {/* Selection indicator removed; Konva Transformer handles selection visuals */}
                       </Group>
                     );
                   }
-                  
-                  // Fallback: render as regular line if no asset source
-      if (flat.length > 3) {
-                    const adjustedFlat = renderPoints.reduce((acc: number[], p: { x: number; y: number }) => acc.concat([p.x + (animatedProps.x ?? obj.x), p.y + (animatedProps.y ?? obj.y)]), [] as number[]);
-                    return (
-                      <Line
-                        key={obj.id}
-                        id={obj.id}
-                        points={adjustedFlat}
-                        rotation={obj.rotation || 0}
-                        stroke={isSelected ? '#4f46e5' : obj.properties.strokeColor || '#000'}
-                        strokeWidth={(obj.properties.strokeWidth || 2) + (isSelected ? 1 : 0)}
-                        opacity={(animatedProps.opacity ?? 1) * (obj.properties.opacity ?? 1)}
-                        dash={obj.properties.dash}
-                        lineCap="round"
-                        lineJoin="round"
-                        draggable={tool === 'select'}
-                        hitStrokeWidth={Math.max(12, (obj.properties.strokeWidth || 2) * 3)}
-                        perfectDrawEnabled={false}
-                        shadowForStrokeEnabled={false}
-                        onMouseEnter={(e) => { if (tool === 'select') (e.target.getStage() as any)?.container().style.setProperty('cursor', 'pointer'); }}
-                        onMouseLeave={(e) => { (e.target.getStage() as any)?.container().style.removeProperty('cursor'); }}
-                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }}
-  // onDblClick disabled; re-edit from new flow
-                        onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
-                        onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
-                      />
-                    );
-                  }
+
+                  // Fallback: render as regular lines if no asset source
+                  const groupX = animatedProps.x ?? obj.x;
+                  const groupY = animatedProps.y ?? obj.y;
+                  return (
+                    <Group
+                      key={obj.id}
+                      id={obj.id}
+                      x={groupX}
+                      y={groupY}
+                      rotation={obj.rotation || 0}
+                      opacity={(animatedProps.opacity ?? 1) * (obj.properties.opacity ?? 1)}
+                      draggable={tool === 'select'}
+                      onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
+                      onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
+                      onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
+                    >
+                      {renderSegmentLines(revealedSegments, { stroke: isSelected ? '#4f46e5' : (obj.properties.strokeColor || '#000'), strokeWidth: (obj.properties.strokeWidth || 2) + (isSelected ? 1 : 0) })}
+                    </Group>
+                  );
                 }
 
                 return null;

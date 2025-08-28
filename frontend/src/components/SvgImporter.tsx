@@ -59,6 +59,10 @@ const SvgImporter: React.FC = () => {
   // Last SVG for download/export
   const [lastSvg, setLastSvg] = React.useState<string | null>(null);
   const lastSvgName = 'trace.svg';
+  // Vivus preview refs/state
+  const vivusBoxRef = React.useRef<HTMLDivElement | null>(null);
+  const vivusInstanceRef = React.useRef<any>(null);
+  const [vivusPlaying, setVivusPlaying] = React.useState(false);
   // Runtime indicators
   const [lastEngine, setLastEngine] = React.useState<null | 'official' | 'npm' | 'local' | 'minimal'>(null);
   // Path Refinement modal state
@@ -479,6 +483,35 @@ const SvgImporter: React.FC = () => {
     setTimeout(() => URL.revokeObjectURL(url), 2000);
   }, [lastSvg, lastSvgName]);
 
+  // Animate the last traced SVG using Vivus in the preview box
+  const playVivus = React.useCallback(async () => {
+    if (!lastSvg || !vivusBoxRef.current) return;
+    try {
+      const mod = await import('vivus');
+      const Vivus: any = (mod as any).default || (mod as any);
+      vivusBoxRef.current.innerHTML = lastSvg;
+      const svgEl = vivusBoxRef.current.querySelector('svg');
+      if (!svgEl) return;
+      svgEl.setAttribute('width', '100%');
+      svgEl.setAttribute('height', '100%');
+      if (vivusInstanceRef.current && typeof vivusInstanceRef.current.stop === 'function') {
+        try { vivusInstanceRef.current.stop(); } catch {}
+      }
+      setVivusPlaying(true);
+      vivusInstanceRef.current = new Vivus(svgEl, {
+        type: 'oneByOne',
+        duration: 180,
+        animTimingFunction: Vivus.EASE,
+        start: 'autostart',
+        dashGap: 2,
+        forceRender: true,
+      }, () => setVivusPlaying(false));
+    } catch (e) {
+      console.warn('Vivus failed', e);
+      setVivusPlaying(false);
+    }
+  }, [lastSvg]);
+
   const addPathsToCanvas = (paths: ParsedPath[]) => {
     if (!currentProject) {
       setStatus('No active project.');
@@ -747,6 +780,13 @@ const SvgImporter: React.FC = () => {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  className={`px-2 py-1 rounded text-xs ${lastSvg? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-gray-800 opacity-50 cursor-not-allowed'}`}
+                  disabled={!lastSvg}
+                  onClick={playVivus}
+                  title="Animate traced SVG with Vivus"
+                >{vivusPlaying ? 'Replay' : 'Play'}</button>
+                <button
+                  type="button"
                   className={`px-2 py-1 rounded text-xs ${lastSvg? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-800 opacity-50 cursor-not-allowed'}`}
                   disabled={!lastSvg}
                   onClick={downloadLastSvg}
@@ -887,6 +927,12 @@ const SvgImporter: React.FC = () => {
             ) : (
               <div className="w-full h-32 flex items-center justify-center text-xs text-gray-500 border border-dashed border-gray-700 rounded">No image selected</div>
             )}
+            {/* Vivus SVG animation preview */}
+            <div className="mt-2">
+              <div ref={vivusBoxRef} className="w-full h-48 rounded border border-gray-700 bg-black/40 flex items-center justify-center overflow-hidden">
+                {!lastSvg && (<div className="text-xs text-gray-500">Trace to vector to preview animation</div>)}
+              </div>
+            </div>
                     <div className="mt-3 text-xs text-gray-300">Preset</div>
                     <select
                       value={preset}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Stage, Layer, Line, Text, Rect, Circle, Star, RegularPolygon, Arrow, Transformer, Group, Image as KonvaImage, Path as KonvaPath } from 'react-konva';
+import { Stage, Layer, Line, Text, Rect, Circle, Star, RegularPolygon, Arrow, Transformer, Group, Image as KonvaImage, Shape } from 'react-konva';
 import Konva from 'konva';
 import { useAppStore } from '../store/appStore';
 import CanvasSettings from './CanvasSettings';
@@ -162,18 +162,20 @@ const CanvasEditor: React.FC = () => {
   // Helpers for SVG path handling (length & bbox)
   const getPathTotalLength = React.useCallback(() => {
     const cache = new Map<string, number>();
-    return (d: string) => {
-      const cached = cache.get(d);
+    return (d: string, m?: number[]) => {
+      const key = m ? `${d}|${m.join(',')}` : d;
+      const cached = cache.get(key);
       if (typeof cached === 'number') return cached;
       try {
         const svgNS = 'http://www.w3.org/2000/svg';
         const path = document.createElementNS(svgNS, 'path');
         path.setAttribute('d', d);
+        if (m) path.setAttribute('transform', `matrix(${m[0]} ${m[1]} ${m[2]} ${m[3]} ${m[4]} ${m[5]})`);
         const len = path.getTotalLength();
-        cache.set(d, len);
+        cache.set(key, len);
         return len;
       } catch {
-        cache.set(d, 0);
+        cache.set(key, 0);
         return 0;
       }
     };
@@ -1481,7 +1483,7 @@ const CanvasEditor: React.FC = () => {
                   const draw = obj.animationType === 'drawIn';
                   // Vivus-like sequential reveal across paths by cumulative length
                   const lengths = paths.map((p: any) => {
-                    const d = p.d as string; return getPathTotalLength(d) || 0;
+                    const d = p.d as string; return getPathTotalLength(d, p.m) || 0;
                   });
                   const totalLen = lengths.reduce((a: number, b: number) => a + b, 0);
                   const targetLen = draw ? ep * totalLen : totalLen;
@@ -1539,19 +1541,28 @@ const CanvasEditor: React.FC = () => {
                         }
                         consumed += len;
 
+                        const matrix = p.m as number[] | undefined;
                         return (
-                          <KonvaPath
+                          <Shape
                             key={`${obj.id}-p-${idx}`}
-                            data={d}
-                            x={0}
-                            y={0}
-                            stroke={strokeColor}
-                            strokeWidth={(p.strokeWidth ?? 3) + (isSelected ? 0.5 : 0)}
-                            fill={fillColor || 'transparent'}
-                            lineCap="round"
-                            lineJoin="round"
-                            dash={dash as any}
-                            dashOffset={dashOffset}
+                            sceneFunc={(ctx, shape) => {
+                              ctx.save();
+                              if (matrix) ctx.transform(matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5]);
+                              const path = new Path2D(d);
+                              ctx.lineWidth = (p.strokeWidth ?? 3) + (isSelected ? 0.5 : 0);
+                              ctx.lineCap = 'round';
+                              ctx.lineJoin = 'round';
+                              ctx.strokeStyle = strokeColor;
+                              if (dash) ctx.setLineDash(dash);
+                              ctx.lineDashOffset = dashOffset;
+                              ctx.stroke(path);
+                              if (fillColor) {
+                                ctx.fillStyle = fillColor;
+                                if (p.fillRule) ctx.fill(path, p.fillRule);
+                                else ctx.fill(path);
+                              }
+                              ctx.restore();
+                            }}
                             listening={false}
                             perfectDrawEnabled={false}
                           />

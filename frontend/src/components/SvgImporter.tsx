@@ -1,6 +1,5 @@
 import React from 'react';
 import Vivus from 'vivus';
-import { drawSvgOnCanvas } from '../utils/resvgCanvas';
 import { useAppStore } from '../store/appStore';
 import { traceImageDataToPaths } from '../vtrace/simpleTrace';
 // MediaPipe segmentation removed per UI simplification
@@ -57,7 +56,6 @@ const SvgImporter: React.FC = () => {
   const lastSvgName = 'trace.svg';
   // Draw preview controls
   const [showDrawPreview, setShowDrawPreview] = React.useState(false);
-  const [splitMultiMove, setSplitMultiMove] = React.useState(true); // kit-of-parts default ON
   // Frozen SVG used for Draw Preview; captured when the panel is opened so it never changes while drawing
   const [drawSvgSnapshot, setDrawSvgSnapshot] = React.useState<string | null>(null);
   const domSvgHolderRef = React.useRef<HTMLDivElement | null>(null);
@@ -185,7 +183,7 @@ const SvgImporter: React.FC = () => {
       resizeCanvasToHolder();
       return true;
     } catch { return false; }
-  }, []);
+  }, [resizeCanvasToHolder]);
   // Normalized SVG string for responsive preview (compute viewBox if missing; avoid TS deps)
   // ResizeObserver to auto-resize canvas on container or window resize
   React.useEffect(() => {
@@ -989,18 +987,35 @@ const SvgImporter: React.FC = () => {
                     disabled={!lastSvg}
                     onClick={() => {
                       if (!drawSvgSnapshot || !currentProject) return;
-                      const doc = new DOMParser().parseFromString(drawSvgSnapshot, 'image/svg+xml');
-                      const paths = Array.from(doc.querySelectorAll('path'));
-                      const pathObjects = paths.map(p => ({
-                        d: p.getAttribute('d') || '',
-                        stroke: p.getAttribute('stroke') || '#111827',
-                        strokeWidth: Number(p.getAttribute('stroke-width') || '2'),
-                        fill: p.getAttribute('fill') || 'transparent'
-                      }));
-                      const m = drawSvgSnapshot.match(/viewBox="([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+)"/);
+                      // Build path objects with transforms using same logic as Draw Preview
+                      const ok = buildCanvasAnimFromSvg(drawSvgSnapshot);
+                      if (!ok) { setStatus('Failed to parse SVG'); return; }
+                      const st = drawStateRef.current;
+                      const vb = st.vb;
                       let w = 400, h = 300;
-                      if (m) { w = Math.max(64, Math.round(parseFloat(m[3]))); h = Math.max(64, Math.round(parseFloat(m[4]))); }
-                      addObject({ id: `draw-preview-${Date.now()}`, type: 'svgPath', x: 150, y: 150, width: w, height: h, rotation: 0, properties: { paths: pathObjects }, animationType: 'drawIn', animationStart: 0, animationDuration: 3, animationEasing: 'easeOut' });
+                      if (vb) { w = Math.max(64, Math.round(vb.w)); h = Math.max(64, Math.round(vb.h)); }
+                      const baseId = Date.now();
+                      const pathObjs = st.paths.map(p => ({
+                        d: p.d,
+                        stroke: p.stroke || 'transparent',
+                        strokeWidth: p.strokeWidth || 2,
+                        fill: p.fill || 'transparent',
+                        m: p.m
+                      }));
+                      addObject({
+                        id: `draw-preview-${baseId}`,
+                        type: 'svgPath',
+                        x: 150,
+                        y: 150,
+                        width: w,
+                        height: h,
+                        rotation: 0,
+                        properties: { paths: pathObjs, svg: drawSvgSnapshot },
+                        animationType: 'drawIn',
+                        animationStart: 0,
+                        animationDuration: 3,
+                        animationEasing: 'easeOut'
+                      });
                       setStatus('✅ Draw preview added to canvas');
                     }}
                   >➕ Add to Canvas</button>
@@ -1376,32 +1391,32 @@ const SvgImporter: React.FC = () => {
                   onClick={() => {
                     if (!drawSvgSnapshot || !currentProject) return;
                     // Add draw preview as a canvas object
-                    const doc = new DOMParser().parseFromString(drawSvgSnapshot, 'image/svg+xml');
-                    const paths = Array.from(doc.querySelectorAll('path'));
-                    const pathObjects = paths.map(p => ({
-                      d: p.getAttribute('d') || '',
-                      stroke: p.getAttribute('stroke') || '#111827',
-                      strokeWidth: Number(p.getAttribute('stroke-width') || '2'),
-                      fill: p.getAttribute('fill') || 'transparent'
-                    }));
-                    
-                    // Parse viewBox for sizing
-                    const m = drawSvgSnapshot.match(/viewBox="([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+)"/);
+                    const ok = buildCanvasAnimFromSvg(drawSvgSnapshot);
+                    if (!ok) { setStatus('Failed to parse SVG'); return; }
+                    const st = drawStateRef.current;
                     let w = 400, h = 300;
-                    if (m) {
-                      w = Math.max(64, Math.round(parseFloat(m[3])));
-                      h = Math.max(64, Math.round(parseFloat(m[4])));
+                    if (st.vb) {
+                      w = Math.max(64, Math.round(st.vb.w));
+                      h = Math.max(64, Math.round(st.vb.h));
                     }
-                    
+
+                    const baseId = Date.now();
+                    const pathObjs = st.paths.map(p => ({
+                      d: p.d,
+                      stroke: p.stroke || 'transparent',
+                      strokeWidth: p.strokeWidth || 2,
+                      fill: p.fill || 'transparent',
+                      m: p.m
+                    }));
                     addObject({
-                      id: `draw-preview-${Date.now()}`,
+                      id: `draw-preview-${baseId}`,
                       type: 'svgPath',
                       x: 150,
                       y: 150,
                       width: w,
                       height: h,
                       rotation: 0,
-                      properties: { paths: pathObjects },
+                      properties: { paths: pathObjs, svg: drawSvgSnapshot },
                       animationType: 'drawIn',
                       animationStart: 0,
                       animationDuration: 3,

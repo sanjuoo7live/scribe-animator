@@ -21,7 +21,6 @@ const SvgImporter: React.FC = () => {
   const addObject = useAppStore(s => s.addObject);
   const currentProject = useAppStore(s => s.currentProject);
 
-  const [rawInput, setRawInput] = React.useState('');
   const [status, setStatus] = React.useState<string>('');
   const [traceThreshold, setTraceThreshold] = React.useState<number>(128);
   const [tracePreview, setTracePreview] = React.useState<string | null>(null);
@@ -646,18 +645,6 @@ const SvgImporter: React.FC = () => {
     }
   };
 
-  const parseMaybePathOnly = (text: string): ParsedPath[] => {
-    // If user pasted only the path "d" data, wrap and parse
-    const trimmed = text.trim();
-    if (!trimmed) return [];
-    if (trimmed.startsWith('<')) {
-      const parsed = parseSvgString(trimmed);
-      return parsed.paths;
-    }
-    // Assume it's a d attribute
-    return [{ d: trimmed, stroke: '#111827', strokeWidth: 3, fill: 'transparent' }];
-  };
-
   // Build a minimal SVG string from a list of path d strings
   const makeSvgFromPaths = React.useCallback((ds: string[]) => {
     if (!ds.length) return '';
@@ -779,103 +766,9 @@ const SvgImporter: React.FC = () => {
     }
   }, [showDrawPreview, drawSvgSnapshot]);
 
-  const addPathsToCanvas = (paths: ParsedPath[]) => {
-    if (!currentProject) {
-      setStatus('No active project.');
-      return;
-    }
-    if (!paths.length) {
-      setStatus('No paths found.');
-      return;
-    }
-    const bbox = measureSvgPathsBBox(paths);
-    addObject({
-      id: `svg-${Date.now()}`,
-      type: 'svgPath',
-      x: 100 - bbox.x, // rebase to start near (100,100)
-      y: 100 - bbox.y,
-      width: bbox.width,
-      height: bbox.height,
-      rotation: 0,
-      properties: {
-        paths: paths.map(p => ({ d: p.d, stroke: p.stroke || '#111827', strokeWidth: p.strokeWidth ?? 3, fill: p.fill || 'transparent' }))
-      },
-      animationType: 'drawIn',
-      animationStart: 0,
-      animationDuration: 2,
-      animationEasing: 'easeOut'
-    });
-    setStatus(`Imported ${paths.length} path${paths.length > 1 ? 's' : ''} ✔`);
-  };
-
-  const handleFile = async (file: File) => {
-    try {
-      const text = await file.text();
-      const { paths, viewBox } = parseSvgString(text);
-      if (viewBox) {
-        // Normalize by viewBox: rebase already handled; set object to viewBox size for consistent scale.
-        const bbox = { x: 0, y: 0, width: viewBox.width, height: viewBox.height };
-        if (!currentProject) return;
-        addObject({
-          id: `svg-${Date.now()}`,
-          type: 'svgPath',
-          x: 100,
-          y: 100,
-          width: bbox.width,
-          height: bbox.height,
-          rotation: 0,
-          properties: {
-            paths: paths.map(p => ({ d: p.d, stroke: p.stroke || '#111827', strokeWidth: p.strokeWidth ?? 3, fill: p.fill || 'transparent', fillRule: p.fillRule }))
-          },
-          animationType: 'drawIn',
-          animationStart: 0,
-          animationDuration: 2,
-          animationEasing: 'easeOut'
-        });
-        setStatus(`Imported ${paths.length} element${paths.length > 1 ? 's' : ''} ✔ (viewBox normalized)`);
-      } else {
-        addPathsToCanvas(paths);
-      }
-    } catch (e: any) {
-      setStatus(`Failed to read file: ${e?.message || e}`);
-    }
-  };
-
-  const handlePaste = () => {
-    if (rawInput.trim().startsWith('<')) {
-      const { paths, viewBox } = parseSvgString(rawInput);
-      if (viewBox) {
-        if (!currentProject) { setStatus('No active project.'); return; }
-        addObject({
-          id: `svg-${Date.now()}`,
-          type: 'svgPath',
-          x: 100,
-          y: 100,
-          width: viewBox.width,
-          height: viewBox.height,
-          rotation: 0,
-          properties: {
-            paths: paths.map(p => ({ d: p.d, stroke: p.stroke || '#111827', strokeWidth: p.strokeWidth ?? 3, fill: p.fill || 'transparent', fillRule: p.fillRule }))
-          },
-          animationType: 'drawIn',
-          animationStart: 0,
-          animationDuration: 2,
-          animationEasing: 'easeOut'
-        });
-        setStatus(`Imported ${paths.length} element${paths.length > 1 ? 's' : ''} ✔ (viewBox normalized)`);
-        return;
-      }
-      addPathsToCanvas(paths);
-    } else {
-      const paths = parseMaybePathOnly(rawInput);
-      addPathsToCanvas(paths);
-    }
-  };
-
   return (
   <>
   <div className="p-3 text-white">
-      <div className="mb-3 text-sm text-gray-300">Import SVG vectors as editable, animatable paths.</div>
 
   {/* Legacy top import cards removed; merged into left controls card below */}
 
@@ -1104,7 +997,7 @@ const SvgImporter: React.FC = () => {
                         strokeWidth: Number(p.getAttribute('stroke-width') || '2'),
                         fill: p.getAttribute('fill') || 'transparent'
                       }));
-                      const m = drawSvgSnapshot.match(/viewBox=\"([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+)\"/);
+                      const m = drawSvgSnapshot.match(/viewBox="([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+)"/);
                       let w = 400, h = 300;
                       if (m) { w = Math.max(64, Math.round(parseFloat(m[3]))); h = Math.max(64, Math.round(parseFloat(m[4]))); }
                       addObject({ id: `draw-preview-${Date.now()}`, type: 'svgPath', x: 150, y: 150, width: w, height: h, rotation: 0, properties: { paths: pathObjects }, animationType: 'drawIn', animationStart: 0, animationDuration: 3, animationEasing: 'easeOut' });
@@ -1383,105 +1276,14 @@ const SvgImporter: React.FC = () => {
                       setBusy(false);
                       return;
                     }
-                    if (!currentProject) { setStatus('No active project.'); setBusy(false); return; }
+                    if (!currentProject) {
+                      // Keep previous behavior but do not block SVG generation; just warn
+                      setStatus('No active project (SVG generated only).');
+                    }
                     if (addMode === 'drawPathLayers') {
-                      const MAX_LAYERS = 50;          // practical cap for timeline
-                      const MIN_AREA = 300;           // px^2 - ignore tiny specks
-                      const MIN_POINTS = 12;          // ignore ultra-short segments
-                      const MIN_LENGTH = 100;         // px - minimum curve length
-                      const IOU_SKIP = 0.85;          // skip boxes overlapping too much with already kept ones
-
-                      type Cand = { d: string; points: {x:number;y:number}[]; bbox: {x:number;y:number;width:number;height:number}; length: number; area: number };
-                      const candidates: Cand[] = [];
-                      for (const d of ds) {
-                        const s = sampleSvgPathToPoints(d, 220);
-                        if (!s.points.length) continue;
-                        const area = s.bbox.width * s.bbox.height;
-                        if (area < MIN_AREA || s.points.length < MIN_POINTS || s.length < MIN_LENGTH) continue;
-                        candidates.push({ d, points: s.points, bbox: s.bbox, length: s.length, area });
-                      }
-
-                      // If strict filters removed everything, try a relaxed pass
-                      if (candidates.length === 0) {
-                        const MIN_AREA_RELAX = 50;
-                        const MIN_POINTS_RELAX = 6;
-                        const MIN_LENGTH_RELAX = 20;
-                        for (const d of ds.slice(0, 60)) {
-                          const s = sampleSvgPathToPoints(d, 160);
-                          if (!s.points.length) continue;
-                          const area = s.bbox.width * s.bbox.height;
-                          if (area < MIN_AREA_RELAX || s.points.length < MIN_POINTS_RELAX || s.length < MIN_LENGTH_RELAX) continue;
-                          candidates.push({ d, points: s.points, bbox: s.bbox, length: s.length, area });
-                        }
-                      }
-                      // If still nothing, fallback to combined SVG path object to ensure something is added
-                      if (candidates.length === 0) {
-                        const combined = ds.join(' ');
-                        useAppStore.getState().addObject({
-                          id: `svg-${Date.now()}`,
-                          type: 'svgPath',
-                          x: 100,
-                          y: 100,
-                          width: Math.max(64, w),
-                          height: Math.max(64, h),
-                          rotation: 0,
-                          properties: { paths: [{ d: combined, stroke: '#111827', strokeWidth: 2, fill: 'transparent' }] },
-                          animationType: 'drawIn',
-                          animationStart: 0,
-                          animationDuration: 2,
-                          animationEasing: 'easeOut'
-                        });
-                        setStatus('⚠️ Strict filters removed all layers; added combined SVG instead.');
-                        setBusy(false);
-                        return;
-                      }
-
-                      // Sort by area (largest first)
-                      candidates.sort((a, b) => b.area - a.area || b.length - a.length);
-
-                      // Selection strategy: greedily keep non-overlapping boxes up to MAX_LAYERS
-                      let kept: Cand[] = [];
-                      const iou = (a: Cand, b: Cand) => {
-                        const x1 = Math.max(a.bbox.x, b.bbox.x);
-                        const y1 = Math.max(a.bbox.y, b.bbox.y);
-                        const x2 = Math.min(a.bbox.x + a.bbox.width, b.bbox.x + b.bbox.width);
-                        const y2 = Math.min(a.bbox.y + a.bbox.height, b.bbox.y + b.bbox.height);
-                        const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
-                        const union = a.area + b.area - inter;
-                        return union > 0 ? inter / union : 0;
-                      };
-                      for (const c of candidates) {
-                        if (kept.length >= MAX_LAYERS) break;
-                        if (kept.some(k => iou(k, c) >= IOU_SKIP)) continue;
-                        kept.push(c);
-                      }
-
-                      let added = 0;
-                      for (const k of kept) {
-                        useAppStore.getState().addObject({
-                          id: `drawpath-${Date.now()}-${added}`,
-                          type: 'drawPath',
-                          x: 100 + (added % 5) * 2,
-                          y: 100 + (added % 5) * 2,
-                          width: k.bbox.width,
-                          height: k.bbox.height,
-                          rotation: 0,
-                          properties: {
-                            pathName: `Trace ${added+1}`,
-                            points: k.points,
-                            strokeColor: '#111827',
-                            strokeWidth: 2,
-                            selectedPenType: 'pen',
-                            handRotation: true
-                          },
-                          animationType: 'drawIn',
-                          animationStart: 0,
-                          animationDuration: 2,
-                          animationEasing: 'easeOut'
-                        });
-                        added++;
-                      }
-                      setStatus(`Added ${added} draw-path layer${added !== 1 ? 's' : ''} ✔`);
+                      // Do not add anything to the canvas; only keep/generated SVG
+                      // At this point, lastSvg has already been set by WASM/JS runners.
+                      setStatus(prev => prev ? `${prev} • SVG ready (not added to canvas).` : 'SVG ready (not added to canvas).');
                     } else {
                       // Enter Path Refinement; can optionally cap to top 30 longest paths
                       const MAX_TO_MEASURE = 300; // limit expensive length/bbox work
@@ -1532,36 +1334,6 @@ const SvgImporter: React.FC = () => {
             </div>
 
             <div className="text-[11px] text-gray-400">WASM provides highest quality vectorization. JS fallback is used automatically if needed.</div>
-
-            {/* Import existing SVG markup (moved from top) */}
-            <div className="mt-4 pt-3 border-t border-gray-700" />
-            <div className="text-sm font-semibold mb-2">Import Existing SVG</div>
-            <div className="space-y-2">
-              <div>
-                <div className="text-xs text-gray-300 mb-1">Upload .svg file</div>
-                <input
-                  type="file"
-                  accept=".svg,image/svg+xml"
-                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
-                  className="block w-full text-sm text-gray-200 file:mr-3 file:py-2 file:px-3 file:rounded file:border-0 file:text-sm file:font-medium file:bg-blue-600 file:text-white hover:file:bg-blue-500"
-                />
-              </div>
-              <div>
-                <div className="text-xs text-gray-300 mb-1">Paste SVG or path d</div>
-                <textarea
-                  value={rawInput}
-                  onChange={(e) => setRawInput(e.target.value)}
-                  placeholder="Paste full <svg>...</svg> or just a path d string"
-                  className="w-full h-24 p-2 bg-gray-900 border border-gray-700 rounded text-sm"
-                />
-                <div className="flex justify-end mt-2">
-                  <button
-                    onClick={handlePaste}
-                    className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 rounded text-sm font-medium"
-                  >Add to Canvas</button>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
 

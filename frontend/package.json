@@ -50,6 +50,7 @@
     ]
   },
   "devDependencies": {
+    "@types/vivus": "^0.4.7",
     "tailwindcss": "3"
   }
 }

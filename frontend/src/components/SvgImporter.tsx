@@ -64,20 +64,192 @@ const SvgImporter: React.FC = () => {
   const domSvgHolderRef = React.useRef<HTMLDivElement | null>(null);
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const vivusRef = React.useRef<any | null>(null);
-  // Normalized SVG string for responsive preview
+  const [advOpen, setAdvOpen] = React.useState(true);
+  const drawStateRef = React.useRef<{
+    vb: { x: number; y: number; w: number; h: number } | null;
+    paths: { d: string; stroke: string; strokeWidth: number; fill: string; m?: [number,number,number,number,number,number] }[];
+    lens: number[];
+    total: number;
+    raf: number | null;
+    playing: boolean;
+    durationMs: number;
+    startedAt: number;
+  }>({ vb: null, paths: [], lens: [], total: 0, raf: null, playing: false, durationMs: 3000, startedAt: 0 });
+
+  const stopCanvasAnim = React.useCallback(() => {
+    const st = drawStateRef.current;
+    st.playing = false;
+    if (st.raf) cancelAnimationFrame(st.raf);
+    st.raf = null;
+  }, []);
+
+  const renderCanvasProgress = React.useCallback((ep: number) => {
+    const st = drawStateRef.current;
+    const vb = st.vb; const cvs = canvasRef.current; if (!vb || !cvs) return;
+    const g = cvs.getContext('2d'); if (!g) return;
+    // Clear
+    g.clearRect(0, 0, cvs.width, cvs.height);
+    // Map vb to canvas
+    const dpr = window.devicePixelRatio || 1;
+    // Canvas backing is set with DPR, but CSS displays at logical px; compensate here
+    const displayW = cvs.clientWidth || (cvs.width / dpr);
+    const displayH = cvs.clientHeight || (cvs.height / dpr);
+    const scaleX = (displayW * dpr) / Math.max(1, vb.w);
+    const scaleY = (displayH * dpr) / Math.max(1, vb.h);
+    g.save();
+    g.translate(-vb.x * scaleX, -vb.y * scaleY);
+    g.scale(scaleX, scaleY);
+    let consumed = 0;
+    for (let i = 0; i < st.paths.length; i++) {
+      const p = st.paths[i]; const len = st.lens[i] || 0;
+      const start = consumed; const end = start + len; const target = ep * (st.total || 1);
+      let path: Path2D | null = null;
+      try { path = new Path2D(p.d); } catch { path = null; }
+      if (!path) { consumed += len; continue; }
+      g.lineWidth = p.strokeWidth || 2; g.lineCap = 'round'; g.lineJoin = 'round'; g.strokeStyle = p.stroke || '#111827';
+      if (p.m) { g.save(); g.transform(p.m[0], p.m[1], p.m[2], p.m[3], p.m[4], p.m[5]); }
+      if (len > 0 && st.total > 0) {
+        if (target <= start) {
+          g.setLineDash([len, len]); g.lineDashOffset = len; g.stroke(path);
+        } else if (target >= end) {
+          g.setLineDash([]); g.stroke(path);
+          if (p.fill && p.fill !== 'none' && p.fill !== 'transparent') { g.fillStyle = p.fill; g.fill(path); }
+        } else {
+          const local = Math.max(0, Math.min(len, target - start));
+          g.setLineDash([len, len]); g.lineDashOffset = Math.max(0, len - local); g.stroke(path);
+        }
+      } else {
+        g.stroke(path);
+      }
+      if (p.m) g.restore();
+      consumed += len;
+    }
+    g.restore();
+  }, []);
+
+  // Helper to size canvas to its holder and re-render current frame
+  const resizeCanvasToHolder = React.useCallback(() => {
+    const cvs = canvasRef.current; const holder = domSvgHolderRef.current;
+    if (!cvs || !holder) return;
+    const rect = holder.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const pxW = Math.max(32, Math.round(rect.width * dpr));
+    const pxH = Math.max(32, Math.round(rect.height * dpr));
+    if (cvs.width !== pxW || cvs.height !== pxH) {
+      cvs.width = pxW; cvs.height = pxH;
+    }
+    (cvs.style as any).width = rect.width + 'px';
+    (cvs.style as any).height = rect.height + 'px';
+    // Re-render current frame after resize
+    const st = drawStateRef.current;
+    if (st.vb) {
+      const ep = st.playing ? Math.min(1, (performance.now() - st.startedAt) / Math.max(1, st.durationMs)) : 1;
+      renderCanvasProgress(ep);
+    }
+  }, [renderCanvasProgress]);
+
+  const buildCanvasAnimFromSvg = React.useCallback((svgText: string) => {
+    const st = drawStateRef.current; st.paths = []; st.lens = []; st.total = 0; st.vb = null;
+    try {
+      const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
+      const svg = doc.querySelector('svg'); if (!svg) return false;
+      // viewBox
+      let vb = { x: 0, y: 0, w: 800, h: 600 };
+      const vba = svg.getAttribute('viewBox');
+      if (vba) { const a = vba.trim().split(/[\s,]+/).map(Number); if (a.length===4 && a.every(n => !isNaN(n))) vb = { x: a[0], y: a[1], w: Math.max(1,a[2]), h: Math.max(1,a[3]) }; }
+      else {
+        const w = Number(svg.getAttribute('width')); const h = Number(svg.getAttribute('height'));
+        if (!isNaN(w) && !isNaN(h)) vb = { x:0, y:0, w:Math.max(1,w), h:Math.max(1,h) };
+      }
+      // transforms helpers
+      type Mat = [number,number,number,number,number,number]; const I: Mat=[1,0,0,1,0,0];
+      const mul=(m1:Mat,m2:Mat):Mat=>[m1[0]*m2[0]+m1[2]*m2[1], m1[1]*m2[0]+m1[3]*m2[1], m1[0]*m2[2]+m1[2]*m2[3], m1[1]*m2[2]+m1[3]*m2[3], m1[0]*m2[4]+m1[2]*m2[5]+m1[4], m1[1]*m2[4]+m1[3]*m2[5]+m1[5]];
+      const translate=(tx:number,ty:number):Mat=>[1,0,0,1,tx,ty];
+      const scale=(sx:number,sy:number):Mat=>[sx,0,0,sy,0,0];
+      const rotate=(deg:number):Mat=>{const r=deg*Math.PI/180,c=Math.cos(r),s=Math.sin(r);return [c,s,-s,c,0,0];};
+      const skewX=(deg:number):Mat=>{const t=Math.tan(deg*Math.PI/180);return [1,0,t,1,0,0];};
+      const skewY=(deg:number):Mat=>{const t=Math.tan(deg*Math.PI/180);return [1,t,0,1,0,0];};
+      const parseT=(str:string|null|undefined):Mat=>{ if(!str) return I; let m=I; const re=/(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)/g; let match:RegExpExecArray|null; while((match=re.exec(str))){ const fn=match[1]; const args=match[2].split(/[\s,]+/).map(Number).filter(n=>!isNaN(n)); let t=I as Mat; switch(fn){ case 'matrix': if(args.length===6) t=[args[0],args[1],args[2],args[3],args[4],args[5]]; break; case 'translate': t=translate(args[0]||0,args[1]||0); break; case 'scale': t=scale(args[0]||1, args.length>1? args[1]:(args[0]||1)); break; case 'rotate': t=args.length>2? mul(mul(translate(args[1],args[2]), rotate(args[0]||0)), translate(-args[1],-args[2])) : rotate(args[0]||0); break; case 'skewX': t=skewX(args[0]||0); break; case 'skewY': t=skewY(args[0]||0); break; } m=mul(m,t);} return m; };
+      const getCtm=(el:Element):Mat=>{ let chain:Element[]=[]; let p:Element|null=el; while(p && p.nodeName.toLowerCase()!=='html'){ chain.unshift(p); p=p.parentElement; } let m=mul(I, translate(-vb.x, -vb.y)); for(const node of chain){ m=mul(m, parseT(node.getAttribute('transform'))); } return m; };
+
+      const out: { d:string; stroke:string; strokeWidth:number; fill:string; m?:Mat }[]=[];
+      const visit=(el:Element)=>{ if(el.nodeName.toLowerCase()==='path'){ const d=el.getAttribute('d')||''; let stroke=(el.getAttribute('stroke')||'#111827') as string; const sw=Number(el.getAttribute('stroke-width')||'2'); const fill=(el.getAttribute('fill')||'transparent') as string; const m=getCtm(el); out.push({ d, stroke, strokeWidth: isNaN(sw)?2:sw, fill, m }); } Array.from(el.children).forEach(visit); };
+      visit(svg);
+      // Measure lengths on a hidden svg
+      const s = document.createElementNS('http://www.w3.org/2000/svg','svg'); s.setAttribute('width','0'); s.setAttribute('height','0'); s.style.position='absolute'; s.style.left='-99999px'; s.style.top='-99999px'; document.body.appendChild(s);
+      const lens:number[]=[]; let total=0;
+      for(const p of out){ try{ const pathEl=document.createElementNS(s.namespaceURI,'path'); pathEl.setAttribute('d', p.d); if(p.m) pathEl.setAttribute('transform', `matrix(${p.m[0]} ${p.m[1]} ${p.m[2]} ${p.m[3]} ${p.m[4]} ${p.m[5]})`); s.appendChild(pathEl); const L=(pathEl as any).getTotalLength? (pathEl as any).getTotalLength():0; // approximate length via sampling
+        const steps=Math.max(32, Math.min(220, Math.round((L||1)/6))); let prev=(pathEl as any).getPointAtLength? (pathEl as any).getPointAtLength(0) : {x:0,y:0}; let acc=0; for(let i=1;i<=steps;i++){ const pt=(pathEl as any).getPointAtLength? (pathEl as any).getPointAtLength((i/steps)*(L||1)) : prev; acc += Math.hypot(pt.x-prev.x, pt.y-prev.y); prev=pt; } s.removeChild(pathEl); lens.push(acc); total += acc; } catch { lens.push(0); } }
+      document.body.removeChild(s);
+      st.vb = vb; st.paths = out; st.lens = lens; st.total = Math.max(1, total);
+      // Size canvas to holder
+      resizeCanvasToHolder();
+      return true;
+    } catch { return false; }
+  }, []);
+  // Normalized SVG string for responsive preview (compute viewBox if missing; avoid TS deps)
+  // ResizeObserver to auto-resize canvas on container or window resize
+  React.useEffect(() => {
+    if (!showDrawPreview) return;
+    const holder = domSvgHolderRef.current;
+    if (!holder) return;
+    const ro = new ResizeObserver(() => {
+      resizeCanvasToHolder();
+    });
+    ro.observe(holder);
+    const onWinResize = () => resizeCanvasToHolder();
+    window.addEventListener('resize', onWinResize);
+    // Some browsers expose DPR changes via matchMedia
+    const mq = window.matchMedia ? window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`) : null;
+    const onDprMaybeChange = () => resizeCanvasToHolder();
+    if (mq && mq.addEventListener) mq.addEventListener('change', onDprMaybeChange);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', onWinResize);
+      if (mq && mq.removeEventListener) mq.removeEventListener('change', onDprMaybeChange);
+    };
+  }, [showDrawPreview, resizeCanvasToHolder]);
   const normalizedSvg = React.useMemo(() => {
     if (!lastSvg) return '';
     try {
-      const normalized = lastSvg.replace(/<svg([^>]*)>/i, (_m, attrs) => {
-        let a = String(attrs)
-          .replace(/\bwidth\s*=\s*"[^"]*"/ig, '')
-          .replace(/\bheight\s*=\s*"[^"]*"/ig, '');
-        if (!/style=/.test(a)) a += ' style="width:100%;height:100%;display:block;max-width:100%;max-height:100%"';
-        return `<svg${a}>`;
-      });
-      return normalized;
-    } catch (e) {
-  /* swallow */
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(lastSvg, 'image/svg+xml');
+      const srcSvg = doc.querySelector('svg');
+      if (!srcSvg) return lastSvg;
+
+      let viewBox = srcSvg.getAttribute('viewBox');
+      if (!viewBox) {
+        // Compute union bbox by mounting a temporary SVG to the DOM and calling getBBox()
+        const tmp = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        tmp.setAttribute('width', '0');
+        tmp.setAttribute('height', '0');
+        tmp.style.position = 'absolute';
+        tmp.style.left = '-99999px';
+        tmp.style.top = '-99999px';
+        document.body.appendChild(tmp);
+        Array.from(srcSvg.childNodes).forEach(n => tmp.appendChild(n.cloneNode(true)));
+        try {
+          const b = (tmp as any).getBBox ? (tmp as any).getBBox() : { x: 0, y: 0, width: 100, height: 100 };
+          const pad = Math.max(1, Math.round(Math.max(b.width, b.height) * 0.02));
+          const minX = Math.floor(b.x) - pad;
+          const minY = Math.floor(b.y) - pad;
+          const w = Math.max(1, Math.ceil(b.width) + 2 * pad);
+          const h = Math.max(1, Math.ceil(b.height) + 2 * pad);
+          viewBox = `${minX} ${minY} ${w} ${h}`;
+        } catch {
+          viewBox = '0 0 100 100';
+        } finally {
+          document.body.removeChild(tmp);
+        }
+      }
+
+      const inner = srcSvg.innerHTML;
+      const xmlns = srcSvg.getAttribute('xmlns') || 'http://www.w3.org/2000/svg';
+      const keep = srcSvg.getAttributeNames()
+        .filter(n => !['width','height','style','viewBox','preserveAspectRatio','xmlns'].includes(n))
+        .map(n => `${n}="${srcSvg.getAttribute(n)}"`).join(' ');
+      return `<svg xmlns="${xmlns}" ${keep ? keep + ' ' : ''}viewBox="${viewBox}" preserveAspectRatio="xMidYMid meet" style="width:100%;height:100%;display:block">${inner}</svg>`;
+    } catch {
       return lastSvg;
     }
   }, [lastSvg]);
@@ -558,7 +730,8 @@ const SvgImporter: React.FC = () => {
     // Render DOM-SVG for Vivus animation
     const holder = domSvgHolderRef.current;
     if (holder) {
-      holder.innerHTML = svgMarkup;
+      // Do not render static SVG in holder; keep it empty so only canvas drawing is visible
+      holder.innerHTML = '';
       const svgEl = holder.querySelector('svg');
       if (svgEl) {
         // Ensure SVG fits container
@@ -601,21 +774,7 @@ const SvgImporter: React.FC = () => {
         // Clear and render
         ctx.fillStyle = 'rgba(0,0,0,0)';
         ctx.clearRect(0, 0, canvasW, canvasH);
-        
-        drawSvgOnCanvas(ctx, svgMarkup, {
-          fitTo: { mode: 'width', value: canvasW }
-        }).then(() => {
-          setStatus('✅ Preview rendered successfully');
-        }).catch((e) => {
-          // Fallback: show error indicator
-          ctx.fillStyle = '#444';
-          ctx.fillRect(0, 0, canvasW, canvasH);
-          ctx.fillStyle = '#ff6b6b';
-          ctx.font = '12px monospace';
-          ctx.textAlign = 'center';
-          ctx.fillText('Render Error', canvasW / 2, canvasH / 2);
-          setStatus('❌ Canvas render failed');
-        });
+        // Skip static raster render; canvas will be animated by Play Draw
       }
     }
   }, [showDrawPreview, drawSvgSnapshot]);
@@ -718,37 +877,7 @@ const SvgImporter: React.FC = () => {
   <div className="p-3 text-white">
       <div className="mb-3 text-sm text-gray-300">Import SVG vectors as editable, animatable paths.</div>
 
-  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="p-3 bg-gray-800 rounded border border-gray-700">
-          <div className="text-sm font-semibold mb-2">Upload .svg file</div>
-          <input
-            type="file"
-            accept=".svg,image/svg+xml"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) handleFile(f);
-            }}
-            className="block w-full text-sm text-gray-200 file:mr-3 file:py-2 file:px-3 file:rounded file:border-0 file:text-sm file:font-medium file:bg-blue-600 file:text-white hover:file:bg-blue-500"
-          />
-          <div className="text-xs text-gray-400 mt-2">We parse &lt;path&gt; elements and combine them into one object.</div>
-        </div>
-
-        <div className="p-3 bg-gray-800 rounded border border-gray-700">
-          <div className="text-sm font-semibold mb-2">Paste SVG or path d</div>
-          <textarea
-            value={rawInput}
-            onChange={(e) => setRawInput(e.target.value)}
-            placeholder="Paste full <svg>...</svg> or just a path d string (e.g., M10 10 L 50 50 ...)."
-            className="w-full h-28 p-2 bg-gray-900 border border-gray-700 rounded text-sm"
-          />
-          <div className="flex justify-end mt-2">
-            <button
-              onClick={handlePaste}
-              className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 rounded text-sm font-medium"
-            >Add to Canvas</button>
-          </div>
-        </div>
-      </div>
+  {/* Legacy top import cards removed; merged into left controls card below */}
 
       {status && <div className="mt-3 text-xs text-gray-300">{status}</div>}
 
@@ -759,7 +888,7 @@ const SvgImporter: React.FC = () => {
               </div>
               <div className="p-3">
               <div className="text-sm font-semibold mb-2 flex items-center gap-3">
-                <span>Auto-trace (WASM with VTracer options)</span>
+                <span>Vectorize (WASM with VTracer options)</span>
                 <span className="text-xs text-gray-400">Official engine is used. JS fallback only if needed.</span>
                 {lastEngine && (
                   <span className="text-[11px] px-2 py-0.5 rounded bg-gray-700 text-gray-200" title="Engine actually used on last run">
@@ -772,23 +901,27 @@ const SvgImporter: React.FC = () => {
                   Using minimal fallback engine; official build could not be initialized.
                 </div>
               )}
-  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 items-start">
-          <div className="lg:col-span-1">
-            <div className="text-xs text-gray-300 mb-1">Upload raster (PNG/JPG)</div>
-            <input
-              type="file"
-              accept=".png,.jpg,.jpeg,image/png,image/jpeg"
-              onChange={async (e) => {
-                const f = e.target.files?.[0];
-                if (!f) return;
-                // Revoke any previous preview URL to avoid leaks
-                setTracePreview(prev => { if (prev) URL.revokeObjectURL(prev); return prev; });
-                const url = URL.createObjectURL(f);
-                setTracePreview(url);
-                setStatus(`📁 Loaded file: ${f.name} (${Math.round(f.size/1024)}KB)`);
-              }}
-              className="block w-full text-sm text-gray-200 file:mr-3 file:py-2 file:px-3 file:rounded file:border-0 file:text-sm file:font-medium file:bg-blue-600 file:text-white hover:file:bg-blue-500"
-            />
+  <div className="two-col-grid items-start">
+          <div className="lg:col-span-1 panel">
+            <h2 style={{color:'#fff',fontSize:'1.25rem',fontWeight:700,marginBottom:24}}>Vectorize Image</h2>
+            <div className="file-row" style={{marginBottom:4}}>
+              <label className="btn btn-primary" htmlFor="trace-file">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6zm1 7V3.5L18.5 9H15z"/></svg>
+                Choose file
+              </label>
+              <input id="trace-file" className="file-input-hidden" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  if (!f) return;
+                  setTracePreview(prev => { if (prev) URL.revokeObjectURL(prev); return prev; });
+                  const url = URL.createObjectURL(f);
+                  setTracePreview(url);
+                  setStatus(`📁 Loaded file: ${f.name} (${Math.round(f.size/1024)}KB)`);
+                }}
+              />
+              <div className="file-name truncate">{tracePreview ? 'Image selected' : 'No file selected'}</div>
+            </div>
+            <div className="muted" style={{marginBottom:16}}>Last Engine: official</div>
             <div className="mt-3 text-xs text-gray-400">Threshold: {traceThreshold}</div>
             <input
               type="range"
@@ -803,7 +936,7 @@ const SvgImporter: React.FC = () => {
             <select
               value={preset}
               onChange={(e)=>applyPreset(e.target.value as any)}
-              className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs w-full"
+              className="select-dark w-full"
             >
               <option value="photo-subject">Photo (Subject)</option>
               <option value="line-art">Sketch / Line Art</option>
@@ -815,151 +948,176 @@ const SvgImporter: React.FC = () => {
             <select
               value={engine}
               onChange={(e) => setEngine(e.target.value as 'basic' | 'tiled' | 'wasm')}
-              className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs"
+              className="select-dark w-full"
             >
               <option value="wasm">WASM (Best Quality)</option>
               <option value="tiled">JS Fallback</option>
             </select>
-            <div className="mt-4 grid grid-cols-2 gap-2">
-              <div>
-                <div className="text-xs text-gray-300 mb-1">Clustering</div>
+            {/* Advanced Trace Options (accordion) */}
+            <div className="flex items-center gap-2 cursor-pointer" onClick={() => setAdvOpen(v=>!v)} style={{color:'#A0AEC0', marginTop:16, marginBottom:8}}>
+              <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" style={{transform: advOpen ? 'rotate(0deg)' : 'rotate(-90deg)', transition:'transform .15s'}}><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.105l3.71-3.874a.75.75 0 111.08 1.04l-4.24 4.43a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+              <span>Advanced Trace Options</span>
+            </div>
+            {advOpen && (
+            <div className="adv-grid">
+              <div className="option-group">
+                <div className="text-xs text-gray-300">Clustering</div>
                 <div className="flex gap-1">
-                  <button type="button" className={`px-2 py-1 rounded text-xs ${clusterMode==='bw'?'bg-blue-600':'bg-gray-700'}`} onClick={()=>{ setClusterMode('bw'); setPreset('custom'); }}>B/W</button>
-                  <button type="button" className={`px-2 py-1 rounded text-xs ${clusterMode==='color'?'bg-blue-600':'bg-gray-700'}`} onClick={()=>{ setClusterMode('color'); setPreset('custom'); }}>COLOR</button>
+                  <button type="button" className={`chip ${clusterMode==='bw'?'chip-active':''}`} onClick={()=>{ setClusterMode('bw'); setPreset('custom'); }}>B&W</button>
+                  <button type="button" className={`chip ${clusterMode==='color'?'chip-active':''}`} onClick={()=>{ setClusterMode('color'); setPreset('custom'); }}>Color</button>
                 </div>
               </div>
               {clusterMode === 'color' && (
-                <div>
-                  <div className="text-xs text-gray-300 mb-1">Layers</div>
+                <div className="option-group">
+                  <div className="text-xs text-gray-300">Layers</div>
                   <div className="flex gap-1">
-                    <button type="button" className={`px-2 py-1 rounded text-xs ${hierarchyMode==='cutout'?'bg-blue-600':'bg-gray-700'}`} onClick={()=>{ setHierarchyMode('cutout'); setPreset('custom'); }}>CUTOUT</button>
-                    <button type="button" className={`px-2 py-1 rounded text-xs ${hierarchyMode==='stacked'?'bg-blue-600':'bg-gray-700'}`} onClick={()=>{ setHierarchyMode('stacked'); setPreset('custom'); }}>STACKED</button>
+                    <button type="button" className={`chip ${hierarchyMode==='cutout'?'chip-active':''}`} onClick={()=>{ setHierarchyMode('cutout'); setPreset('custom'); }}>CUTOUT</button>
+                    <button type="button" className={`chip ${hierarchyMode==='stacked'?'chip-active':''}`} onClick={()=>{ setHierarchyMode('stacked'); setPreset('custom'); }}>STACKED</button>
                   </div>
                 </div>
               )}
-              <div className="col-span-2 mt-2">
-                <div className="text-xs text-gray-300 mb-1">Filter Speckle <span className="text-[10px] text-gray-400">(Cleaner)</span></div>
-                <input type="range" min={0} max={20} value={filterSpeckle} onChange={(e)=>{ setFilterSpeckle(Number(e.target.value)); setPreset('custom'); }} className="w-full" />
+              <div className="option-group col-span-2">
+                <div className="text-xs text-gray-300">Filter Speckle <span className="text-[10px] text-gray-400">(Cleaner)</span></div>
+                <input type="range" min={0} max={20} value={filterSpeckle} onChange={(e)=>{ setFilterSpeckle(Number(e.target.value)); setPreset('custom'); }} className="slider-blue" />
               </div>
               {clusterMode === 'color' && (
                 <>
-                  <div>
-                    <div className="text-xs text-gray-300 mb-1">Color Precision <span className="text-[10px] text-gray-400">(More accurate)</span></div>
-                    <input type="range" min={1} max={8} value={colorPrecision} onChange={(e)=>{ setColorPrecision(Number(e.target.value)); setPreset('custom'); }} className="w-full" />
+                  <div className="option-group">
+                    <div className="text-xs text-gray-300">Color Precision <span className="text-[10px] text-gray-400">(More accurate)</span></div>
+                    <input type="range" min={1} max={8} value={colorPrecision} onChange={(e)=>{ setColorPrecision(Number(e.target.value)); setPreset('custom'); }} className="slider-blue" />
                   </div>
-                  <div>
-                    <div className="text-xs text-gray-300 mb-1">Gradient Step <span className="text-[10px] text-gray-400">(Less layers)</span></div>
-                    <input type="range" min={1} max={64} value={gradientStep} onChange={(e)=>{ setGradientStep(Number(e.target.value)); setPreset('custom'); }} className="w-full" />
+                  <div className="option-group">
+                    <div className="text-xs text-gray-300">Gradient Step <span className="text-[10px] text-gray-400">(Less layers)</span></div>
+                    <input type="range" min={1} max={64} value={gradientStep} onChange={(e)=>{ setGradientStep(Number(e.target.value)); setPreset('custom'); }} className="slider-blue" />
                   </div>
                 </>
               )}
-              <div className="col-span-2">
-                <div className="text-xs text-gray-300 mb-1">Curve Fitting</div>
+              <div className="option-group col-span-2">
+                <div className="text-xs text-gray-300">Curve Fitting</div>
                 <div className="flex gap-1">
-                  <button type="button" className={`px-2 py-1 rounded text-xs ${curveMode==='pixel'?'bg-blue-600':'bg-gray-700'}`} onClick={()=>{ setCurveMode('pixel'); setPreset('custom'); }}>PIXEL</button>
-                  <button type="button" className={`px-2 py-1 rounded text-xs ${curveMode==='polygon'?'bg-blue-600':'bg-gray-700'}`} onClick={()=>{ setCurveMode('polygon'); setPreset('custom'); }}>POLYGON</button>
-                  <button type="button" className={`px-2 py-1 rounded text-xs ${curveMode==='spline'?'bg-blue-600':'bg-gray-700'}`} onClick={()=>{ setCurveMode('spline'); setPreset('custom'); }}>SPLINE</button>
+                  <button type="button" className={`chip ${curveMode==='spline'?'chip-active':''}`} onClick={()=>{ setCurveMode('spline'); setPreset('custom'); }}>SPLINE</button>
+                  <button type="button" className={`chip ${curveMode==='polygon'?'chip-active':''}`} onClick={()=>{ setCurveMode('polygon'); setPreset('custom'); }}>POLYGON</button>
+                  <button type="button" className={`chip ${curveMode==='pixel'?'chip-active':''}`} onClick={()=>{ setCurveMode('pixel'); setPreset('custom'); }}>PIXEL</button>
                 </div>
               </div>
               {curveMode === 'spline' && (
                 <>
-                  <div>
-                    <div className="text-xs text-gray-300 mb-1">Corner Threshold <span className="text-[10px] text-gray-400">(Smoother)</span></div>
-                    <input type="range" min={0} max={120} value={cornerThreshold} onChange={(e)=>{ setCornerThreshold(Number(e.target.value)); setPreset('custom'); }} className="w-full" />
+                  <div className="option-group">
+                    <div className="text-xs text-gray-300">Corner Threshold <span className="text-[10px] text-gray-400">(Smoother)</span></div>
+                    <input type="range" min={0} max={120} value={cornerThreshold} onChange={(e)=>{ setCornerThreshold(Number(e.target.value)); setPreset('custom'); }} className="slider-blue" />
                   </div>
-                  <div>
-                    <div className="text-xs text-gray-300 mb-1">Segment Length <span className="text-[10px] text-gray-400">(More coarse)</span></div>
-                    <input type="range" min={1} max={12} step={0.5} value={segmentLength} onChange={(e)=>{ setSegmentLength(Number(e.target.value)); setPreset('custom'); }} className="w-full" />
+                  <div className="option-group">
+                    <div className="text-xs text-gray-300">Segment Length <span className="text-[10px] text-gray-400">(More coarse)</span></div>
+                    <input type="range" min={1} max={12} step={0.5} value={segmentLength} onChange={(e)=>{ setSegmentLength(Number(e.target.value)); setPreset('custom'); }} className="slider-blue" />
                   </div>
-                  <div className="col-span-2">
-                    <div className="text-xs text-gray-300 mb-1">Splice Threshold <span className="text-[10px] text-gray-400">(Less accurate)</span></div>
-                    <input type="range" min={0} max={90} value={spliceThreshold} onChange={(e)=>{ setSpliceThreshold(Number(e.target.value)); setPreset('custom'); }} className="w-full" />
+                  <div className="option-group col-span-2">
+                    <div className="text-xs text-gray-300">Splice Threshold <span className="text-[10px] text-gray-400">(Less accurate)</span></div>
+                    <input type="range" min={0} max={90} value={spliceThreshold} onChange={(e)=>{ setSpliceThreshold(Number(e.target.value)); setPreset('custom'); }} className="slider-blue" />
                   </div>
                 </>
               )}
             </div>
+            )}
           </div>
-          <div className="lg:col-span-1">
-            <div className="flex items-center justify-between">
+          <div className="lg:col-span-1 panel">
+            <div className="flex items-center justify-between" style={{marginBottom:12}}>
               <div className="text-xs text-gray-300 mb-1">Preview</div>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className={`px-2 py-1 rounded text-xs ${lastSvg? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-800 opacity-50 cursor-not-allowed'}`}
-                  disabled={!lastSvg || showDrawPreview}
-                  onClick={downloadLastSvg}
-                  title="Download last traced SVG"
-                >Download SVG</button>
-                <button
-                  type="button"
-                  className={`px-2 py-1 rounded text-xs ${lastSvg? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-800 opacity-50 cursor-not-allowed'}`}
-                  disabled={!lastSvg || showDrawPreview}
-                  onClick={copyLastSvg}
-                  title="Copy SVG markup to clipboard"
-                >Copy SVG</button>
-                <button
-                  type="button"
-                  className={`px-2 py-1 rounded text-xs ${lastSvg? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-800 opacity-50 cursor-not-allowed'}`}
-                  disabled={!lastSvg || showDrawPreview}
-                  onClick={copySvgPathsOnly}
-                  title="Copy all path d attributes"
-                >Copy path data</button>
-              </div>
-              {/* Draw Preview toggle */}
-              <div className="mt-2 flex items-center gap-2">
-                <button
-                  type="button"
-                  className="px-2 py-1 rounded text-xs bg-gray-700 hover:bg-gray-600"
-      onClick={() => {
-                    setShowDrawPreview((v) => {
-                      const willShow = !v;
-                      if (willShow) {
-        // When opening, freeze the SVG to the exact Copy SVG string
-        setDrawSvgSnapshot(lastSvg ?? null);
-        if (lastSvg) setStatus('Draw preview snapshot captured (exact Copy SVG).');
-                      }
-                      return willShow;
-                    });
-                  }}
-                >{showDrawPreview ? 'Hide' : 'Show'} Draw Preview</button>
-                <label className="text-xs text-gray-300 flex items-center gap-1">
-                  <input type="checkbox" checked={splitMultiMove} onChange={(e)=>setSplitMultiMove(e.target.checked)} disabled={showDrawPreview} />
-                  Split multi-move paths (kit-of-parts)
-                </label>
+                <button type="button" className="btn btn-gray" disabled={!lastSvg} onClick={downloadLastSvg} title="Download last traced SVG">Download SVG</button>
+                <button type="button" className="btn btn-gray" disabled={!lastSvg} onClick={copyLastSvg} title="Copy SVG markup to clipboard">Copy SVG</button>
+                <button type="button" className="btn btn-gray" disabled={!lastSvg} onClick={copySvgPathsOnly} title="Copy all path d attributes">Copy path data</button>
               </div>
             </div>
-            {/* Side-by-side image and traced SVG with debug indicators */}
-            {tracePreview ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full">
-                <div className="relative w-full rounded border-2 border-blue-500 bg-gray-800 overflow-hidden" style={{height: '18rem', backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.15) 1px, transparent 1px)', backgroundSize: '20px 20px'}}>
-                  <div className="absolute top-1 left-1 text-xs text-blue-400 bg-black/50 px-1 rounded z-10">IMAGE</div>
-                  <img
-                    ref={imgRef}
-                    src={tracePreview}
-                    alt="uploaded"
-                    className="w-full h-full object-contain select-none"
-                    style={{ display: 'block', width: '100%', height: '100%' }}
-                    onLoad={() => setStatus('✅ Image preview loaded')}
-                    onError={() => setStatus('❌ Failed to load image preview')}
-                  />
-                  {!tracePreview && (
-                    <div className="absolute inset-0 flex items-center justify-center text-xs text-red-400 bg-red-900/20">NO IMAGE URL</div>
-                  )}
-                </div>
-                <div className="relative w-full rounded border-2 border-green-500 bg-gray-800 overflow-hidden" style={{height: '18rem', backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.15) 1px, transparent 1px)', backgroundSize: '20px 20px'}}>
-                  <div className="absolute top-1 left-1 text-xs text-green-400 bg-black/50 px-1 rounded z-10">SVG</div>
-                  <div className="p-1" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} dangerouslySetInnerHTML={{ __html: normalizedSvg }} />
-                  {!lastSvg && (
-                    <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400 bg-gray-900/50">Trace to vector to see SVG</div>
-                  )}
-                  {lastSvg && (
-                    <div className="absolute bottom-1 left-1 text-xs text-green-400 bg-black/50 px-1 rounded z-10">SVG: {lastSvg.length} chars</div>
-                  )}
+            {/* Two-card previews: Original and Generated SVG */}
+            <div className="preview-grid w-full">
+              <div className="preview-box border-blue-500">
+                <div className="preview-label text-blue-300">Original Image</div>
+                {tracePreview ? (
+                  <img ref={imgRef} src={tracePreview || undefined} alt="uploaded" onLoad={() => setStatus('✅ Image preview loaded')} onError={() => setStatus('❌ Failed to load image preview')} />
+                ) : (
+                  <div className="preview-placeholder">Choose an image to preview</div>
+                )}
+              </div>
+              <div className="preview-box border-green-500">
+                <div className="preview-label text-green-300">Generated SVG</div>
+                {lastSvg ? (
+                  <div style={{width:'100%',height:'100%'}} dangerouslySetInnerHTML={{ __html: normalizedSvg }} />
+                ) : (
+                  <div className="preview-placeholder">Vectorize to see SVG</div>
+                )}
+              </div>
+            </div>
+            {/* Draw Preview on Canvas */}
+            <div className="subpanel">
+              <div className="flex items-center justify-between" style={{marginBottom:8}}>
+                <div style={{color:'#e5e7eb', fontWeight:600}}>Draw Preview on Canvas</div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-success"
+                    disabled={!lastSvg}
+                  onClick={() => {
+                      if (!lastSvg) return;
+                      // Build canvas anim state from current SVG and play
+                      setDrawSvgSnapshot(lastSvg);
+                      setShowDrawPreview(true);
+                      // Wait for the preview panel to mount & lay out before sizing the canvas.
+                      // (Without this, the first click may read a 0px rect and mis-scale.)
+                      const startPlayback = () => {
+                        // Ensure DOM holder stays empty during playback (avoid double-render)
+                        const holder = domSvgHolderRef.current;
+                        if (holder) { holder.innerHTML = ''; }
+                        // Cancel any in-flight RAF before rebuilding
+                        stopCanvasAnim();
+                        // Guarantee fresh size before building anim
+                        resizeCanvasToHolder();
+                        const ok = buildCanvasAnimFromSvg(lastSvg);
+                        if (!ok) { setStatus('Failed to prepare canvas animation'); return; }
+                        const st = drawStateRef.current;
+                        st.playing = true;
+                        st.startedAt = performance.now();
+                        st.durationMs = Math.max(1200, Math.min(6000, Math.round(st.total * 3))); // duration proportional to total length
+                        const tick = (t:number)=>{
+                          if (!st.playing) return;
+                          const ep = Math.min(1, (t - st.startedAt) / st.durationMs);
+                          renderCanvasProgress(ep);
+                          if (ep >= 1) { st.playing = false; st.raf = null; return; }
+                          st.raf = requestAnimationFrame(tick);
+                        };
+                        st.raf = requestAnimationFrame(tick);
+                      };
+                      // Use double rAF to ensure layout (panel visibility + CSS) has settled.
+                      requestAnimationFrame(() => requestAnimationFrame(startPlayback));
+                    }}
+                  >▶ Play Draw</button>
+                  <button
+                    type="button"
+                    className="btn btn-gray"
+                    disabled={!lastSvg}
+                    onClick={() => {
+                      if (!drawSvgSnapshot || !currentProject) return;
+                      const doc = new DOMParser().parseFromString(drawSvgSnapshot, 'image/svg+xml');
+                      const paths = Array.from(doc.querySelectorAll('path'));
+                      const pathObjects = paths.map(p => ({
+                        d: p.getAttribute('d') || '',
+                        stroke: p.getAttribute('stroke') || '#111827',
+                        strokeWidth: Number(p.getAttribute('stroke-width') || '2'),
+                        fill: p.getAttribute('fill') || 'transparent'
+                      }));
+                      const m = drawSvgSnapshot.match(/viewBox=\"([\d.-]+) ([\d.-]+) ([\d.-]+) ([\d.-]+)\"/);
+                      let w = 400, h = 300;
+                      if (m) { w = Math.max(64, Math.round(parseFloat(m[3]))); h = Math.max(64, Math.round(parseFloat(m[4]))); }
+                      addObject({ id: `draw-preview-${Date.now()}`, type: 'svgPath', x: 150, y: 150, width: w, height: h, rotation: 0, properties: { paths: pathObjects }, animationType: 'drawIn', animationStart: 0, animationDuration: 3, animationEasing: 'easeOut' });
+                      setStatus('✅ Draw preview added to canvas');
+                    }}
+                  >➕ Add to Canvas</button>
                 </div>
               </div>
-            ) : (
-              <div className="w-full h-32 flex items-center justify-center text-xs text-yellow-400 border border-dashed border-yellow-600 rounded bg-yellow-900/20">No image selected - tracePreview is null</div>
-            )}
+              <div className="draw-area" style={{position:'relative'}}>
+                <div ref={domSvgHolderRef} className="draw-svg-holder" style={{position:'absolute', inset:0}} />
+                <canvas ref={canvasRef} style={{position:'absolute', inset:0, width:'100%', height:'100%'}} />
+              </div>
+            </div>
           </div>
         </div>
   {/* Full-width action column placed below controls/preview to match mock */}
@@ -1363,7 +1521,7 @@ const SvgImporter: React.FC = () => {
                 img.onerror = () => { setStatus('Failed to load image for tracing.'); setBusy(false); };
                 img.src = tracePreview;
               }}
-            >{busy ? 'Tracing…' : 'Trace to Vector'}</button>
+            >{busy ? 'Vectorizing…' : 'Vectorize'}</button>
 
             {/* Crop UI removed */}
 
@@ -1373,12 +1531,42 @@ const SvgImporter: React.FC = () => {
               <button type="button" className={`px-2 py-1 rounded ${addMode==='svgCombined'?'bg-blue-600':'bg-gray-700'}`} onClick={()=>setAddMode('svgCombined')}>Combined SVG</button>
             </div>
 
-            <div className="text-[11px] text-gray-400">WASM provides highest quality vector tracing. JS Fallback is used automatically if needed.</div>
+            <div className="text-[11px] text-gray-400">WASM provides highest quality vectorization. JS fallback is used automatically if needed.</div>
+
+            {/* Import existing SVG markup (moved from top) */}
+            <div className="mt-4 pt-3 border-t border-gray-700" />
+            <div className="text-sm font-semibold mb-2">Import Existing SVG</div>
+            <div className="space-y-2">
+              <div>
+                <div className="text-xs text-gray-300 mb-1">Upload .svg file</div>
+                <input
+                  type="file"
+                  accept=".svg,image/svg+xml"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }}
+                  className="block w-full text-sm text-gray-200 file:mr-3 file:py-2 file:px-3 file:rounded file:border-0 file:text-sm file:font-medium file:bg-blue-600 file:text-white hover:file:bg-blue-500"
+                />
+              </div>
+              <div>
+                <div className="text-xs text-gray-300 mb-1">Paste SVG or path d</div>
+                <textarea
+                  value={rawInput}
+                  onChange={(e) => setRawInput(e.target.value)}
+                  placeholder="Paste full <svg>...</svg> or just a path d string"
+                  className="w-full h-24 p-2 bg-gray-900 border border-gray-700 rounded text-sm"
+                />
+                <div className="flex justify-end mt-2">
+                  <button
+                    onClick={handlePaste}
+                    className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 rounded text-sm font-medium"
+                  >Add to Canvas</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
         {/* Enhanced Draw Preview section - fixed sizes, same row */}
-        {showDrawPreview && (
+        {false && showDrawPreview && (
           <div className="mt-4 p-3 bg-gray-900/50 rounded border border-gray-600">
             <div className="flex items-center justify-between mb-3">
               <div className="text-sm font-semibold text-white">Draw Preview Comparison</div>
@@ -1463,7 +1651,7 @@ const SvgImporter: React.FC = () => {
                 <div className="w-full h-full flex items-center justify-center" style={{backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '12px 12px'}}>
                   {tracePreview ? (
                     <img
-                      src={tracePreview}
+                      src={tracePreview || undefined}
                       alt="original"
                       className="max-w-full max-h-full object-contain"
                     />

@@ -248,3 +248,97 @@ code {
   padding: 16px;
   border-top: 1px solid #e5e7eb;
 }
+
+/* Styles for SvgImporter Previews */
+.preview-box {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #1f2937; /* bg-gray-800 */
+  border-radius: 0.375rem; /* rounded-md */
+  border-width: 2px;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+}
+
+/* Two-column importer layout + UI polish */
+.two-col-grid { display: grid; grid-template-columns: 420px 1fr; gap: 16px; }
+.panel { background: #1a202c; border: 1px solid #2d3748; border-radius: 12px; padding: 24px; }
+.section-title { font-size: 0.875rem; font-weight: 600; color: #e5e7eb; margin-bottom: 8px; }
+.muted { color: #9ca3af; font-size: 0.75rem; }
+
+/* Buttons */
+.btn { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 6px; font-size: 0.875rem; font-weight: 600; cursor: pointer; border: 1px solid transparent; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: #3b82f6; color: #fff; }
+.btn-primary:hover { background: #2563eb; }
+.btn-gray { background: #374151; color: #e5e7eb; }
+.btn-gray:hover { background: #4b5563; }
+
+/* Toggle chips */
+.chip { padding: 6px 10px; border-radius: 8px; background: #374151; color: #e5e7eb; font-size: 12px; border: 1px solid #4b5563; cursor: pointer; }
+.chip-active { background: #2563eb; color: #fff; border-color: #1d4ed8; }
+
+/* File chooser */
+.file-row { display: flex; align-items: center; gap: 10px; }
+.file-name { color: #9ca3af; font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.file-input-hidden { display: none; }
+
+/* Preview grid */
+.preview-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.panel .preview-grid { margin-top: 8px; }
+
+/* Advanced options grid spacing */
+.adv-grid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 24px; row-gap: 20px; }
+.option-group { display: flex; flex-direction: column; gap: 8px; }
+
+/* Subpanel for draw preview */
+.subpanel { background: #111827; border: 1px solid #2d3748; border-radius: 10px; padding: 12px; margin-top: 12px; }
+.draw-area { height: 240px; border-radius: 8px; background: #1f2937; border: 1px solid #374151; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.draw-svg-holder { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+
+/* Success button for Play */
+.btn-success { background: #22c55e; color: white; }
+.btn-success:hover { background: #16a34a; }
+
+/* Dark selects */
+.select-dark { background: #2d3748; color: #fff; border: none; border-radius: 6px; padding: 10px 12px; }
+
+/* Sliders */
+.slider-blue { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; background: #4a5568; border-radius: 9999px; outline: none; }
+.slider-blue::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #3b82f6; border: 2px solid #93c5fd; box-shadow: 0 0 0 2px rgba(59,130,246,0.25); }
+.slider-blue::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #3b82f6; border: 2px solid #93c5fd; }
+.slider-blue::-moz-range-track { height: 4px; background: #4a5568; border-radius: 9999px; }
+
+/* Ensure full image/SVG is visible within preview */
+.preview-box img,
+.preview-box svg,
+.preview-box canvas {
+  max-width: 100%;
+  max-height: 100%;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.preview-label {
+  position: absolute;
+  top: 0.25rem;
+  left: 0.25rem;
+  font-size: 0.75rem; /* text-xs */
+  background-color: rgba(0, 0, 0, 0.5);
+  padding: 0.125rem 0.5rem; /* py-0.5 px-2 */
+  border-radius: 9999px; /* rounded-full */
+  z-index: 10;
+}
+
+.preview-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 0.75rem; /* text-xs */
+  color: #6b7280; /* text-gray-500 */
+}

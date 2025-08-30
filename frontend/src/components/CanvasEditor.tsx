@@ -159,22 +159,48 @@ const CanvasEditor: React.FC = () => {
   const [showCanvasSettings, setShowCanvasSettings] = React.useState(false);
   const [fitMode, setFitMode] = React.useState<'width' | 'contain'>('contain');
   const [canvasSize, setCanvasSize] = React.useState({ width: 800, height: 600 });
-  const [hasMounted, setHasMounted] = React.useState(false);
-  React.useEffect(() => { setHasMounted(true); }, []);
+
+  // Create overlay immediately when component mounts
   React.useEffect(() => {
-    const wrapper = stageWrapperRef.current;
-    if (!wrapper) return;
-    const overlay = document.createElement('div');
-    overlay.style.position = 'absolute';
-    overlay.style.left = '0';
-    overlay.style.top = '0';
-    overlay.style.right = '0';
-    overlay.style.bottom = '0';
-    overlay.style.pointerEvents = 'none';
-    wrapper.appendChild(overlay);
-    overlayRef.current = overlay;
+    const checkAndCreateOverlay = () => {
+      const wrapper = stageWrapperRef.current;
+      if (!wrapper) return false;
+
+      // Check if overlay already exists
+      const existingOverlay = wrapper.querySelector('.vivus-overlay');
+      if (existingOverlay) {
+        overlayRef.current = existingOverlay as HTMLDivElement;
+        return true;
+      }
+
+      const overlay = document.createElement('div');
+      overlay.className = 'vivus-overlay';
+      overlay.style.position = 'absolute';
+      overlay.style.left = '0';
+      overlay.style.top = '0';
+      overlay.style.right = '0';
+      overlay.style.bottom = '0';
+      overlay.style.pointerEvents = 'none';
+      overlay.style.zIndex = '10';
+      wrapper.appendChild(overlay);
+      overlayRef.current = overlay;
+      return true;
+    };
+
+    // Try to create overlay immediately
+    if (!checkAndCreateOverlay()) {
+      // If wrapper not ready, wait a bit and try again
+      const timeoutId = setTimeout(() => {
+        checkAndCreateOverlay();
+      }, 100);
+      return () => clearTimeout(timeoutId);
+    }
+
     return () => {
-      overlay.remove();
+      const overlay = overlayRef.current;
+      if (overlay && overlay.parentNode) {
+        overlay.remove();
+      }
       overlayRef.current = null;
     };
   }, []);
@@ -840,7 +866,8 @@ const CanvasEditor: React.FC = () => {
 
   // Position and animate Vivus overlays for SVG/draw paths
   React.useEffect(() => {
-    if (!hasMounted || !overlayRef.current || !stageRef.current) return;
+    // Remove hasMounted dependency - overlay should work immediately
+    if (!overlayRef.current || !stageRef.current) return;
     (currentProject?.objects || []).forEach((obj) => {
       const originalSvg: string | undefined = obj.properties?.svg;
       if (!originalSvg) return;
@@ -906,6 +933,8 @@ const CanvasEditor: React.FC = () => {
       requestAnimationFrame(async () => {
         const overlay = overlayRef.current!;
         const stage = stageRef.current!;
+        if (!overlay || !stage) return; // Double check refs are still valid
+
         const existing = overlay.querySelector(`#vivus-${obj.id}`) as HTMLDivElement | null;
         let holder = existing;
         if (!(obj.animationType === 'drawIn') || ep >= 1) {
@@ -942,6 +971,16 @@ const CanvasEditor: React.FC = () => {
             svgEl.setAttribute('width', '100%');
             svgEl.setAttribute('height', '100%');
             svgEl.querySelectorAll('path').forEach((p) => p.setAttribute('fill', 'transparent'));
+
+            // Set a timeout to fallback to canvas if Vivus doesn't work
+            const fallbackTimeout = setTimeout(() => {
+              if (holder.dataset.vivusWorking !== '1') {
+                console.warn('Vivus initialization timeout for object', obj.id, '- falling back to canvas');
+                holder.dataset.vivusWorking = '0';
+                holder.remove();
+              }
+            }, 2000); // 2 second timeout
+
             try {
               const mod = await import('vivus');
               const Vivus: any = (mod as any).default || (mod as any);
@@ -953,19 +992,27 @@ const CanvasEditor: React.FC = () => {
                 dashGap: 2,
                 forceRender: true,
               });
+              clearTimeout(fallbackTimeout);
               inst.setFrameProgress(ep);
               holder.dataset.rendered = '1';
-            } catch {}
+              holder.dataset.vivusWorking = '1'; // Mark as working
+            } catch (error) {
+              clearTimeout(fallbackTimeout);
+              console.warn('Vivus failed to initialize for object', obj.id, ':', error);
+              holder.dataset.vivusWorking = '0'; // Mark as not working
+              // Remove the overlay so canvas takes over
+              holder.remove();
+            }
           }
         } else {
           const svgEl = holder.querySelector('svg') as any;
-          if (svgEl && svgEl.vivus) {
+          if (svgEl && svgEl.vivus && holder.dataset.vivusWorking === '1') {
             try { svgEl.vivus.setFrameProgress(ep); } catch {}
           }
         }
       });
     });
-  }, [hasMounted, currentProject?.objects, currentTime]);
+  }, [currentProject?.objects, currentTime]); // Removed hasMounted dependency
 
   // Cleanup overlay iframes that no longer correspond to any objects
   React.useEffect(() => {
@@ -1631,7 +1678,6 @@ const CanvasEditor: React.FC = () => {
                   const groupX = animatedProps.x ?? obj.x;
                   const groupY = animatedProps.y ?? obj.y;
                   const paths = Array.isArray(obj.properties?.paths) ? obj.properties.paths : [];
-                  const originalSvg: string | undefined = obj.properties?.svg;
                   const draw = obj.animationType === 'drawIn';
                   // Use provided path lengths when available to avoid DOM measurement
                   const lengths = paths.map((p: any) => {
@@ -1676,8 +1722,12 @@ const CanvasEditor: React.FC = () => {
                             // not started
                             dash = [len, len];
                             dashOffset = len;
-                            // if Vivus overlay is driving the animation, hide canvas stroke to avoid double rendering
-                          if (originalSvg && progress < 1) strokeColor = 'transparent';
+                            // Only hide canvas stroke if Vivus overlay is confirmed working
+                            const overlay = overlayRef.current;
+                            const vivusHolder = overlay?.querySelector(`#vivus-${obj.id}`) as HTMLDivElement | null;
+                            if (vivusHolder && vivusHolder.dataset.vivusWorking === '1' && progress < 1) {
+                              strokeColor = 'transparent';
+                            }
                           } else if (targetLen >= end) {
                             // fully revealed – now allow fill
                             dash = undefined;
@@ -1688,7 +1738,12 @@ const CanvasEditor: React.FC = () => {
                             const localReveal = Math.max(0, Math.min(len, targetLen - start));
                             dash = [len, len];
                             dashOffset = Math.max(0, len - localReveal);
-                            if (originalSvg && progress < 1) strokeColor = 'transparent';
+                            // Only hide canvas stroke if Vivus overlay is confirmed working
+                            const overlay = overlayRef.current;
+                            const vivusHolder = overlay?.querySelector(`#vivus-${obj.id}`) as HTMLDivElement | null;
+                            if (vivusHolder && vivusHolder.dataset.vivusWorking === '1' && progress < 1) {
+                              strokeColor = 'transparent';
+                            }
                           }
                         } else {
                           // no animation: show full with fill

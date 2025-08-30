@@ -95,6 +95,7 @@ const CanvasEditor: React.FC = () => {
   const stageRef = React.useRef<Konva.Stage>(null);
   const transformerRef = React.useRef<Konva.Transformer>(null);
   const canvasContainerRef = React.useRef<HTMLDivElement>(null);
+  const stageWrapperRef = React.useRef<HTMLDivElement>(null);
   const overlayRef = React.useRef<HTMLDivElement>(null);
 
   const {
@@ -158,6 +159,25 @@ const CanvasEditor: React.FC = () => {
   const [showCanvasSettings, setShowCanvasSettings] = React.useState(false);
   const [fitMode, setFitMode] = React.useState<'width' | 'contain'>('contain');
   const [canvasSize, setCanvasSize] = React.useState({ width: 800, height: 600 });
+  const [hasMounted, setHasMounted] = React.useState(false);
+  React.useEffect(() => { setHasMounted(true); }, []);
+  React.useEffect(() => {
+    const wrapper = stageWrapperRef.current;
+    if (!wrapper) return;
+    const overlay = document.createElement('div');
+    overlay.style.position = 'absolute';
+    overlay.style.left = '0';
+    overlay.style.top = '0';
+    overlay.style.right = '0';
+    overlay.style.bottom = '0';
+    overlay.style.pointerEvents = 'none';
+    wrapper.appendChild(overlay);
+    overlayRef.current = overlay;
+    return () => {
+      overlay.remove();
+      overlayRef.current = null;
+    };
+  }, []);
 
   // Helpers for SVG path handling (length & bbox)
   const getPathTotalLength = React.useCallback(() => {
@@ -812,11 +832,140 @@ const CanvasEditor: React.FC = () => {
   React.useEffect(() => {
     const overlay = overlayRef.current;
     if (!overlay) return;
-    const validIds = new Set((currentProject?.objects || []).filter(o => o.type === 'svgPath' && !!o.properties?.svg).map(o => `vivus-${o.id}`));
+    const validIds = new Set((currentProject?.objects || []).filter(o => !!o.properties?.svg).map(o => `vivus-${o.id}`));
     Array.from(overlay.querySelectorAll('div[id^="vivus-"]')).forEach((el) => {
       if (!validIds.has((el as HTMLElement).id)) el.remove();
     });
   }, [currentProject?.objects]);
+
+  // Position and animate Vivus overlays for SVG/draw paths
+  React.useEffect(() => {
+    if (!hasMounted || !overlayRef.current || !stageRef.current) return;
+    (currentProject?.objects || []).forEach((obj) => {
+      const originalSvg: string | undefined = obj.properties?.svg;
+      if (!originalSvg) return;
+
+      const animStart = obj.animationStart || 0;
+      const animDuration = obj.animationDuration || 5;
+      const progress = Math.min(Math.max((currentTime - animStart) / animDuration, 0), 1);
+      const easing = obj.animationEasing || 'easeOut';
+      const ease = (p: number) => {
+        switch (easing) {
+          case 'easeIn': return p * p;
+          case 'easeOut': return 1 - Math.pow(1 - p, 2);
+          case 'easeInOut': return p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+          default: return p;
+        }
+      };
+      const ep = ease(progress);
+      const animatedProps: any = {};
+      switch (obj.animationType) {
+        case 'fadeIn':
+          animatedProps.opacity = ep;
+          break;
+        case 'scaleIn':
+          animatedProps.scaleX = ep;
+          animatedProps.scaleY = ep;
+          break;
+        case 'slideIn':
+          animatedProps.x = obj.x + (1 - ep) * 100;
+          animatedProps.y = obj.y;
+          break;
+        case 'pathFollow': {
+          if (obj.properties?.pathPoints && Array.isArray(obj.properties.pathPoints)) {
+            const pathPoints = obj.properties.pathPoints;
+            const totalPoints = pathPoints.length;
+            if (totalPoints > 1) {
+              const pathProgress = ep * (totalPoints - 1);
+              const currentIndex = Math.floor(pathProgress);
+              const nextIndex = Math.min(currentIndex + 1, totalPoints - 1);
+              const segmentProgress = pathProgress - currentIndex;
+              const currentPoint = pathPoints[currentIndex];
+              const nextPoint = pathPoints[nextIndex];
+              animatedProps.x = currentPoint.x + (nextPoint.x - currentPoint.x) * segmentProgress;
+              animatedProps.y = currentPoint.y + (nextPoint.y - currentPoint.y) * segmentProgress;
+              if (obj.properties?.rotateWithPath) {
+                const dx = nextPoint.x - currentPoint.x;
+                const dy = nextPoint.y - currentPoint.y;
+                const angle = Math.atan2(dy, dx);
+                animatedProps.rotation = (angle * 180) / Math.PI;
+              }
+            }
+          }
+          break;
+        }
+        case 'drawIn':
+        case 'typewriter':
+        default:
+          break;
+      }
+
+      const groupX = animatedProps.x ?? obj.x;
+      const groupY = animatedProps.y ?? obj.y;
+
+      requestAnimationFrame(async () => {
+        const overlay = overlayRef.current!;
+        const stage = stageRef.current!;
+        const existing = overlay.querySelector(`#vivus-${obj.id}`) as HTMLDivElement | null;
+        let holder = existing;
+        if (!(obj.animationType === 'drawIn') || ep >= 1) {
+          if (holder) holder.remove();
+          return;
+        }
+        if (!holder) {
+          holder = document.createElement('div');
+          holder.id = `vivus-${obj.id}`;
+          holder.style.position = 'absolute';
+          holder.style.pointerEvents = 'none';
+          holder.style.willChange = 'transform, opacity';
+          holder.style.transformOrigin = 'top left';
+          overlay.appendChild(holder);
+        }
+        const transform = stage.getAbsoluteTransform().copy();
+        const p = transform.point({ x: groupX, y: groupY });
+        const stageScaleX = stage.scaleX() || 1;
+        const stageScaleY = stage.scaleY() || 1;
+        const objScaleX = animatedProps.scaleX ?? 1;
+        const objScaleY = animatedProps.scaleY ?? 1;
+        const w = Math.max(1, obj.width || 1) * stageScaleX * objScaleX;
+        const h = Math.max(1, obj.height || 1) * stageScaleY * objScaleY;
+        holder.style.left = `${p.x}px`;
+        holder.style.top = `${p.y}px`;
+        holder.style.width = `${w}px`;
+        holder.style.height = `${h}px`;
+        holder.style.opacity = String(animatedProps.opacity ?? 1);
+        holder.style.transform = `rotate(${obj.rotation || 0}deg)`;
+        if (!holder.dataset.rendered) {
+          holder.innerHTML = originalSvg;
+          const svgEl = holder.querySelector('svg') as SVGSVGElement | null;
+          if (svgEl) {
+            svgEl.setAttribute('width', '100%');
+            svgEl.setAttribute('height', '100%');
+            svgEl.querySelectorAll('path').forEach((p) => p.setAttribute('fill', 'transparent'));
+            try {
+              const mod = await import('vivus');
+              const Vivus: any = (mod as any).default || (mod as any);
+              const inst = new Vivus(svgEl, {
+                type: 'oneByOne',
+                duration: Math.max(60, Math.round((obj.animationDuration || 2) * 90)),
+                animTimingFunction: Vivus.EASE,
+                start: 'manual',
+                dashGap: 2,
+                forceRender: true,
+              });
+              inst.setFrameProgress(ep);
+              holder.dataset.rendered = '1';
+            } catch {}
+          }
+        } else {
+          const svgEl = holder.querySelector('svg') as any;
+          if (svgEl && svgEl.vivus) {
+            try { svgEl.vivus.setFrameProgress(ep); } catch {}
+          }
+        }
+      });
+    });
+  }, [hasMounted, currentProject?.objects, currentTime]);
 
   // Cleanup overlay iframes that no longer correspond to any objects
   React.useEffect(() => {
@@ -963,9 +1112,11 @@ const CanvasEditor: React.FC = () => {
         tabIndex={0}
         style={{ outline: 'none' }}
       >
-        <div className="rounded shadow-lg overflow-hidden relative min-w-fit min-h-fit" style={{ width: `${canvasSize.width}px`, height: `${canvasSize.height}px`, backgroundColor: currentProject?.backgroundColor || '#ffffff' }}>
-          {/* Absolute overlay for external iframes (video embeds) */}
-          <div ref={overlayRef} className="absolute inset-0 pointer-events-none"></div>
+        <div
+          ref={stageWrapperRef}
+          className="rounded shadow-lg overflow-hidden relative min-w-fit min-h-fit"
+          style={{ width: `${canvasSize.width}px`, height: `${canvasSize.height}px`, backgroundColor: currentProject?.backgroundColor || '#ffffff' }}
+        >
           <Stage
             ref={stageRef}
             width={canvasSize.width}
@@ -1013,8 +1164,9 @@ const CanvasEditor: React.FC = () => {
               {(currentProject?.objects || []).map((obj) => {
                 const animStart = obj.animationStart || 0;
                 const animDuration = obj.animationDuration || 5;
-                // Show objects at all times; clamp animation progression 0..1
-                const progress = Math.min(Math.max((currentTime - animStart) / animDuration, 0), 1);
+                // Track elapsed time and linear progress for duration-aware animations
+                const elapsed = Math.min(Math.max(currentTime - animStart, 0), animDuration);
+                const progress = animDuration > 0 ? elapsed / animDuration : 1;
                 const easing = obj.animationEasing || 'easeOut';
                 const ease = (p: number) => {
                   switch (easing) {
@@ -1489,7 +1641,9 @@ const CanvasEditor: React.FC = () => {
                   const totalLen = typeof obj.properties?.totalLen === 'number'
                     ? obj.properties.totalLen
                     : lengths.reduce((a: number, b: number) => a + b, 0);
-                  const targetLen = draw ? ep * totalLen : totalLen;
+                  // Reveal length is tied to object's duration so timeline edits
+                  // directly influence drawing speed (length / duration)
+                  const targetLen = draw ? progress * totalLen : totalLen;
                   let consumed = 0;
                   const konvaGroup = (
                     <Group
@@ -1523,7 +1677,7 @@ const CanvasEditor: React.FC = () => {
                             dash = [len, len];
                             dashOffset = len;
                             // if Vivus overlay is driving the animation, hide canvas stroke to avoid double rendering
-                            if (originalSvg && ep < 1) strokeColor = 'transparent';
+                          if (originalSvg && progress < 1) strokeColor = 'transparent';
                           } else if (targetLen >= end) {
                             // fully revealed – now allow fill
                             dash = undefined;
@@ -1534,7 +1688,7 @@ const CanvasEditor: React.FC = () => {
                             const localReveal = Math.max(0, Math.min(len, targetLen - start));
                             dash = [len, len];
                             dashOffset = Math.max(0, len - localReveal);
-                            if (originalSvg && ep < 1) strokeColor = 'transparent';
+                            if (originalSvg && progress < 1) strokeColor = 'transparent';
                           }
                         } else {
                           // no animation: show full with fill
@@ -1566,7 +1720,7 @@ const CanvasEditor: React.FC = () => {
                               }
                               ctx.restore();
                             }}
-                            listening={false}
+                            listening={tool === 'select'}
                             perfectDrawEnabled={false}
                           />
                         );
@@ -1576,76 +1730,6 @@ const CanvasEditor: React.FC = () => {
 
                   // If we have an original SVG string, create a DOM overlay animated by Vivus for perfect stroke animation
                   // The overlay is placed in overlayRef, aligned to the object's group transform (x,y,scale,rotation)
-                  if (originalSvg && overlayRef.current && stageRef.current) {
-                    requestAnimationFrame(async () => {
-                      const overlay = overlayRef.current!;
-                      const stage = stageRef.current!;
-                      const existing = overlay.querySelector(`#vivus-${obj.id}`) as HTMLDivElement | null;
-                      let holder = existing;
-                      // Remove overlay if not drawing or animation complete
-                      if (!(obj.animationType === 'drawIn') || ep >= 1) {
-                        if (holder) holder.remove();
-                        return;
-                      }
-                      if (!holder) {
-                        holder = document.createElement('div');
-                        holder.id = `vivus-${obj.id}`;
-                        holder.style.position = 'absolute';
-                        holder.style.pointerEvents = 'none';
-                        holder.style.willChange = 'transform, opacity';
-                        holder.style.transformOrigin = 'top left';
-                        overlay.appendChild(holder);
-                      }
-                      // Size holder to object box projected into screen coords
-                      const transform = stage.getAbsoluteTransform().copy();
-                      const p = transform.point({ x: groupX, y: groupY });
-                      const stageScaleX = stage.scaleX() || 1;
-                      const stageScaleY = stage.scaleY() || 1;
-                      const objScaleX = animatedProps.scaleX ?? 1;
-                      const objScaleY = animatedProps.scaleY ?? 1;
-                      const w = Math.max(1, obj.width || 1) * stageScaleX * objScaleX;
-                      const h = Math.max(1, obj.height || 1) * stageScaleY * objScaleY;
-                      holder.style.left = `${p.x}px`;
-                      holder.style.top = `${p.y}px`;
-                      holder.style.width = `${w}px`;
-                      holder.style.height = `${h}px`;
-                      holder.style.opacity = String(animatedProps.opacity ?? 1);
-                      holder.style.transform = `rotate(${obj.rotation || 0}deg)`;
-                      // Render SVG if not present or changed
-                      if (!holder.dataset.rendered) {
-                        holder.innerHTML = originalSvg;
-                        const svgEl = holder.querySelector('svg') as SVGSVGElement | null;
-                        if (svgEl) {
-                          svgEl.setAttribute('width', '100%');
-                          svgEl.setAttribute('height', '100%');
-                          // Hide fills so the drawing isn't visible until animation progresses
-                          svgEl.querySelectorAll('path').forEach((p) => p.setAttribute('fill', 'transparent'));
-                          try {
-                            const mod = await import('vivus');
-                            const Vivus: any = (mod as any).default || (mod as any);
-                            // Kick off Vivus animation synchronized approximately to current animation progress
-                            const inst = new Vivus(svgEl, {
-                              type: 'oneByOne',
-                              duration: Math.max(60, Math.round((obj.animationDuration || 2) * 90)),
-                              animTimingFunction: Vivus.EASE,
-                              start: 'manual',
-                              dashGap: 2,
-                              forceRender: true,
-                            });
-                            // Advance to current progress
-                            inst.setFrameProgress(ep);
-                            holder.dataset.rendered = '1';
-                          } catch {}
-                        }
-                      } else {
-                        const svgEl = holder.querySelector('svg') as any;
-                        if (svgEl && svgEl.vivus) {
-                          try { svgEl.vivus.setFrameProgress(ep); } catch {}
-                        }
-                      }
-                    });
-                  }
-
                   return konvaGroup;
                 }
 
@@ -1658,9 +1742,10 @@ const CanvasEditor: React.FC = () => {
 
                   // Compute total points for animation timing
                   const totalPoints = segments.reduce((sum, seg) => sum + seg.length, 0);
-                  // Determine how many points should be visible globally
+                  // Determine how many points should be visible globally based on
+                  // time-driven progress (points per second)
                   const globalReveal = obj.animationType === 'drawIn' && totalPoints > 1
-                    ? Math.max(1, Math.floor(ep * totalPoints + 0.00001))
+                    ? Math.max(1, Math.floor(progress * totalPoints + 0.00001))
                     : totalPoints;
 
                   // Build per-segment revealed points
@@ -1704,7 +1789,7 @@ const CanvasEditor: React.FC = () => {
                           lineJoin="round"
                           perfectDrawEnabled={false}
                           globalCompositeOperation={opts.composite as any}
-                          listening={false}
+                          listening={tool === 'select'}
                         />
                       );
                     })

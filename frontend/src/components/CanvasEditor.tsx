@@ -95,11 +95,14 @@ const ToolFollower: React.FC<{
 const CanvasEditor: React.FC = () => {
   const stageRef = React.useRef<Konva.Stage>(null);
   const transformerRef = React.useRef<Konva.Transformer>(null);
+  const layerRef = React.useRef<Konva.Layer>(null);
   const canvasContainerRef = React.useRef<HTMLDivElement>(null);
   const stageWrapperRef = React.useRef<HTMLDivElement>(null);
   const overlayRef = React.useRef<HTMLDivElement>(null);
   const vivusRef = React.useRef<any>(null);
   const [vivusReady, setVivusReady] = React.useState(false);
+  // Track Vivus instances by object id to keep animation control stable across renders
+  const vivusInstancesRef = React.useRef<Map<string, any>>(new Map());
 
   const {
     currentProject,
@@ -196,6 +199,8 @@ const CanvasEditor: React.FC = () => {
       let holder = overlay.querySelector(`#vivus-${obj.id}`) as HTMLDivElement | null;
       if (obj.animationType !== 'drawIn' || ep >= 1) {
         if (holder) holder.remove();
+        // Clear any cached vivus instance when overlay is removed
+        vivusInstancesRef.current.delete(obj.id);
         return;
       }
       if (!holder) {
@@ -236,13 +241,17 @@ const CanvasEditor: React.FC = () => {
             dashGap: 2,
             forceRender: true,
           });
-          inst.setFrameProgress(ep);
+          try { inst.setFrameProgress(ep); } catch {}
+          // Cache instance for later frames
+          vivusInstancesRef.current.set(obj.id, inst);
+          (svgEl as any).vivus = inst;
           holder.dataset.rendered = '1';
         }
       } else {
         const svgEl = holder.querySelector('svg') as any;
-        if (svgEl && svgEl.vivus) {
-          try { svgEl.vivus.setFrameProgress(ep); } catch {}
+        const inst = vivusInstancesRef.current.get(obj.id) || (svgEl && (svgEl as any).vivus);
+        if (inst) {
+          try { inst.setFrameProgress(ep); } catch {}
         }
       }
     });
@@ -266,6 +275,30 @@ const CanvasEditor: React.FC = () => {
       } catch {
         cache.set(key, 0);
         return 0;
+      }
+    };
+  }, [])();
+
+  // Helper: get a point (and optionally a previous point) at a given length along an SVG path "d"
+  const getPointAt = React.useCallback(() => {
+    const cache = new Map<string, SVGPathElement>();
+    const svgNS = 'http://www.w3.org/2000/svg';
+    return (d: string, dist: number, m?: number[], prevDistDelta = 0.5): { x: number; y: number; px: number; py: number } => {
+      const key = m ? `${d}|${m.join(',')}` : d;
+      let path = cache.get(key);
+      if (!path) {
+        path = document.createElementNS(svgNS, 'path');
+        path.setAttribute('d', d);
+        if (m) path.setAttribute('transform', `matrix(${m[0]} ${m[1]} ${m[2]} ${m[3]} ${m[4]} ${m[5]})`);
+        cache.set(key, path);
+      }
+      try {
+        const p1 = path.getPointAtLength(Math.max(0, dist));
+        const pd = Math.max(0, dist - prevDistDelta);
+        const p0 = path.getPointAtLength(pd);
+        return { x: p1.x, y: p1.y, px: p0.x, py: p0.y };
+      } catch {
+        return { x: 0, y: 0, px: 0, py: 0 };
       }
     };
   }, [])();
@@ -769,6 +802,16 @@ const CanvasEditor: React.FC = () => {
 
   const handleObjectClick = (id: string, node?: any) => {
     console.log('handleObjectClick:', id);
+    // Avoid interrupting active hand-draw animation by selecting mid-play
+    const maybeObj = currentProject?.objects.find(o => o.id === id);
+    if (maybeObj) {
+      const animStart = maybeObj.animationStart || 0;
+      const animDuration = maybeObj.animationDuration || 5;
+      const inWindow = currentTime >= animStart && currentTime < (animStart + animDuration);
+      if (isPlaying && maybeObj.animationType === 'drawIn' && inWindow) {
+        return; // ignore click while animating
+      }
+    }
     selectObject(id);
     if (transformerRef.current && node) {
       transformerRef.current.nodes([node]);
@@ -904,12 +947,17 @@ const CanvasEditor: React.FC = () => {
     console.log('isPlaying:', isPlaying, 'currentTime:', currentTime);
   }, [isPlaying, currentTime]);
 
+  // Force Konva to repaint time-based drawings
+  React.useEffect(() => {
+    layerRef.current?.batchDraw();
+  }, [currentTime, isPlaying]);
+
   React.useEffect(() => {
     if (!currentProject?.objects) return;
 
     const loadSvg = async () => {
       for (const obj of currentProject.objects) {
-        if (obj.type !== 'drawPath') continue;
+        if (!(obj.type === 'drawPath' || obj.type === 'svgPath')) continue;
         const assetSrc = obj.properties?.assetSrc;
         const hasSvg = obj.properties?.svg;
         if (assetSrc && !hasSvg) {
@@ -947,7 +995,7 @@ const CanvasEditor: React.FC = () => {
   // Preload SVG data for draw paths that reference an external asset
   React.useEffect(() => {
     (currentProject?.objects || []).forEach(obj => {
-      if (obj.type === 'drawPath') {
+      if (obj.type === 'drawPath' || obj.type === 'svgPath') {
         const props: any = obj.properties || {};
         if (props.assetSrc && !props.svg) {
           fetch(props.assetSrc)
@@ -966,13 +1014,28 @@ const CanvasEditor: React.FC = () => {
     if (isPlaying) {
       (currentProject?.objects || []).forEach((obj) => {
         if (obj.animationType === 'drawIn' && obj.properties?.svg) {
-          renderVivusOverlay(obj, 0, {}, obj.x, obj.y);
+          // Compute eased progress at current playhead to initialize overlay correctly
+          const animStart = obj.animationStart || 0;
+          const animDuration = obj.animationDuration || 5;
+          const easing = obj.animationEasing || 'easeOut';
+          const raw = Math.min(Math.max((currentTime - animStart) / animDuration, 0), 1);
+          const ease = (p: number) => {
+            switch (easing) {
+              case 'easeIn': return p * p;
+              case 'easeOut': return 1 - Math.pow(1 - p, 2);
+              case 'easeInOut': return p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+              default: return p;
+            }
+          };
+          const ep = ease(raw);
+          renderVivusOverlay(obj, ep, {}, obj.x, obj.y);
         }
       });
     } else {
       Array.from(overlay.querySelectorAll('div[id^="vivus-"]')).forEach((el) => el.remove());
+      vivusInstancesRef.current.clear();
     }
-  }, [isPlaying, currentProject?.objects, vivusReady]);
+  }, [isPlaying, currentProject?.objects, vivusReady, currentTime]);
 
   // Position and animate Vivus overlays for SVG/draw paths
   React.useEffect(() => {
@@ -1039,7 +1102,10 @@ const CanvasEditor: React.FC = () => {
       const groupX = animatedProps.x ?? obj.x;
       const groupY = animatedProps.y ?? obj.y;
 
-      renderVivusOverlay(obj, ep, animatedProps, groupX, groupY);
+      // Only use Vivus for drawIn animations with a supplied SVG
+      if (obj.animationType === 'drawIn') {
+        renderVivusOverlay(obj, ep, animatedProps, groupX, groupY);
+      }
     });
   }, [hasMounted, vivusReady, currentProject?.objects, currentTime, isPlaying]);
 
@@ -1206,7 +1272,7 @@ const CanvasEditor: React.FC = () => {
             x={currentProject?.cameraPosition?.x || 0}
             y={currentProject?.cameraPosition?.y || 0}
           >
-            <Layer>
+            <Layer ref={layerRef}>
               {/* Clickable background to allow deselection when clicking blank space */}
               <Rect
                 id="canvas-bg"
@@ -1709,6 +1775,8 @@ const CanvasEditor: React.FC = () => {
                 }
 
                 if (obj.type === 'svgPath') {
+                  console.log('svgPath properties for', obj.id, ':', obj.properties);
+                  console.log(!!obj.properties?.svg, obj.properties?.assetSrc);
                   const groupX = animatedProps.x ?? obj.x;
                   const groupY = animatedProps.y ?? obj.y;
                   const paths = Array.isArray(obj.properties?.paths) ? obj.properties.paths : [];
@@ -1723,8 +1791,11 @@ const CanvasEditor: React.FC = () => {
                     : lengths.reduce((a: number, b: number) => a + b, 0);
                   // Reveal length is tied to object's duration so timeline edits
                   // directly influence drawing speed (length / duration)
-                  const targetLen = draw ? progress * totalLen : totalLen;
+                  const targetLen = draw ? ep * totalLen : totalLen;
                   let consumed = 0;
+                  // Track head point for ToolFollower
+                  let headPoint: { x: number; y: number } | null = null;
+                  let prevPoint: { x: number; y: number } | null = null;
                   const konvaGroup = (
                     <Group
                       key={obj.id}
@@ -1735,6 +1806,8 @@ const CanvasEditor: React.FC = () => {
                       scaleX={animatedProps.scaleX ?? 1}
                       scaleY={animatedProps.scaleY ?? 1}
                       opacity={animatedProps.opacity ?? 1}
+                      // Bind progress so Konva recognizes changes and repaints
+                      attrs={{ __progress: ep, __totalLen: totalLen, __targetLen: targetLen }}
                       draggable={tool === 'select'}
                       onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
                       onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
@@ -1786,6 +1859,10 @@ const CanvasEditor: React.FC = () => {
                             if (isPlaying && overlayVisible && progress < 1) {
                               strokeColor = 'transparent';
                             }
+                            // Compute head for ToolFollower
+                            const pt = getPointAt(d, localReveal, p.m);
+                            headPoint = { x: pt.x, y: pt.y };
+                            prevPoint = { x: pt.px, y: pt.py };
                           }
                         } else {
                           // no animation: show full with fill
@@ -1817,11 +1894,33 @@ const CanvasEditor: React.FC = () => {
                               }
                               ctx.restore();
                             }}
+                            // Changing attrs to force Konva redraw when time/progress updates
+                            attrs={{ __progress: progress, __targetLen: targetLen, __dashOffset: dashOffset }}
                             listening={tool === 'select'}
                             perfectDrawEnabled={false}
                           />
                         );
                       })}
+                      {/* Hand/Pen follower for svgPath */}
+                      {(() => {
+                        const hp = headPoint as { x: number; y: number } | null;
+                        const pp = prevPoint as { x: number; y: number } | null;
+                        if (!(draw && hp && pp)) return null;
+                        const angleDeg = Math.atan2(hp.y - pp.y, hp.x - pp.x) * 180 / Math.PI;
+                        return (
+                          <ToolFollower
+                            x={hp.x}
+                            y={hp.y}
+                            angle={angleDeg}
+                            penType={obj.properties?.selectedPenType}
+                            handAsset={obj.properties?.selectedHandAsset}
+                            handOffset={obj.properties?.handOffset}
+                            handScale={obj.properties?.handScale}
+                            penOffset={obj.properties?.penOffset}
+                            penScale={obj.properties?.penScale}
+                          />
+                        );
+                      })()}
                     </Group>
                   );
 

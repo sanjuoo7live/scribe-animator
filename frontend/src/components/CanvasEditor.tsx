@@ -1481,11 +1481,14 @@ const CanvasEditor: React.FC = () => {
                   const paths = Array.isArray(obj.properties?.paths) ? obj.properties.paths : [];
                   const originalSvg: string | undefined = obj.properties?.svg;
                   const draw = obj.animationType === 'drawIn';
-                  // Vivus-like sequential reveal across paths by cumulative length
+                  // Use provided path lengths when available to avoid DOM measurement
                   const lengths = paths.map((p: any) => {
+                    if (typeof p.len === 'number') return p.len;
                     const d = p.d as string; return getPathTotalLength(d, p.m) || 0;
                   });
-                  const totalLen = lengths.reduce((a: number, b: number) => a + b, 0);
+                  const totalLen = typeof obj.properties?.totalLen === 'number'
+                    ? obj.properties.totalLen
+                    : lengths.reduce((a: number, b: number) => a + b, 0);
                   const targetLen = draw ? ep * totalLen : totalLen;
                   let consumed = 0;
                   const konvaGroup = (
@@ -1615,6 +1618,8 @@ const CanvasEditor: React.FC = () => {
                         if (svgEl) {
                           svgEl.setAttribute('width', '100%');
                           svgEl.setAttribute('height', '100%');
+                          // Hide fills so the drawing isn't visible until animation progresses
+                          svgEl.querySelectorAll('path').forEach((p) => p.setAttribute('fill', 'transparent'));
                           try {
                             const mod = await import('vivus');
                             const Vivus: any = (mod as any).default || (mod as any);

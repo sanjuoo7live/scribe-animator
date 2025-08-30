@@ -19,6 +19,7 @@ type RefineItem = {
 const SvgImporter: React.FC = () => {
   const addObject = useAppStore(s => s.addObject);
   const currentProject = useAppStore(s => s.currentProject);
+  const currentTime = useAppStore(s => s.currentTime);
 
   const [status, setStatus] = React.useState<string>('');
   const [traceThreshold, setTraceThreshold] = React.useState<number>(128);
@@ -170,7 +171,7 @@ const SvgImporter: React.FC = () => {
       const getCtm=(el:Element):Mat=>{ let chain:Element[]=[]; let p:Element|null=el; while(p && p.nodeName.toLowerCase()!=='html'){ chain.unshift(p); p=p.parentElement; } let m=mul(I, translate(-vb.x, -vb.y)); for(const node of chain){ m=mul(m, parseT(node.getAttribute('transform'))); } return m; };
 
       const out: { d:string; stroke:string; strokeWidth:number; fill:string; m?:Mat }[]=[];
-      const visit=(el:Element)=>{ if(el.nodeName.toLowerCase()==='path'){ const d=el.getAttribute('d')||''; let stroke=(el.getAttribute('stroke')||'#111827') as string; const sw=Number(el.getAttribute('stroke-width')||'2'); const fill=(el.getAttribute('fill')||'transparent') as string; const m=getCtm(el); out.push({ d, stroke, strokeWidth: isNaN(sw)?2:sw, fill, m }); } Array.from(el.children).forEach(visit); };
+      const visit=(el:Element)=>{ if(el.nodeName.toLowerCase()==='path'){ const d=el.getAttribute('d')||''; const strokeAttr=el.getAttribute('stroke'); const stroke = !strokeAttr || strokeAttr === 'none' ? 'transparent' : strokeAttr; const sw=Number(el.getAttribute('stroke-width')||'2'); const fillAttr = el.getAttribute('fill'); const fill = !fillAttr || fillAttr === 'none' ? 'transparent' : fillAttr; const m=getCtm(el); out.push({ d, stroke, strokeWidth: isNaN(sw)?2:sw, fill, m }); } Array.from(el.children).forEach(visit); };
       visit(svg);
       // Measure lengths on a hidden svg
       const s = document.createElementNS('http://www.w3.org/2000/svg','svg'); s.setAttribute('width','0'); s.setAttribute('height','0'); s.style.position='absolute'; s.style.left='-99999px'; s.style.top='-99999px'; document.body.appendChild(s);
@@ -995,12 +996,13 @@ const SvgImporter: React.FC = () => {
                       let w = 400, h = 300;
                       if (vb) { w = Math.max(64, Math.round(vb.w)); h = Math.max(64, Math.round(vb.h)); }
                       const baseId = Date.now();
-                      const pathObjs = st.paths.map(p => ({
+                      const pathObjs = st.paths.map((p, i) => ({
                         d: p.d,
                         stroke: p.stroke || 'transparent',
                         strokeWidth: p.strokeWidth || 2,
                         fill: p.fill || 'transparent',
-                        m: p.m
+                        m: p.m,
+                        len: st.lens[i] || 0,
                       }));
                       addObject({
                         id: `draw-preview-${baseId}`,
@@ -1010,11 +1012,11 @@ const SvgImporter: React.FC = () => {
                         width: w,
                         height: h,
                         rotation: 0,
-                        properties: { paths: pathObjs, svg: drawSvgSnapshot },
+                        properties: { paths: pathObjs, totalLen: st.total },
                         animationType: 'drawIn',
                         animationStart: 0,
                         animationDuration: 3,
-                        animationEasing: 'easeOut'
+                        animationEasing: 'easeOut',
                       });
                       setStatus('✅ Draw preview added to canvas');
                     }}
@@ -1401,12 +1403,13 @@ const SvgImporter: React.FC = () => {
                     }
 
                     const baseId = Date.now();
-                    const pathObjs = st.paths.map(p => ({
+                    const pathObjs = st.paths.map((p, i) => ({
                       d: p.d,
                       stroke: p.stroke || 'transparent',
                       strokeWidth: p.strokeWidth || 2,
                       fill: p.fill || 'transparent',
-                      m: p.m
+                      m: p.m,
+                      len: st.lens[i] || 0,
                     }));
                     addObject({
                       id: `draw-preview-${baseId}`,
@@ -1416,11 +1419,11 @@ const SvgImporter: React.FC = () => {
                       width: w,
                       height: h,
                       rotation: 0,
-                      properties: { paths: pathObjs, svg: drawSvgSnapshot },
+                      properties: { paths: pathObjs, totalLen: st.total },
                       animationType: 'drawIn',
-                      animationStart: 0,
+                      animationStart: currentTime,
                       animationDuration: 3,
-                      animationEasing: 'easeOut'
+                      animationEasing: 'easeOut',
                     });
                     setStatus('✅ Draw preview added to canvas');
                   }}

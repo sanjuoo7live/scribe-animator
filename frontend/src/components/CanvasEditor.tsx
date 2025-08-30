@@ -894,6 +894,7 @@ const CanvasEditor: React.FC = () => {
   // Position and animate Vivus overlays for SVG/draw paths
   React.useEffect(() => {
     if (!hasMounted || !overlayRef.current || !stageRef.current) return;
+    if (!isPlaying && !selectedObject) return;
     (currentProject?.objects || []).forEach((obj) => {
       const originalSvg: string | undefined = obj.properties?.svg;
       if (!originalSvg) return;
@@ -1018,7 +1019,7 @@ const CanvasEditor: React.FC = () => {
         }
       });
     });
-  }, [hasMounted, currentProject?.objects, currentTime, isPlaying]);
+  }, [hasMounted, currentProject?.objects, currentTime, isPlaying, selectedObject]);
 
   // Cleanup overlay iframes that no longer correspond to any objects
   React.useEffect(() => {

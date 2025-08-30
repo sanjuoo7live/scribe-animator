@@ -5,6 +5,7 @@ import { useAppStore } from '../store/appStore';
 import CanvasSettings from './CanvasSettings';
 // ProDrawEditor is launched from Assets panel only
 import CameraControls from './CameraControls';
+import Vivus from 'vivus';
 
 // Helper functions for pen and hand assets (image paths)
 const getPenAsset = (penType: string): string => {
@@ -165,18 +166,8 @@ const CanvasEditor: React.FC = () => {
   const [hasMounted, setHasMounted] = React.useState(false);
   React.useEffect(() => { setHasMounted(true); }, []);
   React.useEffect(() => {
-    let cancelled = false;
-    import('vivus')
-      .then((mod) => {
-        if (!cancelled) {
-          vivusRef.current = (mod as any).default || mod;
-          setVivusReady(true);
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
+    vivusRef.current = Vivus;
+    setVivusReady(true);
   }, []);
   React.useEffect(() => {
     const wrapper = stageWrapperRef.current;
@@ -977,9 +968,9 @@ const CanvasEditor: React.FC = () => {
         const overlay = overlayRef.current!;
         const stage = stageRef.current!;
         const existing = overlay.querySelector(`#vivus-${obj.id}`) as HTMLDivElement | null;
-        const Vivus = vivusRef.current;
+        const VivusLib = vivusRef.current;
         let holder = existing;
-        if (!Vivus) return;
+        if (!VivusLib) return;
         if (!(obj.animationType === 'drawIn') || ep >= 1) {
           if (holder) holder.remove();
           return;
@@ -1014,10 +1005,10 @@ const CanvasEditor: React.FC = () => {
             svgEl.setAttribute('width', '100%');
             svgEl.setAttribute('height', '100%');
             svgEl.querySelectorAll('path').forEach((p) => p.setAttribute('fill', 'transparent'));
-            const inst = new Vivus(svgEl, {
+            const inst = new VivusLib(svgEl, {
               type: 'oneByOne',
               duration: Math.max(60, Math.round((obj.animationDuration || 2) * 90)),
-              animTimingFunction: Vivus.EASE,
+              animTimingFunction: VivusLib.EASE,
               start: 'manual',
               dashGap: 2,
               forceRender: true,

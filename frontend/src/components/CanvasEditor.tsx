@@ -102,6 +102,7 @@ const CanvasEditor: React.FC = () => {
     currentProject,
     selectedObject,
     currentTime,
+    isPlaying,
     addObject,
     updateObject,
     removeObject,
@@ -427,6 +428,7 @@ const CanvasEditor: React.FC = () => {
         const maxX = Math.max(...pts.map(p => p.x));
         const maxY = Math.max(...pts.map(p => p.y));
         const normPoints = pts.map(p => ({ x: p.x - minX, y: p.y - minY }));
+        console.log('Adding drawPath object');
         addObject({
           id: `draw-${Date.now()}`,
           type: 'drawPath',
@@ -724,6 +726,7 @@ const CanvasEditor: React.FC = () => {
   };
 
   const handleObjectClick = (id: string, node?: any) => {
+    console.log('handleObjectClick:', id);
     selectObject(id);
     if (transformerRef.current && node) {
       transformerRef.current.nodes([node]);
@@ -840,6 +843,7 @@ const CanvasEditor: React.FC = () => {
   };
 
   React.useEffect(() => {
+    console.log('selectedObject changed:', selectedObject);
     if (!stageRef.current || !transformerRef.current) return;
     const tr = transformerRef.current;
     if (!selectedObject) {
@@ -853,6 +857,10 @@ const CanvasEditor: React.FC = () => {
       tr.getLayer()?.batchDraw();
     }
   }, [selectedObject]);
+
+  React.useEffect(() => {
+    console.log('isPlaying:', isPlaying, 'currentTime:', currentTime);
+  }, [isPlaying, currentTime]);
 
   React.useEffect(() => {
     if (!currentProject?.objects) return;
@@ -1004,6 +1012,7 @@ const CanvasEditor: React.FC = () => {
 
             // Set a timeout to fallback to canvas if Vivus doesn't work
             const fallbackTimeout = setTimeout(() => {
+              if (!holder) return;
               if (holder.dataset.vivusWorking !== '1') {
                 console.warn('Vivus initialization timeout for object', obj.id, '- falling back to canvas');
                 holder.dataset.vivusWorking = '0';
@@ -1042,7 +1051,7 @@ const CanvasEditor: React.FC = () => {
         }
       });
     });
-  }, [currentProject?.objects, currentTime]); // Removed hasMounted dependency
+  }, [currentProject?.objects, currentTime, isPlaying]); // Removed hasMounted dependency
 
   // Cleanup overlay iframes that no longer correspond to any objects
   React.useEffect(() => {
@@ -1218,27 +1227,32 @@ const CanvasEditor: React.FC = () => {
                 fill="rgba(0,0,0,0)"
                 listening={true}
                 onMouseDown={() => {
+                  console.log('Canvas background clicked, deselecting');
                   if (tool === 'select') selectObject(null);
                 }}
               />
               <Text text="Scribe Animator Canvas" x={50} y={50} fontSize={24} fill="gray" />
 
-              {lines.map((line, i) => (
-                <Line
-                  key={i}
-                  points={line.points}
-                  stroke={line.stroke}
-                  strokeWidth={line.strokeWidth}
-                  tension={0.5}
-                  lineCap="round"
-                  lineJoin="round"
-                  opacity={line.opacity ?? 1}
-                  dash={line.dash}
-                  globalCompositeOperation={line.composite as any}
-                />
-              ))}
+              {lines.map((line, i) => {
+                console.log('Rendering preview line:', i);
+                return (
+                  <Line
+                    key={i}
+                    points={line.points}
+                    stroke={line.stroke}
+                    strokeWidth={line.strokeWidth}
+                    tension={0.5}
+                    lineCap="round"
+                    lineJoin="round"
+                    opacity={line.opacity ?? 1}
+                    dash={line.dash}
+                    globalCompositeOperation={line.composite as any}
+                  />
+                );
+              })}
 
               {(currentProject?.objects || []).map((obj) => {
+                console.log('Rendering object:', obj.id, obj.type, obj.properties);
                 const animStart = obj.animationStart || 0;
                 const animDuration = obj.animationDuration || 5;
                 // Track elapsed time and linear progress for duration-aware animations
@@ -1819,6 +1833,7 @@ const CanvasEditor: React.FC = () => {
                 }
 
                 if (obj.type === 'drawPath') {
+                  console.log('Rendering drawPath:', obj.id, 'animationType:', obj.animationType, 'progress:', progress);
                   const assetSrc = obj.properties.assetSrc;
                   const hasSegments = Array.isArray(obj.properties?.segments) && obj.properties.segments.length > 0;
                   const segments: { x: number; y: number }[][] = hasSegments

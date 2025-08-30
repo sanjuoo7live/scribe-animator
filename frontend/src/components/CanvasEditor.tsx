@@ -97,6 +97,7 @@ const CanvasEditor: React.FC = () => {
   const canvasContainerRef = React.useRef<HTMLDivElement>(null);
   const stageWrapperRef = React.useRef<HTMLDivElement>(null);
   const overlayRef = React.useRef<HTMLDivElement>(null);
+  const vivusRef = React.useRef<any>(null);
 
   const {
     currentProject,
@@ -162,6 +163,11 @@ const CanvasEditor: React.FC = () => {
   const [canvasSize, setCanvasSize] = React.useState({ width: 800, height: 600 });
   const [hasMounted, setHasMounted] = React.useState(false);
   React.useEffect(() => { setHasMounted(true); }, []);
+  React.useEffect(() => {
+    import('vivus').then((mod) => {
+      vivusRef.current = (mod as any).default || mod;
+    }).catch(() => {});
+  }, []);
   React.useEffect(() => {
     const wrapper = stageWrapperRef.current;
     if (!wrapper) return;
@@ -957,11 +963,13 @@ const CanvasEditor: React.FC = () => {
       const groupX = animatedProps.x ?? obj.x;
       const groupY = animatedProps.y ?? obj.y;
 
-      requestAnimationFrame(async () => {
+      requestAnimationFrame(() => {
         const overlay = overlayRef.current!;
         const stage = stageRef.current!;
         const existing = overlay.querySelector(`#vivus-${obj.id}`) as HTMLDivElement | null;
+        const Vivus = vivusRef.current;
         let holder = existing;
+        if (!Vivus) return;
         if (!(obj.animationType === 'drawIn') || ep >= 1) {
           if (holder) holder.remove();
           return;
@@ -996,20 +1004,16 @@ const CanvasEditor: React.FC = () => {
             svgEl.setAttribute('width', '100%');
             svgEl.setAttribute('height', '100%');
             svgEl.querySelectorAll('path').forEach((p) => p.setAttribute('fill', 'transparent'));
-            try {
-              const mod = await import('vivus');
-              const Vivus: any = (mod as any).default || (mod as any);
-              const inst = new Vivus(svgEl, {
-                type: 'oneByOne',
-                duration: Math.max(60, Math.round((obj.animationDuration || 2) * 90)),
-                animTimingFunction: Vivus.EASE,
-                start: 'manual',
-                dashGap: 2,
-                forceRender: true,
-              });
-              inst.setFrameProgress(ep);
-              holder.dataset.rendered = '1';
-            } catch {}
+            const inst = new Vivus(svgEl, {
+              type: 'oneByOne',
+              duration: Math.max(60, Math.round((obj.animationDuration || 2) * 90)),
+              animTimingFunction: Vivus.EASE,
+              start: 'manual',
+              dashGap: 2,
+              forceRender: true,
+            });
+            inst.setFrameProgress(ep);
+            holder.dataset.rendered = '1';
           }
         } else {
           const svgEl = holder.querySelector('svg') as any;

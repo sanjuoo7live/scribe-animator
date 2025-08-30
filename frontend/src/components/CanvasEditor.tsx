@@ -160,48 +160,22 @@ const CanvasEditor: React.FC = () => {
   const [showCanvasSettings, setShowCanvasSettings] = React.useState(false);
   const [fitMode, setFitMode] = React.useState<'width' | 'contain'>('contain');
   const [canvasSize, setCanvasSize] = React.useState({ width: 800, height: 600 });
-
-  // Create overlay immediately when component mounts
+  const [hasMounted, setHasMounted] = React.useState(false);
+  React.useEffect(() => { setHasMounted(true); }, []);
   React.useEffect(() => {
-    const checkAndCreateOverlay = () => {
-      const wrapper = stageWrapperRef.current;
-      if (!wrapper) return false;
-
-      // Check if overlay already exists
-      const existingOverlay = wrapper.querySelector('.vivus-overlay');
-      if (existingOverlay) {
-        overlayRef.current = existingOverlay as HTMLDivElement;
-        return true;
-      }
-
-      const overlay = document.createElement('div');
-      overlay.className = 'vivus-overlay';
-      overlay.style.position = 'absolute';
-      overlay.style.left = '0';
-      overlay.style.top = '0';
-      overlay.style.right = '0';
-      overlay.style.bottom = '0';
-      overlay.style.pointerEvents = 'none';
-      overlay.style.zIndex = '10';
-      wrapper.appendChild(overlay);
-      overlayRef.current = overlay;
-      return true;
-    };
-
-    // Try to create overlay immediately
-    if (!checkAndCreateOverlay()) {
-      // If wrapper not ready, wait a bit and try again
-      const timeoutId = setTimeout(() => {
-        checkAndCreateOverlay();
-      }, 100);
-      return () => clearTimeout(timeoutId);
-    }
-
+    const wrapper = stageWrapperRef.current;
+    if (!wrapper) return;
+    const overlay = document.createElement('div');
+    overlay.style.position = 'absolute';
+    overlay.style.left = '0';
+    overlay.style.top = '0';
+    overlay.style.right = '0';
+    overlay.style.bottom = '0';
+    overlay.style.pointerEvents = 'none';
+    wrapper.appendChild(overlay);
+    overlayRef.current = overlay;
     return () => {
-      const overlay = overlayRef.current;
-      if (overlay && overlay.parentNode) {
-        overlay.remove();
-      }
+      overlay.remove();
       overlayRef.current = null;
     };
   }, []);
@@ -894,7 +868,7 @@ const CanvasEditor: React.FC = () => {
     if (!overlay) return;
     const validIds = new Set(
       (currentProject?.objects || [])
-        .filter(o => !!o.properties?.svg || o.type === 'drawPath')
+        .filter(o => o.type === 'drawPath' || !!o.properties?.svg)
         .map(o => `vivus-${o.id}`)
     );
     Array.from(overlay.querySelectorAll('div[id^="vivus-"]')).forEach((el) => {
@@ -902,10 +876,24 @@ const CanvasEditor: React.FC = () => {
     });
   }, [currentProject?.objects]);
 
+  // Preload SVG data for draw paths that reference an external asset
+  React.useEffect(() => {
+    (currentProject?.objects || []).forEach(obj => {
+      if (obj.type === 'drawPath') {
+        const props: any = obj.properties || {};
+        if (props.assetSrc && !props.svg) {
+          fetch(props.assetSrc)
+            .then(res => res.text())
+            .then(svg => updateObject(obj.id, { properties: { ...props, svg } }))
+            .catch(() => {});
+        }
+      }
+    });
+  }, [currentProject?.objects, updateObject]);
+
   // Position and animate Vivus overlays for SVG/draw paths
   React.useEffect(() => {
-    // Remove hasMounted dependency - overlay should work immediately
-    if (!overlayRef.current || !stageRef.current) return;
+    if (!hasMounted || !overlayRef.current || !stageRef.current) return;
     (currentProject?.objects || []).forEach((obj) => {
       const originalSvg: string | undefined = obj.properties?.svg;
       if (!originalSvg) return;
@@ -971,8 +959,6 @@ const CanvasEditor: React.FC = () => {
       requestAnimationFrame(async () => {
         const overlay = overlayRef.current!;
         const stage = stageRef.current!;
-        if (!overlay || !stage) return; // Double check refs are still valid
-
         const existing = overlay.querySelector(`#vivus-${obj.id}`) as HTMLDivElement | null;
         let holder = existing;
         if (!(obj.animationType === 'drawIn') || ep >= 1) {
@@ -1009,17 +995,6 @@ const CanvasEditor: React.FC = () => {
             svgEl.setAttribute('width', '100%');
             svgEl.setAttribute('height', '100%');
             svgEl.querySelectorAll('path').forEach((p) => p.setAttribute('fill', 'transparent'));
-
-            // Set a timeout to fallback to canvas if Vivus doesn't work
-            const fallbackTimeout = setTimeout(() => {
-              if (!holder) return;
-              if (holder.dataset.vivusWorking !== '1') {
-                console.warn('Vivus initialization timeout for object', obj.id, '- falling back to canvas');
-                holder.dataset.vivusWorking = '0';
-                holder.remove();
-              }
-            }, 2000); // 2 second timeout
-
             try {
               const mod = await import('vivus');
               const Vivus: any = (mod as any).default || (mod as any);
@@ -1031,27 +1006,19 @@ const CanvasEditor: React.FC = () => {
                 dashGap: 2,
                 forceRender: true,
               });
-              clearTimeout(fallbackTimeout);
               inst.setFrameProgress(ep);
               holder.dataset.rendered = '1';
-              holder.dataset.vivusWorking = '1'; // Mark as working
-            } catch (error) {
-              clearTimeout(fallbackTimeout);
-              console.warn('Vivus failed to initialize for object', obj.id, ':', error);
-              holder.dataset.vivusWorking = '0'; // Mark as not working
-              // Remove the overlay so canvas takes over
-              holder.remove();
-            }
+            } catch {}
           }
         } else {
           const svgEl = holder.querySelector('svg') as any;
-          if (svgEl && svgEl.vivus && holder.dataset.vivusWorking === '1') {
+          if (svgEl && svgEl.vivus) {
             try { svgEl.vivus.setFrameProgress(ep); } catch {}
           }
         }
       });
     });
-  }, [currentProject?.objects, currentTime, isPlaying]); // Removed hasMounted dependency
+  }, [hasMounted, currentProject?.objects, currentTime, isPlaying]);
 
   // Cleanup overlay iframes that no longer correspond to any objects
   React.useEffect(() => {

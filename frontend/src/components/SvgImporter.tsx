@@ -1004,6 +1004,9 @@ const SvgImporter: React.FC = () => {
                         m: p.m,
                         len: st.lens[i] || 0,
                       }));
+                      // Estimate a default duration based on total path length so
+                      // initial playback speed roughly matches SVG complexity.
+                      const duration = Math.max(1, st.total / 300);
                       addObject({
                         id: `draw-preview-${baseId}`,
                         type: 'svgPath',
@@ -1015,7 +1018,7 @@ const SvgImporter: React.FC = () => {
                         properties: { paths: pathObjs, totalLen: st.total },
                         animationType: 'drawIn',
                         animationStart: 0,
-                        animationDuration: 3,
+                        animationDuration: duration,
                         animationEasing: 'easeOut',
                       });
                       setStatus('✅ Draw preview added to canvas');
@@ -1411,6 +1414,9 @@ const SvgImporter: React.FC = () => {
                       m: p.m,
                       len: st.lens[i] || 0,
                     }));
+                    // Duration based on path length ensures preview speed scales
+                    // with SVG complexity when first added to canvas.
+                    const duration = Math.max(1, st.total / 300);
                     addObject({
                       id: `draw-preview-${baseId}`,
                       type: 'svgPath',
@@ -1422,7 +1428,7 @@ const SvgImporter: React.FC = () => {
                       properties: { paths: pathObjs, totalLen: st.total },
                       animationType: 'drawIn',
                       animationStart: currentTime,
-                      animationDuration: 3,
+                      animationDuration: duration,
                       animationEasing: 'easeOut',
                     });
                     setStatus('✅ Draw preview added to canvas');
@@ -1494,6 +1500,12 @@ const SvgImporter: React.FC = () => {
         setItems={(updater) => setRefineItems(prev => prev ? updater(prev) : prev)}
         onApplySingle={(combinedD) => {
           // Add a single svgPath with one combined path
+          const svgNS = 'http://www.w3.org/2000/svg';
+          const pathEl = document.createElementNS(svgNS, 'path');
+          pathEl.setAttribute('d', combinedD);
+          let len = 0;
+          try { len = (pathEl as any).getTotalLength(); } catch {}
+          const duration = Math.max(1, len / 300);
           useAppStore.getState().addObject({
             id: `svg-${Date.now()}`,
             type: 'svgPath',
@@ -1507,7 +1519,7 @@ const SvgImporter: React.FC = () => {
             },
             animationType: 'drawIn',
             animationStart: 0,
-            animationDuration: 2,
+            animationDuration: duration,
             animationEasing: 'easeOut'
           });
           setStatus('Added single combined path ✔');

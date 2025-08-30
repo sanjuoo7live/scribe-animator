@@ -187,6 +187,67 @@ const CanvasEditor: React.FC = () => {
     };
   }, []);
 
+  const renderVivusOverlay = (obj: any, ep: number, animatedProps: any = {}, groupX?: number, groupY?: number) => {
+    const overlay = overlayRef.current;
+    const stage = stageRef.current;
+    const Vivus = vivusRef.current;
+    if (!overlay || !stage || !Vivus) return;
+    requestAnimationFrame(() => {
+      let holder = overlay.querySelector(`#vivus-${obj.id}`) as HTMLDivElement | null;
+      if (obj.animationType !== 'drawIn' || ep >= 1) {
+        if (holder) holder.remove();
+        return;
+      }
+      if (!holder) {
+        holder = document.createElement('div');
+        holder.id = `vivus-${obj.id}`;
+        holder.style.position = 'absolute';
+        holder.style.pointerEvents = 'none';
+        holder.style.willChange = 'transform, opacity';
+        holder.style.transformOrigin = 'top left';
+        overlay.appendChild(holder);
+      }
+      const transform = stage.getAbsoluteTransform().copy();
+      const p = transform.point({ x: groupX ?? obj.x, y: groupY ?? obj.y });
+      const stageScaleX = stage.scaleX() || 1;
+      const stageScaleY = stage.scaleY() || 1;
+      const objScaleX = animatedProps.scaleX ?? 1;
+      const objScaleY = animatedProps.scaleY ?? 1;
+      const w = Math.max(1, obj.width || 1) * stageScaleX * objScaleX;
+      const h = Math.max(1, obj.height || 1) * stageScaleY * objScaleY;
+      holder.style.left = `${p.x}px`;
+      holder.style.top = `${p.y}px`;
+      holder.style.width = `${w}px`;
+      holder.style.height = `${h}px`;
+      holder.style.opacity = String(animatedProps.opacity ?? 1);
+      holder.style.transform = `rotate(${obj.rotation || 0}deg)`;
+      if (!holder.dataset.rendered) {
+        holder.innerHTML = obj.properties?.svg;
+        const svgEl = holder.querySelector('svg') as SVGSVGElement | null;
+        if (svgEl) {
+          svgEl.setAttribute('width', '100%');
+          svgEl.setAttribute('height', '100%');
+          svgEl.querySelectorAll('path').forEach((p) => p.setAttribute('fill', 'transparent'));
+          const inst = new Vivus(svgEl, {
+            type: 'oneByOne',
+            duration: Math.max(60, Math.round((obj.animationDuration || 2) * 90)),
+            animTimingFunction: Vivus.EASE,
+            start: 'manual',
+            dashGap: 2,
+            forceRender: true,
+          });
+          inst.setFrameProgress(ep);
+          holder.dataset.rendered = '1';
+        }
+      } else {
+        const svgEl = holder.querySelector('svg') as any;
+        if (svgEl && svgEl.vivus) {
+          try { svgEl.vivus.setFrameProgress(ep); } catch {}
+        }
+      }
+    });
+  };
+
   // Helpers for SVG path handling (length & bbox)
   const getPathTotalLength = React.useCallback(() => {
     const cache = new Map<string, number>();
@@ -898,13 +959,27 @@ const CanvasEditor: React.FC = () => {
     });
   }, [currentProject?.objects, updateObject]);
 
+  // Seed and cleanup Vivus overlays on play state changes
+  React.useEffect(() => {
+    const overlay = overlayRef.current;
+    if (!overlay || !vivusReady) return;
+    if (isPlaying) {
+      (currentProject?.objects || []).forEach((obj) => {
+        if (obj.animationType === 'drawIn' && obj.properties?.svg) {
+          renderVivusOverlay(obj, 0, {}, obj.x, obj.y);
+        }
+      });
+    } else {
+      Array.from(overlay.querySelectorAll('div[id^="vivus-"]')).forEach((el) => el.remove());
+    }
+  }, [isPlaying, currentProject?.objects, vivusReady]);
+
   // Position and animate Vivus overlays for SVG/draw paths
   React.useEffect(() => {
     if (!hasMounted || !vivusReady || !overlayRef.current || !stageRef.current) return;
-    if (!isPlaying && !selectedObject) return;
+    if (!isPlaying) return;
     (currentProject?.objects || []).forEach((obj) => {
-      const originalSvg: string | undefined = obj.properties?.svg;
-      if (!originalSvg) return;
+      if (!obj.properties?.svg) return;
 
       const animStart = obj.animationStart || 0;
       const animDuration = obj.animationDuration || 5;
@@ -964,67 +1039,9 @@ const CanvasEditor: React.FC = () => {
       const groupX = animatedProps.x ?? obj.x;
       const groupY = animatedProps.y ?? obj.y;
 
-      requestAnimationFrame(() => {
-        const overlay = overlayRef.current!;
-        const stage = stageRef.current!;
-        const existing = overlay.querySelector(`#vivus-${obj.id}`) as HTMLDivElement | null;
-        const VivusLib = vivusRef.current;
-        let holder = existing;
-        if (!VivusLib) return;
-        if (!(obj.animationType === 'drawIn') || ep >= 1) {
-          if (holder) holder.remove();
-          return;
-        }
-        if (!holder) {
-          holder = document.createElement('div');
-          holder.id = `vivus-${obj.id}`;
-          holder.style.position = 'absolute';
-          holder.style.pointerEvents = 'none';
-          holder.style.willChange = 'transform, opacity';
-          holder.style.transformOrigin = 'top left';
-          overlay.appendChild(holder);
-        }
-        const transform = stage.getAbsoluteTransform().copy();
-        const p = transform.point({ x: groupX, y: groupY });
-        const stageScaleX = stage.scaleX() || 1;
-        const stageScaleY = stage.scaleY() || 1;
-        const objScaleX = animatedProps.scaleX ?? 1;
-        const objScaleY = animatedProps.scaleY ?? 1;
-        const w = Math.max(1, obj.width || 1) * stageScaleX * objScaleX;
-        const h = Math.max(1, obj.height || 1) * stageScaleY * objScaleY;
-        holder.style.left = `${p.x}px`;
-        holder.style.top = `${p.y}px`;
-        holder.style.width = `${w}px`;
-        holder.style.height = `${h}px`;
-        holder.style.opacity = String(animatedProps.opacity ?? 1);
-        holder.style.transform = `rotate(${obj.rotation || 0}deg)`;
-        if (!holder.dataset.rendered) {
-          holder.innerHTML = originalSvg;
-          const svgEl = holder.querySelector('svg') as SVGSVGElement | null;
-          if (svgEl) {
-            svgEl.setAttribute('width', '100%');
-            svgEl.setAttribute('height', '100%');
-            svgEl.querySelectorAll('path').forEach((p) => p.setAttribute('fill', 'transparent'));
-            const inst = new VivusLib(svgEl, {
-              type: 'oneByOne',
-              duration: Math.max(60, Math.round((obj.animationDuration || 2) * 90)),
-              animTimingFunction: VivusLib.EASE,
-              start: 'manual',
-              dashGap: 2,
-              forceRender: true,
-            });
-            inst.setFrameProgress(ep);
-            holder.dataset.rendered = '1';
-          }
-        } else {
-          const svgEl = holder.querySelector('svg') as any;
-          if (svgEl && svgEl.vivus) {
-            try { svgEl.vivus.setFrameProgress(ep); } catch {}
-          }
-        }
-      });
+      renderVivusOverlay(obj, ep, animatedProps, groupX, groupY);
     });
-  }, [hasMounted, vivusReady, currentProject?.objects, currentTime, isPlaying, selectedObject]);
+  }, [hasMounted, vivusReady, currentProject?.objects, currentTime, isPlaying]);
 
   // Cleanup overlay iframes that no longer correspond to any objects
   React.useEffect(() => {

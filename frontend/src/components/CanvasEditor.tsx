@@ -1733,10 +1733,14 @@ const CanvasEditor: React.FC = () => {
                             // not started
                             dash = [len, len];
                             dashOffset = len;
-                            // Only hide canvas stroke if a matching Vivus overlay exists
+                            // Only hide canvas stroke if a matching, visible Vivus overlay exists
                             const overlay = overlayRef.current;
-                            const hasOverlay = overlay?.querySelector(`#vivus-${obj.id}`);
-                            if (hasOverlay && progress < 1) {
+                            const overlayEl = overlay?.querySelector(`#vivus-${obj.id}`) as HTMLElement | null;
+                            const overlayVisible =
+                              !!overlayEl &&
+                              overlayEl.style.display !== 'none' &&
+                              overlayEl.getClientRects().length > 0;
+                            if (isPlaying && overlayVisible && progress < 1) {
                               strokeColor = 'transparent';
                             }
                           } else if (targetLen >= end) {
@@ -1749,10 +1753,14 @@ const CanvasEditor: React.FC = () => {
                             const localReveal = Math.max(0, Math.min(len, targetLen - start));
                             dash = [len, len];
                             dashOffset = Math.max(0, len - localReveal);
-                            // Only hide canvas stroke if a matching Vivus overlay exists
+                            // Only hide canvas stroke if a matching, visible Vivus overlay exists
                             const overlay = overlayRef.current;
-                            const hasOverlay = overlay?.querySelector(`#vivus-${obj.id}`);
-                            if (hasOverlay && progress < 1) {
+                            const overlayEl = overlay?.querySelector(`#vivus-${obj.id}`) as HTMLElement | null;
+                            const overlayVisible =
+                              !!overlayEl &&
+                              overlayEl.style.display !== 'none' &&
+                              overlayEl.getClientRects().length > 0;
+                            if (isPlaying && overlayVisible && progress < 1) {
                               strokeColor = 'transparent';
                             }
                           }

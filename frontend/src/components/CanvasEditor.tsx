@@ -854,6 +854,32 @@ const CanvasEditor: React.FC = () => {
     }
   }, [selectedObject]);
 
+  React.useEffect(() => {
+    if (!currentProject?.objects) return;
+
+    const loadSvg = async () => {
+      for (const obj of currentProject.objects) {
+        if (obj.type !== 'drawPath') continue;
+        const assetSrc = obj.properties?.assetSrc;
+        const hasSvg = obj.properties?.svg;
+        if (assetSrc && !hasSvg) {
+          try {
+            const res = await fetch(assetSrc);
+            if (!res.ok) continue;
+            const svgText = await res.text();
+            updateObject(obj.id, {
+              properties: { ...obj.properties, svg: svgText }
+            });
+          } catch (err) {
+            console.error('Failed to fetch asset SVG', err);
+          }
+        }
+      }
+    };
+
+    loadSvg();
+  }, [currentProject?.objects, updateObject]);
+
   // Cleanup Vivus overlays when project objects change significantly to avoid stale nodes
   React.useEffect(() => {
     const overlay = overlayRef.current;

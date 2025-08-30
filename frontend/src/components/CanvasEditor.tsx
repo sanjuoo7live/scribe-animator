@@ -1800,7 +1800,7 @@ const CanvasEditor: React.FC = () => {
                   let prevPoint: { x: number; y: number } | null = null;
                           const konvaGroup = (
                     <Group
-                      key={`${obj.id}-${ep}`}
+                      key={obj.id}
                       id={obj.id}
                       x={groupX}
                       y={groupY}

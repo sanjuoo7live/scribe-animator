@@ -1890,7 +1890,7 @@ const CanvasEditor: React.FC = () => {
                             __progress={progress}
                             __targetLen={targetLen}
                             __dashOffset={dashOffset}
-                            listening={tool === 'select'}
+                            listening={true}
                             perfectDrawEnabled={false}
                           />
                         );

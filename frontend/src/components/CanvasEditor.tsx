@@ -203,7 +203,7 @@ const CanvasEditor: React.FC = () => {
         vivusInstancesRef.current.delete(obj.id);
         return;
       }
-      if (!holder) {
+      if (!holder && obj.properties?.svg) {
         holder = document.createElement('div');
         holder.id = `vivus-${obj.id}`;
         holder.style.position = 'absolute';
@@ -212,6 +212,7 @@ const CanvasEditor: React.FC = () => {
         holder.style.transformOrigin = 'top left';
         overlay.appendChild(holder);
       }
+      if (!holder) return;
       const transform = stage.getAbsoluteTransform().copy();
       const p = transform.point({ x: groupX ?? obj.x, y: groupY ?? obj.y });
       const stageScaleX = stage.scaleX() || 1;
@@ -227,7 +228,7 @@ const CanvasEditor: React.FC = () => {
       holder.style.opacity = String(animatedProps.opacity ?? 1);
       holder.style.transform = `rotate(${obj.rotation || 0}deg)`;
       if (!holder.dataset.rendered) {
-        holder.innerHTML = obj.properties?.svg;
+        holder.innerHTML = obj.properties?.svg || '';
         const svgEl = holder.querySelector('svg') as SVGSVGElement | null;
         if (svgEl) {
           svgEl.setAttribute('width', '100%');
@@ -804,13 +805,12 @@ const CanvasEditor: React.FC = () => {
     console.log('handleObjectClick:', id);
     // Avoid interrupting active hand-draw animation by selecting mid-play
     const maybeObj = currentProject?.objects.find(o => o.id === id);
-    if (maybeObj) {
+    if (maybeObj && maybeObj.animationType === 'drawIn') {
       const animStart = maybeObj.animationStart || 0;
       const animDuration = maybeObj.animationDuration || 5;
-      const inWindow = currentTime >= animStart && currentTime < (animStart + animDuration);
-      if (isPlaying && maybeObj.animationType === 'drawIn' && inWindow) {
-        return; // ignore click while animating
-      }
+      const p = Math.min(Math.max((currentTime - animStart) / animDuration, 0), 1);
+      const active = isPlaying && p > 0 && p < 1;
+      if (active) return; // ignore click while animating draw
     }
     selectObject(id);
     if (transformerRef.current && node) {
@@ -1311,6 +1311,7 @@ const CanvasEditor: React.FC = () => {
                 console.log('Rendering object:', obj.id, obj.type, obj.properties);
                 const animStart = obj.animationStart || 0;
                 const animDuration = obj.animationDuration || 5;
+                console.log('animStart:', animStart, 'animDuration:', animDuration, 'currentTime:', currentTime);
                 // Track elapsed time and linear progress for duration-aware animations
                 const elapsed = Math.min(Math.max(currentTime - animStart, 0), animDuration);
                 const progress = animDuration > 0 ? elapsed / animDuration : 1;
@@ -1775,12 +1776,11 @@ const CanvasEditor: React.FC = () => {
                 }
 
                 if (obj.type === 'svgPath') {
-                  console.log('svgPath properties for', obj.id, ':', obj.properties);
-                  console.log(!!obj.properties?.svg, obj.properties?.assetSrc);
                   const groupX = animatedProps.x ?? obj.x;
                   const groupY = animatedProps.y ?? obj.y;
                   const paths = Array.isArray(obj.properties?.paths) ? obj.properties.paths : [];
                   const draw = obj.animationType === 'drawIn';
+                  console.log('Rendering svgPath', obj.id, 'progress:', progress, 'ep:', ep, 'draw:', draw);
                   // Use provided path lengths when available to avoid DOM measurement
                   const lengths = paths.map((p: any) => {
                     if (typeof p.len === 'number') return p.len;
@@ -1796,9 +1796,9 @@ const CanvasEditor: React.FC = () => {
                   // Track head point for ToolFollower
                   let headPoint: { x: number; y: number } | null = null;
                   let prevPoint: { x: number; y: number } | null = null;
-                  const konvaGroup = (
+                          const konvaGroup = (
                     <Group
-                      key={obj.id}
+                      key={`${obj.id}-${ep}`}
                       id={obj.id}
                       x={groupX}
                       y={groupY}
@@ -1806,8 +1806,10 @@ const CanvasEditor: React.FC = () => {
                       scaleX={animatedProps.scaleX ?? 1}
                       scaleY={animatedProps.scaleY ?? 1}
                       opacity={animatedProps.opacity ?? 1}
-                      // Bind progress so Konva recognizes changes and repaints
-                      attrs={{ __progress: ep, __totalLen: totalLen, __targetLen: targetLen }}
+            // Bind custom attrs directly so react-konva updates node on time changes
+            __progress={ep}
+            __totalLen={totalLen}
+            __targetLen={targetLen}
                       draggable={tool === 'select'}
                       onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
                       onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
@@ -1820,45 +1822,32 @@ const CanvasEditor: React.FC = () => {
                         let dash: number[] | undefined;
                         let dashOffset = 0;
                         let fillColor: string | undefined = wantFill ? 'transparent' : undefined;
-                        let strokeColor: string = isSelected ? '#4f46e5' : (p.stroke || '#111827');
+                        // Prefer selection color; otherwise prefer path stroke; during drawIn, use a visible preview color
+                        const baseStroke = (p.stroke && p.stroke !== 'none') ? p.stroke : '#111827';
+                        let strokeColor: string = isSelected ? '#4f46e5' : baseStroke;
+                        if (draw && progress < 1) {
+                          strokeColor = obj.properties?.drawPreviewStroke || '#4f46e5';
+                        }
 
                         if (draw && len > 0 && totalLen > 0) {
                           const start = consumed;
                           const end = consumed + len;
                           if (targetLen <= start) {
-                            // not started
-                            dash = [len, len];
-                            dashOffset = len;
-                            // Only hide canvas stroke if a matching, visible Vivus overlay exists
-                            const overlay = overlayRef.current;
-                            const overlayEl = overlay?.querySelector(`#vivus-${obj.id}`) as HTMLElement | null;
-                            const overlayVisible =
-                              !!overlayEl &&
-                              overlayEl.style.display !== 'none' &&
-                              overlayEl.getClientRects().length > 0;
-                            if (isPlaying && overlayVisible && progress < 1) {
-                              strokeColor = 'transparent';
-                            }
-                          } else if (targetLen >= end) {
-                            // fully revealed – now allow fill
+                            // Not started: ensure nothing is visible for this path yet
                             dash = undefined;
                             dashOffset = 0;
-                            fillColor = wantFill ? (p.fill as string) : undefined;
+                            strokeColor = 'transparent';
+                          } else if (targetLen >= end) {
+                            // This path fully revealed; only allow fill when the entire object is complete
+                            dash = undefined;
+                            dashOffset = 0;
+                            fillColor = wantFill && progress >= 1 ? (p.fill as string) : (wantFill ? 'transparent' : undefined);
                           } else {
                             // in progress
                             const localReveal = Math.max(0, Math.min(len, targetLen - start));
-                            dash = [len, len];
-                            dashOffset = Math.max(0, len - localReveal);
-                            // Only hide canvas stroke if a matching, visible Vivus overlay exists
-                            const overlay = overlayRef.current;
-                            const overlayEl = overlay?.querySelector(`#vivus-${obj.id}`) as HTMLElement | null;
-                            const overlayVisible =
-                              !!overlayEl &&
-                              overlayEl.style.display !== 'none' &&
-                              overlayEl.getClientRects().length > 0;
-                            if (isPlaying && overlayVisible && progress < 1) {
-                              strokeColor = 'transparent';
-                            }
+                            // Draw only the first localReveal portion visibly
+                            dash = [Math.max(0.001, localReveal), len];
+                            dashOffset = 0;
                             // Compute head for ToolFollower
                             const pt = getPointAt(d, localReveal, p.m);
                             headPoint = { x: pt.x, y: pt.y };
@@ -1875,12 +1864,13 @@ const CanvasEditor: React.FC = () => {
                         const matrix = p.m as number[] | undefined;
                         return (
                           <Shape
-                            key={`${obj.id}-p-${idx}`}
+                            key={`${obj.id}-p-${idx}-${progress}-${isSelected}`}
                             sceneFunc={(ctx, shape) => {
                               ctx.save();
                               if (matrix) ctx.transform(matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5]);
                               const path = new Path2D(d);
-                              ctx.lineWidth = (p.strokeWidth ?? 3) + (isSelected ? 0.5 : 0);
+                              // Slightly thicken during draw to improve visibility
+                              ctx.lineWidth = (p.strokeWidth ?? 3) + (isSelected ? 0.5 : 0) + (draw ? 0.5 : 0);
                               ctx.lineCap = 'round';
                               ctx.lineJoin = 'round';
                               ctx.strokeStyle = strokeColor;
@@ -1894,8 +1884,10 @@ const CanvasEditor: React.FC = () => {
                               }
                               ctx.restore();
                             }}
-                            // Changing attrs to force Konva redraw when time/progress updates
-                            attrs={{ __progress: progress, __targetLen: targetLen, __dashOffset: dashOffset }}
+                            // Bind custom attrs directly to force updates when these values change
+                            __progress={progress}
+                            __targetLen={targetLen}
+                            __dashOffset={dashOffset}
                             listening={tool === 'select'}
                             perfectDrawEnabled={false}
                           />
@@ -2429,7 +2421,11 @@ const CanvasEditor: React.FC = () => {
           <div className="flex flex-wrap gap-2">
             {(['none','fadeIn','slideIn','scaleIn','drawIn','typewriter'] as const).map((a) => {
               const sel = currentProject.objects.find(o => o.id === selectedObject);
-              const permitted = a === 'typewriter' ? sel?.type === 'text' : a === 'drawIn' ? sel?.type === 'drawPath' : true;
+              const permitted = a === 'typewriter'
+                ? sel?.type === 'text'
+                : a === 'drawIn'
+                ? (sel?.type === 'drawPath' || sel?.type === 'svgPath')
+                : true;
               const isActive = sel?.animationType === a;
               return (
                 <button
@@ -2437,7 +2433,7 @@ const CanvasEditor: React.FC = () => {
                   className={`px-2 py-1 rounded text-xs ${isActive ? 'bg-emerald-600' : 'bg-gray-700'} ${!permitted ? 'opacity-40 cursor-not-allowed' : ''}`}
                   onClick={() => { if (permitted) setSelectedAnimation(a); }}
                   disabled={!permitted}
-                  title={a === 'typewriter' ? 'Character-by-character reveal (Text only)' : a === 'drawIn' ? 'Progressive reveal along path (Draw Path only)' : a}
+                  title={a === 'typewriter' ? 'Character-by-character reveal (Text only)' : a === 'drawIn' ? 'Progressive reveal along path (Draw Path/SVG Path)' : a}
                 >
                   {a}
                 </button>

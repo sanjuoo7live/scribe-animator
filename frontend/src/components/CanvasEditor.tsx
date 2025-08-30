@@ -1780,6 +1780,8 @@ const CanvasEditor: React.FC = () => {
                   const groupY = animatedProps.y ?? obj.y;
                   const paths = Array.isArray(obj.properties?.paths) ? obj.properties.paths : [];
                   const draw = obj.animationType === 'drawIn';
+                  const drawPreviewStroke = obj.properties?.drawPreviewStroke || '#4f46e5';
+                  const drawPreviewWidth = obj.properties?.drawPreviewWidth || 0.5;
                   console.log('Rendering svgPath', obj.id, 'progress:', progress, 'ep:', ep, 'draw:', draw);
                   // Use provided path lengths when available to avoid DOM measurement
                   const lengths = paths.map((p: any) => {
@@ -1826,7 +1828,7 @@ const CanvasEditor: React.FC = () => {
                         const baseStroke = (p.stroke && p.stroke !== 'none') ? p.stroke : '#111827';
                         let strokeColor: string = isSelected ? '#4f46e5' : baseStroke;
                         if (draw && progress < 1) {
-                          strokeColor = obj.properties?.drawPreviewStroke || '#4f46e5';
+                          strokeColor = drawPreviewStroke;
                         }
 
                         if (draw && len > 0 && totalLen > 0) {
@@ -1870,7 +1872,7 @@ const CanvasEditor: React.FC = () => {
                               if (matrix) ctx.transform(matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5]);
                               const path = new Path2D(d);
                               // Slightly thicken during draw to improve visibility
-                              ctx.lineWidth = (p.strokeWidth ?? 3) + (isSelected ? 0.5 : 0) + (draw ? 0.5 : 0);
+                              ctx.lineWidth = (p.strokeWidth ?? 3) + (isSelected ? 0.5 : 0) + (draw ? drawPreviewWidth : 0);
                               ctx.lineCap = 'round';
                               ctx.lineJoin = 'round';
                               ctx.strokeStyle = strokeColor;
@@ -2441,6 +2443,38 @@ const CanvasEditor: React.FC = () => {
             })}
           </div>
           <div className="text-[10px] text-gray-500 mt-1">Tip: Use typewriter for Text and drawIn for Draw Path.</div>
+          {/* Draw Preview Controls for svgPath with drawIn */}
+          {selectedObject && currentProject && (() => {
+            const sel = currentProject.objects.find(o => o.id === selectedObject);
+            if (sel?.type === 'svgPath' && sel.animationType === 'drawIn') {
+              return (
+                <div className="mt-2">
+                  <label className="block text-xs text-gray-400 mb-1">Draw Preview Stroke</label>
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="color"
+                      value={sel.properties?.drawPreviewStroke || '#4f46e5'}
+                      onChange={(e) => updateObject(selectedObject, { properties: { ...sel.properties, drawPreviewStroke: e.target.value } })}
+                      className="w-8 h-8 rounded border border-gray-600"
+                      title="Preview Stroke Color"
+                    />
+                    <input
+                      type="range"
+                      min="0.1"
+                      max="5"
+                      step="0.1"
+                      value={sel.properties?.drawPreviewWidth || 0.5}
+                      onChange={(e) => updateObject(selectedObject, { properties: { ...sel.properties, drawPreviewWidth: Number(e.target.value) } })}
+                      className="flex-1"
+                      title="Preview Stroke Width"
+                    />
+                    <span className="text-xs text-gray-300 w-8">{(sel.properties?.drawPreviewWidth || 0.5).toFixed(1)}</span>
+                  </div>
+                </div>
+              );
+            }
+            return null;
+          })()}
         </div>
       )}
 

@@ -1733,10 +1733,10 @@ const CanvasEditor: React.FC = () => {
                             // not started
                             dash = [len, len];
                             dashOffset = len;
-                            // Only hide canvas stroke if Vivus overlay is confirmed working
+                            // Only hide canvas stroke if a matching Vivus overlay exists
                             const overlay = overlayRef.current;
-                            const vivusHolder = overlay?.querySelector(`#vivus-${obj.id}`) as HTMLDivElement | null;
-                            if (vivusHolder && vivusHolder.dataset.vivusWorking === '1' && progress < 1) {
+                            const hasOverlay = overlay?.querySelector(`#vivus-${obj.id}`);
+                            if (hasOverlay && progress < 1) {
                               strokeColor = 'transparent';
                             }
                           } else if (targetLen >= end) {
@@ -1749,10 +1749,10 @@ const CanvasEditor: React.FC = () => {
                             const localReveal = Math.max(0, Math.min(len, targetLen - start));
                             dash = [len, len];
                             dashOffset = Math.max(0, len - localReveal);
-                            // Only hide canvas stroke if Vivus overlay is confirmed working
+                            // Only hide canvas stroke if a matching Vivus overlay exists
                             const overlay = overlayRef.current;
-                            const vivusHolder = overlay?.querySelector(`#vivus-${obj.id}`) as HTMLDivElement | null;
-                            if (vivusHolder && vivusHolder.dataset.vivusWorking === '1' && progress < 1) {
+                            const hasOverlay = overlay?.querySelector(`#vivus-${obj.id}`);
+                            if (hasOverlay && progress < 1) {
                               strokeColor = 'transparent';
                             }
                           }

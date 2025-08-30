@@ -98,6 +98,7 @@ const CanvasEditor: React.FC = () => {
   const stageWrapperRef = React.useRef<HTMLDivElement>(null);
   const overlayRef = React.useRef<HTMLDivElement>(null);
   const vivusRef = React.useRef<any>(null);
+  const [vivusReady, setVivusReady] = React.useState(false);
 
   const {
     currentProject,
@@ -164,9 +165,18 @@ const CanvasEditor: React.FC = () => {
   const [hasMounted, setHasMounted] = React.useState(false);
   React.useEffect(() => { setHasMounted(true); }, []);
   React.useEffect(() => {
-    import('vivus').then((mod) => {
-      vivusRef.current = (mod as any).default || mod;
-    }).catch(() => {});
+    let cancelled = false;
+    import('vivus')
+      .then((mod) => {
+        if (!cancelled) {
+          vivusRef.current = (mod as any).default || mod;
+          setVivusReady(true);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, []);
   React.useEffect(() => {
     const wrapper = stageWrapperRef.current;
@@ -899,7 +909,7 @@ const CanvasEditor: React.FC = () => {
 
   // Position and animate Vivus overlays for SVG/draw paths
   React.useEffect(() => {
-    if (!hasMounted || !overlayRef.current || !stageRef.current) return;
+    if (!hasMounted || !vivusReady || !overlayRef.current || !stageRef.current) return;
     if (!isPlaying && !selectedObject) return;
     (currentProject?.objects || []).forEach((obj) => {
       const originalSvg: string | undefined = obj.properties?.svg;
@@ -1023,7 +1033,7 @@ const CanvasEditor: React.FC = () => {
         }
       });
     });
-  }, [hasMounted, currentProject?.objects, currentTime, isPlaying, selectedObject]);
+  }, [hasMounted, vivusReady, currentProject?.objects, currentTime, isPlaying, selectedObject]);
 
   // Cleanup overlay iframes that no longer correspond to any objects
   React.useEffect(() => {

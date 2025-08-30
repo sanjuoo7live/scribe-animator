@@ -858,7 +858,11 @@ const CanvasEditor: React.FC = () => {
   React.useEffect(() => {
     const overlay = overlayRef.current;
     if (!overlay) return;
-    const validIds = new Set((currentProject?.objects || []).filter(o => !!o.properties?.svg).map(o => `vivus-${o.id}`));
+    const validIds = new Set(
+      (currentProject?.objects || [])
+        .filter(o => !!o.properties?.svg || o.type === 'drawPath')
+        .map(o => `vivus-${o.id}`)
+    );
     Array.from(overlay.querySelectorAll('div[id^="vivus-"]')).forEach((el) => {
       if (!validIds.has((el as HTMLElement).id)) el.remove();
     });

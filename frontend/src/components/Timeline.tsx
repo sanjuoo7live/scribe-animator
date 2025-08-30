@@ -731,10 +731,8 @@ const Timeline: React.FC = () => {
                         
             const onUp = () => {
                           if (!hasDragged) {
-                            // This was a click, not a drag - jump to object time
-                            const objectStartTime = obj.animationStart || 0;
-                            setCurrentTime(objectStartTime);
-              selectObject(obj.id);
+                            // Click without drag selects the object but preserves playhead position
+                            selectObject(obj.id);
                           }
                           document.removeEventListener('mousemove', onMove);
                           document.removeEventListener('mouseup', onUp);

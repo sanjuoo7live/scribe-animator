@@ -801,7 +801,7 @@ const CanvasEditor: React.FC = () => {
     }
   };
 
-  const handleObjectClick = (id: string, node?: any) => {
+  const handleObjectClick = (id: string) => {
     console.log('handleObjectClick:', id);
     // Avoid interrupting active hand-draw animation by selecting mid-play
     const maybeObj = currentProject?.objects.find(o => o.id === id);
@@ -813,9 +813,14 @@ const CanvasEditor: React.FC = () => {
       if (active) return; // ignore click while animating draw
     }
     selectObject(id);
-    if (transformerRef.current && node) {
-      transformerRef.current.nodes([node]);
-      transformerRef.current.getLayer()?.batchDraw();
+    const stage = stageRef.current;
+    const tr = transformerRef.current;
+    if (stage && tr) {
+      const node = stage.findOne(`#${id}`);
+      if (node) {
+        tr.nodes([node as any]);
+        tr.getLayer()?.batchDraw();
+      }
     }
 
     // Auto-trim legacy drawPath bounds to tight box to fix oversized selectors
@@ -926,22 +931,6 @@ const CanvasEditor: React.FC = () => {
       animationEasing: 'easeOut',
     });
   };
-
-  React.useEffect(() => {
-    console.log('selectedObject changed:', selectedObject);
-    if (!stageRef.current || !transformerRef.current) return;
-    const tr = transformerRef.current;
-    if (!selectedObject) {
-      tr.nodes([]);
-      tr.getLayer()?.batchDraw();
-      return;
-    }
-    const node = stageRef.current.findOne(`#${selectedObject}`);
-    if (node) {
-      tr.nodes([node as any]);
-      tr.getLayer()?.batchDraw();
-    }
-  }, [selectedObject]);
 
   React.useEffect(() => {
     console.log('isPlaying:', isPlaying, 'currentTime:', currentTime);
@@ -1122,11 +1111,19 @@ const CanvasEditor: React.FC = () => {
   }, [currentProject?.objects]);
 
   React.useEffect(() => {
-    if (!selectedObject || !stageRef.current || !transformerRef.current) return;
-    const node = stageRef.current.findOne(`#${selectedObject}`);
+    const stage = stageRef.current;
+    const tr = transformerRef.current;
+    if (!stage || !tr) return;
+    if (!selectedObject) {
+      tr.nodes([]);
+      tr.getLayer()?.batchDraw();
+      return;
+    }
+    // Locate the node by id without relying on selector parsing
+    const node = stage.findOne((n: any) => n.id() === selectedObject);
     if (node) {
-      transformerRef.current.nodes([node as any]);
-      transformerRef.current.getLayer()?.batchDraw();
+      tr.nodes([node as any]);
+      tr.getLayer()?.batchDraw();
     }
   }, [selectedObject, currentProject?.objects]);
 
@@ -1425,7 +1422,8 @@ const CanvasEditor: React.FC = () => {
                       stroke={isSelected ? '#4f46e5' : '#94a3b8'}
                       strokeWidth={2}
                       draggable={tool === 'select'}
-                      onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }}
+                      onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id); }}
+                      onTap={(e) => { e.cancelBubble = true; handleObjectClick(obj.id); }}
                       onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
                       onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
                       // editor launch disabled on canvas; use Assets panel
@@ -1454,7 +1452,9 @@ const CanvasEditor: React.FC = () => {
                         stroke={isSelected ? '#4f46e5' : props.stroke || '#000'}
                         strokeWidth={(props.strokeWidth || 2) + (isSelected ? 1 : 0)}
                         draggable={tool === 'select'}
-                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }}
+                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id); }}
+                        onTap={(e) => { e.cancelBubble = true; handleObjectClick(obj.id); }}
+                        onMouseDown={(e) => { e.cancelBubble = true; handleObjectClick(obj.id); }}
                         onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
                         onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
                       />
@@ -1476,7 +1476,9 @@ const CanvasEditor: React.FC = () => {
                         scaleY={animatedProps.scaleY ?? 1}
                         opacity={animatedProps.opacity ?? 1}
                         draggable={tool === 'select'}
-                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
+                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id); }}
+                        onTap={(e) => { e.cancelBubble = true; handleObjectClick(obj.id); }}
+                        onMouseDown={(e) => { e.cancelBubble = true; handleObjectClick(obj.id); }}
                         onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
                         onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
                       >
@@ -1508,7 +1510,7 @@ const CanvasEditor: React.FC = () => {
                         scaleY={animatedProps.scaleY ?? 1}
                         opacity={animatedProps.opacity ?? 1}
                         draggable={tool === 'select'}
-                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
+                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id); }}
                         onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
                         onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
                       >
@@ -1538,7 +1540,7 @@ const CanvasEditor: React.FC = () => {
                         scaleY={animatedProps.scaleY ?? 1}
                         opacity={animatedProps.opacity ?? 1}
                         draggable={tool === 'select'}
-                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
+                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id); }}
                         onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
                         onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
                       >
@@ -1572,7 +1574,7 @@ const CanvasEditor: React.FC = () => {
                         scaleY={animatedProps.scaleY ?? 1}
                         opacity={animatedProps.opacity ?? 1}
                         draggable={tool === 'select'}
-                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
+                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id); }}
                         onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
                         onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
                       >
@@ -1604,7 +1606,7 @@ const CanvasEditor: React.FC = () => {
                         scaleY={animatedProps.scaleY ?? 1}
                         opacity={animatedProps.opacity ?? 1}
                         draggable={tool === 'select'}
-                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
+                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id); }}
                         onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
                         onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
                       >
@@ -1639,7 +1641,7 @@ const CanvasEditor: React.FC = () => {
                         scaleY={animatedProps.scaleY ?? 1}
                         opacity={animatedProps.opacity ?? 1}
                         draggable={tool === 'select'}
-                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
+                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id); }}
                         onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
                         onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
                       >
@@ -1685,7 +1687,7 @@ const CanvasEditor: React.FC = () => {
                         stroke={props.strokeWidth > 0 ? (isSelected ? '#4f46e5' : props.stroke || '#000') : undefined}
                         strokeWidth={props.strokeWidth || 0}
                         draggable={tool === 'select'}
-                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }} 
+                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id); }} 
                         onDblClick={() => handleTextDoubleClick(obj.id)}
                         onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)} 
                         onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)} 
@@ -1722,7 +1724,7 @@ const CanvasEditor: React.FC = () => {
                       stroke={props.strokeWidth > 0 ? (isSelected ? '#4f46e5' : props.stroke || '#000') : undefined}
                       strokeWidth={props.strokeWidth || 0}
                       draggable={tool === 'select'}
-                      onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }}
+                      onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id); }}
                       onDblClick={() => handleTextDoubleClick(obj.id)}
                       onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
                       onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
@@ -1751,7 +1753,7 @@ const CanvasEditor: React.FC = () => {
                         stroke={isSelected ? '#4f46e5' : 'transparent'}
                         strokeWidth={isSelected ? 1 : 0}
                         draggable={tool === 'select'}
-                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.target); }}
+                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id); }}
                         onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
                         onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
                       />
@@ -1813,7 +1815,8 @@ const CanvasEditor: React.FC = () => {
             __totalLen={totalLen}
             __targetLen={targetLen}
                       draggable={tool === 'select'}
-                      onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
+                      onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id); }}
+                      onTap={(e) => { e.cancelBubble = true; handleObjectClick(obj.id); }}
                       onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
                       onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
                     >
@@ -1981,6 +1984,7 @@ const CanvasEditor: React.FC = () => {
                           perfectDrawEnabled={false}
                           globalCompositeOperation={opts.composite as any}
                           listening={tool === 'select'}
+                          hitStrokeWidth={20}
                         />
                       );
                     })
@@ -1999,7 +2003,10 @@ const CanvasEditor: React.FC = () => {
                         scaleY={animatedProps.scaleY ?? 1}
                         opacity={animatedProps.opacity ?? 1}
                         draggable={tool === 'select'}
-                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
+                        listening={tool === 'select'}
+                        onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id); }}
+                        onTap={(e) => { e.cancelBubble = true; handleObjectClick(obj.id); }}
+                        onMouseDown={(e) => { e.cancelBubble = true; handleObjectClick(obj.id); }}
                         onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
                         onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
                         clipX={0}
@@ -2007,6 +2014,14 @@ const CanvasEditor: React.FC = () => {
                         clipWidth={Math.max(1, obj.width || 1)}
                         clipHeight={Math.max(1, obj.height || 1)}
                       >
+                        <Rect
+                          x={0}
+                          y={0}
+                          width={Math.max(1, obj.width || 1)}
+                          height={Math.max(1, obj.height || 1)}
+                          fill="rgba(0,0,0,0.01)"
+                          listening={tool === 'select'}
+                        />
                         <CanvasImage
                           key={`${obj.id}-masked`}
                           id={`${obj.id}-masked`}
@@ -2062,10 +2077,21 @@ const CanvasEditor: React.FC = () => {
                       rotation={obj.rotation || 0}
                       opacity={(animatedProps.opacity ?? 1) * (obj.properties.opacity ?? 1)}
                       draggable={tool === 'select'}
-                      onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id, e.currentTarget); }}
+                      listening={tool === 'select'}
+                      onClick={(e) => { e.cancelBubble = true; handleObjectClick(obj.id); }}
+                      onTap={(e) => { e.cancelBubble = true; handleObjectClick(obj.id); }}
+                      onMouseDown={(e) => { e.cancelBubble = true; handleObjectClick(obj.id); }}
                       onDragEnd={(e) => handleObjectDrag(obj.id, e.currentTarget)}
                       onTransformEnd={(e) => handleObjectTransform(obj.id, e.currentTarget)}
                     >
+                      <Rect
+                        x={0}
+                        y={0}
+                        width={Math.max(1, obj.width || 1)}
+                        height={Math.max(1, obj.height || 1)}
+                        fill="rgba(0,0,0,0.01)"
+                        listening={tool === 'select'}
+                      />
                       {renderSegmentLines(revealedSegments, { stroke: isSelected ? '#4f46e5' : (obj.properties.strokeColor || '#000'), strokeWidth: (obj.properties.strokeWidth || 2) + (isSelected ? 1 : 0) })}
                     </Group>
                   );
@@ -2492,7 +2518,7 @@ const CanvasImage: React.FC<{
   animatedProps: any;
   isSelected: boolean;
   tool: 'select' | 'pen';
-  onClick: (id: string, node: any) => void;
+  onClick: (id: string) => void;
   onDragEnd: (id: string, node: any) => void;
   onTransformEnd: (id: string, node: any) => void;
   onDblClickImage?: (obj: any) => void;
@@ -2535,7 +2561,7 @@ const CanvasImage: React.FC<{
         strokeWidth={2}
         draggable={interactive && tool === 'select'}
         listening={interactive}
-        onClick={interactive ? (e) => { e.cancelBubble = true; onClick(id, e.target); } : undefined}
+        onClick={interactive ? (e) => { e.cancelBubble = true; onClick(id); } : undefined}
         onDblClick={interactive ? (e) => { e.cancelBubble = true; onDblClickImage && onDblClickImage(obj); } : undefined}
         onDragEnd={interactive ? (e) => onDragEnd(id, e.currentTarget) : undefined}
         onTransformEnd={interactive ? (e) => onTransformEnd(id, e.currentTarget) : undefined}
@@ -2560,7 +2586,7 @@ const CanvasImage: React.FC<{
       strokeWidth={isSelected ? 1 : 0}
   draggable={interactive && tool === 'select'}
   listening={interactive}
-  onClick={interactive ? (e) => { e.cancelBubble = true; onClick(id, e.target); } : undefined}
+  onClick={interactive ? (e) => { e.cancelBubble = true; onClick(id); } : undefined}
   onDblClick={interactive ? (e) => { e.cancelBubble = true; onDblClickImage && onDblClickImage(obj); } : undefined}
   onDragEnd={interactive ? (e) => onDragEnd(id, e.currentTarget) : undefined}
   onTransformEnd={interactive ? (e) => onTransformEnd(id, e.currentTarget) : undefined}

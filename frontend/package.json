@@ -27,6 +27,8 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
+    "test:animations": "node ../../scripts/test-animations.js",
+    "test:animation-system": "react-scripts test --testPathPattern=AnimationSystem.test.tsx --watchAll=false",
     "postinstall": "node scripts/copy-vtracer-wasm.js || echo 'skip vtracer copy'; node scripts/copy-resvg-wasm.js || echo 'skip resvg copy'",
     "eject": "react-scripts eject"
   },

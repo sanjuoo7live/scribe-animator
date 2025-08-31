@@ -4,6 +4,7 @@ import React from 'react';
 export interface BaseRendererProps {
   obj: any;
   animatedProps: any;
+  currentTime: number;
   isSelected: boolean;
   tool: string;
   onClick: (e: any) => void;

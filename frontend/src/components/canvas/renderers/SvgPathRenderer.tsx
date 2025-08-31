@@ -1,12 +1,13 @@
 import React from 'react';
 import { Group, Shape, Rect } from 'react-konva';
 import { BaseRendererProps } from '../renderers/RendererRegistry';
-import { useAppStore } from '../../../store/appStore';
+import { calculateAnimationProgress } from '../utils/animationUtils';
 
 // SVG Path Renderer component
 export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
   obj,
   animatedProps,
+  currentTime,
   isSelected,
   tool,
   onClick,
@@ -14,25 +15,14 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
   onDragMove,
   onTransformEnd,
 }) => {
-  const { currentTime } = useAppStore();
 
-  // Calculate animation progress like the original CanvasEditor
-  const animStart = obj.animationStart || 0;
-  const animDuration = obj.animationDuration || 5;
-  const elapsed = Math.min(Math.max(currentTime - animStart, 0), animDuration);
-  const progress = animDuration > 0 ? elapsed / animDuration : 1;
-
-  // Apply easing like the original
-  const easing = obj.animationEasing || 'easeOut';
-  const ease = (p: number) => {
-    switch (easing) {
-      case 'easeIn': return p * p;
-      case 'easeOut': return 1 - Math.pow(1 - p, 2);
-      case 'easeInOut': return p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
-      default: return p;
-    }
-  };
-  const ep = ease(progress);
+  // Calculate animation progress using utility function
+  const progress = calculateAnimationProgress(
+    currentTime,
+    obj.animationStart || 0,
+    obj.animationDuration || 5,
+    obj.animationEasing || 'easeOut'
+  );
 
   const groupX = animatedProps.x ?? obj.x;
   const groupY = animatedProps.y ?? obj.y;
@@ -41,7 +31,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
   const draw = obj.animationType === 'drawIn';
 
   // Reveal length is tied to object's duration so timeline edits directly influence drawing speed
-  const targetLen = draw ? ep * totalLen : totalLen;
+  const targetLen = draw ? progress * totalLen : totalLen;
   let consumed = 0;
 
   return (
@@ -56,7 +46,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
       scaleY={(obj.properties?.scaleY ?? 1) * (animatedProps.scaleY ?? 1)}
       opacity={animatedProps.opacity ?? 1}
       // Bind custom attrs directly so react-konva updates node on time changes
-      __progress={ep}
+      __progress={progress}
       __totalLen={totalLen}
       __targetLen={targetLen}
       draggable={tool === 'select'}

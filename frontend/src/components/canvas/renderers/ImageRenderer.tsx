@@ -19,6 +19,7 @@ const useImage = (src?: string): HTMLImageElement | null => {
 export const ImageRenderer: React.FC<BaseRendererProps> = ({
   obj,
   animatedProps,
+  currentTime,
   isSelected,
   tool,
   onClick,

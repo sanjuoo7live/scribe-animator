@@ -1,7 +1,7 @@
 import React from 'react';
 import { Group, Line, Rect, Image as KonvaImage } from 'react-konva';
 import { BaseRendererProps } from '../renderers/RendererRegistry';
-import { useAppStore } from '../../../store/appStore';
+import { calculateAnimationProgress, getDrawPathSegments, getDrawPathHead, calculateToolAngle } from '../utils/animationUtils';
 
 // Tool follower component to render pen/hand images with rotation
 const ToolFollower: React.FC<{
@@ -91,31 +91,21 @@ const ToolFollower: React.FC<{
 export const DrawPathRenderer: React.FC<BaseRendererProps> = ({
   obj,
   animatedProps,
+  currentTime,
   isSelected,
   tool,
   onClick,
   onDragEnd,
   onTransformEnd,
 }) => {
-  const { currentTime } = useAppStore();
 
-  // Calculate animation progress like the original CanvasEditor
-  const animStart = obj.animationStart || 0;
-  const animDuration = obj.animationDuration || 5;
-  const elapsed = Math.min(Math.max(currentTime - animStart, 0), animDuration);
-  const progress = animDuration > 0 ? elapsed / animDuration : 1;
-
-  // Apply easing like the original
-  const easing = obj.animationEasing || 'easeOut';
-  const ease = (p: number) => {
-    switch (easing) {
-      case 'easeIn': return p * p;
-      case 'easeOut': return 1 - Math.pow(1 - p, 2);
-      case 'easeInOut': return p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
-      default: return p;
-    }
-  };
-  const ep = ease(progress);
+  // Calculate animation progress using utility function
+  const progress = calculateAnimationProgress(
+    currentTime,
+    obj.animationStart || 0,
+    obj.animationDuration || 5,
+    obj.animationEasing || 'easeOut'
+  );
 
   const assetSrc = obj.properties.assetSrc;
   const hasSegments = Array.isArray(obj.properties?.segments) && obj.properties.segments.length > 0;
@@ -123,29 +113,14 @@ export const DrawPathRenderer: React.FC<BaseRendererProps> = ({
     ? obj.properties.segments
     : [obj.properties.points || []];
 
-  // Compute total points for animation timing
-  const totalPoints = segments.reduce((sum, seg) => sum + seg.length, 0);
+  // Use animation utility for drawIn animation
+  const revealedSegments = obj.animationType === 'drawIn'
+    ? getDrawPathSegments(segments, progress)
+    : segments;
 
-  // Determine how many points should be visible globally based on time-driven progress
-  const globalReveal = obj.animationType === 'drawIn' && totalPoints > 1
-    ? Math.max(1, Math.floor(ep * totalPoints + 0.00001))
-    : totalPoints;
-
-  // Build per-segment revealed points
-  let remaining = globalReveal;
-  const revealedSegments = segments.map((seg) => {
-    if (remaining <= 0) return seg.slice(0, 0);
-    const take = Math.min(seg.length, remaining);
-    remaining -= take;
-    return seg.slice(0, Math.max(1, take));
-  });
-
-  // Current head for tool follower
-  let head: { x: number; y: number } | undefined;
-  for (let i = revealedSegments.length - 1; i >= 0 && !head; i--) {
-    const seg = revealedSegments[i];
-    if (seg.length > 0) head = seg[seg.length - 1];
-  }
+  // Current head for tool follower using utility
+  const head = obj.animationType === 'drawIn' ? getDrawPathHead(revealedSegments) : null;
+  // Calculate tool angle using utility
   const prev = head && (() => {
     for (let i = revealedSegments.length - 1; i >= 0; i--) {
       const seg = revealedSegments[i];
@@ -153,9 +128,7 @@ export const DrawPathRenderer: React.FC<BaseRendererProps> = ({
     }
     return head;
   })();
-  const dx = (head?.x ?? 0) - (prev?.x ?? 0);
-  const dy = (head?.y ?? 0) - (prev?.y ?? 0);
-  const angleDeg = Math.atan2(dy, dx) * 180 / Math.PI;
+  const angleDeg = head && prev ? calculateToolAngle(head, prev) : 0;
 
   // Helper to render segments as Lines
   const renderSegmentLines = (segList: { x: number; y: number }[][], opts: { stroke: string; strokeWidth: number; composite?: string; }) => (
@@ -180,6 +153,9 @@ export const DrawPathRenderer: React.FC<BaseRendererProps> = ({
       );
     })
   );
+
+  // Compute total points for asset rendering
+  const totalPoints = segments.reduce((sum, seg) => sum + seg.length, 0);
 
   // If there's a background asset, create a masked reveal effect
   if (assetSrc && totalPoints > 1) {

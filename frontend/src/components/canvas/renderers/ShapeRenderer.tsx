@@ -5,6 +5,7 @@ import { BaseRendererProps } from '../renderers/RendererRegistry';
 export const ShapeRenderer: React.FC<BaseRendererProps> = ({
   obj,
   animatedProps,
+  currentTime,
   isSelected,
   tool,
   onClick,

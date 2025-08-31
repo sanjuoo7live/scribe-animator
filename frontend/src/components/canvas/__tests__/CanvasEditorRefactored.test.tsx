@@ -3,8 +3,42 @@ import { render } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import CanvasEditorRefactored from '../../CanvasEditorRefactored';
 
-// Mock the store
+// Mock the canvas module for Konva
+jest.mock('canvas', () => ({
+  createCanvas: jest.fn(() => ({
+    getContext: jest.fn(() => ({
+      fillRect: jest.fn(),
+      clearRect: jest.fn(),
+      getImageData: jest.fn(() => ({
+        data: new Uint8ClampedArray(4)
+      })),
+      putImageData: jest.fn(),
+      createImageData: jest.fn(() => ({
+        data: new Uint8ClampedArray(4)
+      })),
+      setTransform: jest.fn(),
+      drawImage: jest.fn(),
+      save: jest.fn(),
+      restore: jest.fn(),
+      beginPath: jest.fn(),
+      closePath: jest.fn(),
+      moveTo: jest.fn(),
+      lineTo: jest.fn(),
+      stroke: jest.fn(),
+      fill: jest.fn()
+    })),
+    toDataURL: jest.fn(() => 'data:image/png;base64,mock'),
+    width: 100,
+    height: 100
+  })),
+  loadImage: jest.fn(() => Promise.resolve({})),
+  registerFont: jest.fn()
+}), { virtual: true });
+
+// Mock the store first
 const mockUseAppStore = jest.fn();
+
+// Mock the store
 jest.mock('../../../store/appStore', () => ({
   useAppStore: mockUseAppStore,
 }));

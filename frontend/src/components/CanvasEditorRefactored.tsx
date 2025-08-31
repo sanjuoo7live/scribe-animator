@@ -22,6 +22,7 @@ import { ShapeRenderer } from './canvas/renderers/ShapeRenderer';
 import { DrawPathRenderer } from './canvas/renderers/DrawPathRenderer';
 import { SvgPathRenderer } from './canvas/renderers/SvgPathRenderer';
 import { AnimationTest } from './AnimationTest';
+import { calculateAnimationProgress, getAnimatedProperties } from './canvas/utils/animationUtils';
 
 // Register renderers
 rendererRegistry.register('text', TextRenderer);
@@ -491,32 +492,14 @@ const CanvasEditorRefactored: React.FC = () => {
 
   // Render objects using the new renderer system
   const renderObject = useCallback((obj: any) => {
-    const animStart = obj.animationStart || 0;
-    const animDuration = obj.animationDuration || 5;
-    const elapsed = Math.min(Math.max(currentTime - animStart, 0), animDuration);
-    const progress = animDuration > 0 ? elapsed / animDuration : 1;
-    const easing = obj.animationEasing || 'easeOut';
+    const progress = calculateAnimationProgress(
+      currentTime,
+      obj.animationStart || 0,
+      obj.animationDuration || 5,
+      obj.animationEasing || 'easeOut'
+    );
 
-    const ease = (p: number) => {
-      switch (easing) {
-        case 'easeIn': return p * p;
-        case 'easeOut': return 1 - Math.pow(1 - p, 2);
-        case 'easeInOut': return p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
-        default: return p;
-      }
-    };
-
-    const ep = ease(progress);
-    const animatedProps: any = {};
-
-    switch (obj.animationType) {
-      case 'fadeIn': animatedProps.opacity = tool === 'select' ? 1 : ep; break;
-      case 'scaleIn': 
-        animatedProps.scaleX = tool === 'select' ? 1 : ep; 
-        animatedProps.scaleY = tool === 'select' ? 1 : ep; 
-        break;
-      case 'slideIn': animatedProps.x = obj.x + (1 - ep) * 100; animatedProps.y = obj.y; break;
-    }
+    const animatedProps: any = getAnimatedProperties(obj, progress, obj.animationType);
 
     const isSelected = selectedObject === obj.id;
     const renderer = rendererRegistry.get(obj.type);
@@ -526,6 +509,7 @@ const CanvasEditorRefactored: React.FC = () => {
         key: obj.id,
         obj,
         animatedProps,
+        currentTime,
         isSelected,
         tool,
         onClick: handleObjectClick,

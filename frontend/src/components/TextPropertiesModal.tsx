@@ -48,8 +48,9 @@ const TextPropertiesModal: React.FC<TextPropertiesModalProps> = ({
   };
 
   const handleResizeStart = (e: React.MouseEvent) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0) return; // left click only
     e.preventDefault();
+    e.stopPropagation(); // Prevent drag from starting
     setIsResizing(true);
     setResizeStart({
       x: e.clientX,
@@ -57,7 +58,7 @@ const TextPropertiesModal: React.FC<TextPropertiesModalProps> = ({
       width: size.width,
       height: size.height
     });
-    document.body.style.cursor = 'nw-resize';
+    document.body.style.cursor = 'se-resize';
     (document.body.style as any).userSelect = 'none';
   };
 
@@ -73,9 +74,19 @@ const TextPropertiesModal: React.FC<TextPropertiesModalProps> = ({
       if (isResizing) {
         const deltaX = e.clientX - resizeStart.x;
         const deltaY = e.clientY - resizeStart.y;
-        const newWidth = Math.max(320, Math.min(window.innerWidth - (pos?.left ?? 0) - 20, resizeStart.width + deltaX));
-        const newHeight = Math.max(400, Math.min(window.innerHeight - (pos?.top ?? 0) - 20, resizeStart.height + deltaY));
-        setSize({ width: newWidth, height: newHeight });
+        
+        // Calculate new dimensions with constraints
+        const newWidth = Math.max(320, resizeStart.width + deltaX);
+        const newHeight = Math.max(400, resizeStart.height + deltaY);
+        
+        // Ensure the modal doesn't go beyond viewport bounds
+        const maxWidth = window.innerWidth - (pos?.left ?? 0) - 20;
+        const maxHeight = window.innerHeight - (pos?.top ?? 0) - 20;
+        
+        const constrainedWidth = Math.min(newWidth, maxWidth);
+        const constrainedHeight = Math.min(newHeight, maxHeight);
+        
+        setSize({ width: constrainedWidth, height: constrainedHeight });
       }
     };
 
@@ -164,7 +175,7 @@ const TextPropertiesModal: React.FC<TextPropertiesModalProps> = ({
         </div>
 
         {/* Content */}
-        <div className="p-6 overflow-y-auto" style={{ height: size.height - 80 }}>
+        <div className="p-6 pb-8 overflow-y-auto" style={{ height: size.height - 80 }}>
           <div className="space-y-6">
           {/* Text Content */}
           <div>
@@ -374,8 +385,13 @@ const TextPropertiesModal: React.FC<TextPropertiesModalProps> = ({
 
         {/* Resize Handle */}
         <div
-          className="absolute bottom-0 right-0 w-4 h-4 cursor-nw-resize bg-gray-600 hover:bg-gray-500 border-t border-l border-gray-500"
+          className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize bg-gray-600 hover:bg-gray-500 border-t border-l border-gray-500 rounded-tl-md transition-colors duration-200 pointer-events-auto"
           onMouseDown={handleResizeStart}
+          style={{
+            background: 'linear-gradient(135deg, transparent 30%, rgba(255,255,255,0.1) 30%, rgba(255,255,255,0.1) 40%, transparent 40%, transparent 60%, rgba(255,255,255,0.1) 60%, rgba(255,255,255,0.1) 70%, transparent 70%)',
+            boxShadow: 'inset 1px 1px 0 rgba(255,255,255,0.1), inset -1px -1px 0 rgba(0,0,0,0.2)'
+          }}
+          title="Drag to resize modal"
         />
       </div>
     </div>

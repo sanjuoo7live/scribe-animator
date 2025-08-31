@@ -255,7 +255,7 @@ export const DrawPathRenderer: React.FC<BaseRendererProps> = ({
       width={obj.width || 100}
       height={obj.height || 100}
       rotation={obj.rotation || 0}
-      opacity={(animatedProps.opacity ?? 1) * (obj.properties.opacity ?? 1)}
+      opacity={animatedProps.opacity ?? 1}
       draggable={tool === 'select'}
       listening={tool === 'select'}
       onClick={(e) => { e.cancelBubble = true; onClick(e); }}

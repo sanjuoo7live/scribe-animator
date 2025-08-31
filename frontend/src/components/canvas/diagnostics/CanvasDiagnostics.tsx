@@ -1,0 +1,2 @@
+// Canvas diagnostics
+export {};

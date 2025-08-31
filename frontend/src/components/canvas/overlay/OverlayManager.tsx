@@ -1,0 +1,2 @@
+// Overlay manager
+export {};

@@ -1,0 +1,2 @@
+// Object controller hook
+export {};

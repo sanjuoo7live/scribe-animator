@@ -388,16 +388,15 @@ const CanvasEditorRefactored: React.FC = () => {
         });
       }
     } else if (obj && obj.type === 'svgPath') {
-      // SVG paths: use standard width/height scaling like other objects
-      console.log('CanvasEditorRefactored: Handling svgPath transform - width:', newWidth, 'height:', newHeight);
+      // SVG paths are Groups - use scaleX/scaleY for proper resizing
+      console.log('CanvasEditorRefactored: Handling svgPath transform - scaleX:', scaleX, 'scaleY:', scaleY);
       const ox = typeof node.offsetX === 'function' ? node.offsetX() : node.offsetX || 0;
       const oy = typeof node.offsetY === 'function' ? node.offsetY() : node.offsetY || 0;
       updateObject(id, {
         x: nx - ox,
         y: ny - oy,
-        width: newWidth,
-        height: newHeight,
         rotation,
+        properties: { ...obj.properties, scaleX, scaleY },
       });
     } else {
       // Default: offset-aware update using current offsets

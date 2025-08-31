@@ -52,8 +52,8 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
       x={groupX}
       y={groupY}
       rotation={obj.rotation || 0}
-      scaleX={animatedProps.scaleX ?? 1}
-      scaleY={animatedProps.scaleY ?? 1}
+      scaleX={(obj.properties?.scaleX ?? 1) * (animatedProps.scaleX ?? 1)}
+      scaleY={(obj.properties?.scaleY ?? 1) * (animatedProps.scaleY ?? 1)}
       opacity={animatedProps.opacity ?? 1}
       // Bind custom attrs directly so react-konva updates node on time changes
       __progress={ep}

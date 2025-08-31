@@ -6,6 +6,50 @@ const PropertiesPanel: React.FC = () => {
   
   const selectedObj = currentProject?.objects.find(obj => obj.id === selectedObject);
 
+  const updateObjectProperty = React.useCallback((property: string, value: any) => {
+    if (!selectedObj) return;
+    updateObject(selectedObj.id, { [property]: value });
+  }, [updateObject, selectedObj]);
+
+  // Get available animation types based on object type
+  const getAvailableAnimationTypes = React.useCallback((objType: string) => {
+    const baseTypes = ['none', 'fadeIn', 'slideIn', 'scaleIn'];
+    
+    switch (objType) {
+      case 'text':
+        return [...baseTypes, 'drawIn', 'pathFollow', 'typewriter'];
+      case 'shape':
+        return [...baseTypes, 'drawIn', 'pathFollow'];
+      case 'drawPath':
+        return [...baseTypes, 'drawIn', 'pathFollow'];
+      case 'image':
+        return [...baseTypes, 'drawIn', 'pathFollow'];
+      case 'icon':
+      case 'svg':
+        return [...baseTypes, 'drawIn', 'pathFollow'];
+      case 'hand':
+      case 'character':
+      case 'prop':
+        return [...baseTypes, 'drawIn', 'pathFollow'];
+      default:
+        return baseTypes;
+    }
+  }, []);
+
+  const availableAnimationTypes = React.useMemo(() => {
+    return selectedObj ? getAvailableAnimationTypes(selectedObj.type) : ['none'];
+  }, [selectedObj, getAvailableAnimationTypes]);
+
+  // Reset animation type to 'none' if current type is not available for this object type
+  React.useEffect(() => {
+    if (!selectedObj) return;
+    
+    const currentAnimationType = selectedObj.animationType || 'none';
+    if (!availableAnimationTypes.includes(currentAnimationType)) {
+      updateObjectProperty('animationType', 'none');
+    }
+  }, [selectedObj, selectedObj?.animationType, availableAnimationTypes, updateObjectProperty]);
+
   if (!selectedObj) {
     return (
       <div className="h-full p-4">
@@ -31,37 +75,6 @@ const PropertiesPanel: React.FC = () => {
 
     updateObject(selectedObj.id, { properties: newProperties });
   };
-
-  const updateObjectProperty = (property: string, value: any) => {
-    updateObject(selectedObj.id, { [property]: value });
-  };
-
-  // Get available animation types based on object type
-  const getAvailableAnimationTypes = (objType: string) => {
-    const baseTypes = ['none', 'fadeIn', 'slideIn', 'scaleIn'];
-    
-    switch (objType) {
-      case 'text':
-        return [...baseTypes, 'drawIn', 'pathFollow', 'typewriter'];
-      case 'shape':
-        return [...baseTypes, 'drawIn', 'pathFollow'];
-      case 'drawPath':
-        return [...baseTypes, 'drawIn', 'pathFollow'];
-      case 'image':
-        return [...baseTypes, 'drawIn', 'pathFollow'];
-      case 'icon':
-      case 'svg':
-        return [...baseTypes, 'drawIn', 'pathFollow'];
-      case 'hand':
-      case 'character':
-      case 'prop':
-        return [...baseTypes, 'drawIn', 'pathFollow'];
-      default:
-        return baseTypes;
-    }
-  };
-
-  const availableAnimationTypes = getAvailableAnimationTypes(selectedObj.type);
 
   return (
     <div className="h-full p-4 bg-gray-800 text-white overflow-y-auto">

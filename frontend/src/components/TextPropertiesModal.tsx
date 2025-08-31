@@ -18,116 +18,84 @@ const TextPropertiesModal: React.FC<TextPropertiesModalProps> = ({
   // Draggable modal state
   const modalRef = React.useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = React.useState<{ top: number; left: number } | null>(null);
-  const posRef = React.useRef<{ top: number; left: number }>({ top: 100, left: 100 });
-  const dragStartRef = React.useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  const draggingRef = React.useRef(false);
-
-  // Resizable modal state
   const [size, setSize] = React.useState<{ width: number; height: number }>({ width: 400, height: 600 });
-  const sizeRef = React.useRef<{ width: number; height: number }>({ width: 400, height: 600 });
-  const resizeStartRef = React.useRef<{ x: number; y: number; width: number; height: number }>({ x: 0, y: 0, width: 0, height: 0 });
-  const resizingRef = React.useRef(false);
+  const [isDragging, setIsDragging] = React.useState(false);
+  const [isResizing, setIsResizing] = React.useState(false);
+  const [dragStart, setDragStart] = React.useState({ x: 0, y: 0 });
+  const [resizeStart, setResizeStart] = React.useState({ x: 0, y: 0, width: 0, height: 0 });
 
-  // Set initial position when opened
+  // Set initial position when opened (centered by default)
   React.useLayoutEffect(() => {
     if (!isOpen) return;
-    const w = sizeRef.current.width;
-    const h = sizeRef.current.height;
+    // Center the modal on screen
+    const w = size.width;
+    const h = size.height;
     const left = Math.max(0, (window.innerWidth - w) / 2);
     const top = Math.max(0, (window.innerHeight - h) / 2);
-    posRef.current = { top, left };
     setPos({ top, left });
-  }, [isOpen]);
+  }, [isOpen, size.width, size.height]);
 
   const handleDragStart = (e: React.MouseEvent) => {
     if (e.button !== 0) return; // left click only
     e.preventDefault();
-    draggingRef.current = true;
-    dragStartRef.current = { x: e.clientX, y: e.clientY };
-    // Ensure we start from actual on-screen coordinates
-    if (modalRef.current) {
-      const rect = modalRef.current.getBoundingClientRect();
-      posRef.current = { top: rect.top, left: rect.left };
-      setPos({ top: rect.top, left: rect.left });
-    }
+    setIsDragging(true);
+    setDragStart({
+      x: e.clientX - (pos?.left ?? 100),
+      y: e.clientY - (pos?.top ?? 100)
+    });
     document.body.style.cursor = 'grabbing';
     (document.body.style as any).userSelect = 'none';
-    window.addEventListener('mousemove', handleDragMove);
-    window.addEventListener('mouseup', handleDragEnd);
   };
-
-  const handleDragMove = React.useCallback((e: MouseEvent) => {
-    if (!draggingRef.current) return;
-    const dx = e.clientX - dragStartRef.current.x;
-    const dy = e.clientY - dragStartRef.current.y;
-    const next = { top: posRef.current.top + dy, left: posRef.current.left + dx };
-    // Clamp to viewport
-    const w = sizeRef.current.width;
-    const h = sizeRef.current.height;
-    const maxLeft = Math.max(0, window.innerWidth - w - 20);
-    const maxTop = Math.max(0, window.innerHeight - h - 20);
-    const clamped = { 
-      top: Math.min(Math.max(0, next.top), maxTop), 
-      left: Math.min(Math.max(0, next.left), maxLeft) 
-    };
-    setPos(clamped);
-  }, []);
-
-  const handleDragEnd = React.useCallback(() => {
-    if (!draggingRef.current) return;
-    draggingRef.current = false;
-    if (pos) posRef.current = { ...pos };
-    window.removeEventListener('mousemove', handleDragMove);
-    window.removeEventListener('mouseup', handleDragEnd);
-    document.body.style.cursor = '';
-    (document.body.style as any).userSelect = '';
-  }, [pos, handleDragMove]);
 
   const handleResizeStart = (e: React.MouseEvent) => {
     if (e.button !== 0) return;
     e.preventDefault();
-    resizingRef.current = true;
-    resizeStartRef.current = { 
-      x: e.clientX, 
-      y: e.clientY, 
-      width: sizeRef.current.width, 
-      height: sizeRef.current.height 
-    };
+    setIsResizing(true);
+    setResizeStart({
+      x: e.clientX,
+      y: e.clientY,
+      width: size.width,
+      height: size.height
+    });
     document.body.style.cursor = 'nw-resize';
     (document.body.style as any).userSelect = 'none';
-    window.addEventListener('mousemove', handleResizeMove);
-    window.addEventListener('mouseup', handleResizeEnd);
   };
 
-  const handleResizeMove = React.useCallback((e: MouseEvent) => {
-    if (!resizingRef.current) return;
-    const dx = e.clientX - resizeStartRef.current.x;
-    const dy = e.clientY - resizeStartRef.current.y;
-    const newWidth = Math.max(320, resizeStartRef.current.width + dx);
-    const newHeight = Math.max(400, resizeStartRef.current.height + dy);
-    const newSize = { width: newWidth, height: newHeight };
-    sizeRef.current = newSize;
-    setSize(newSize);
-  }, []);
-
-  const handleResizeEnd = React.useCallback(() => {
-    if (!resizingRef.current) return;
-    resizingRef.current = false;
-    window.removeEventListener('mousemove', handleResizeMove);
-    window.removeEventListener('mouseup', handleResizeEnd);
-    document.body.style.cursor = '';
-    (document.body.style as any).userSelect = '';
-  }, [handleResizeMove]);
-
-  // Cleanup listeners on unmount
+  // Handle mouse events
   React.useEffect(() => {
-    return () => {
-      window.removeEventListener('mousemove', handleDragMove);
-      window.removeEventListener('mouseup', handleDragEnd);
-      window.removeEventListener('mousemove', handleResizeMove);
-      window.removeEventListener('mouseup', handleResizeEnd);
+    const handleMouseMove = (e: MouseEvent) => {
+      if (isDragging) {
+        const newX = Math.max(0, Math.min(window.innerWidth - size.width, e.clientX - dragStart.x));
+        const newY = Math.max(0, Math.min(window.innerHeight - size.height, e.clientY - dragStart.y));
+        setPos({ top: newY, left: newX });
+      }
+
+      if (isResizing) {
+        const deltaX = e.clientX - resizeStart.x;
+        const deltaY = e.clientY - resizeStart.y;
+        const newWidth = Math.max(320, Math.min(window.innerWidth - (pos?.left ?? 0) - 20, resizeStart.width + deltaX));
+        const newHeight = Math.max(400, Math.min(window.innerHeight - (pos?.top ?? 0) - 20, resizeStart.height + deltaY));
+        setSize({ width: newWidth, height: newHeight });
+      }
     };
-  }, [handleDragMove, handleDragEnd, handleResizeMove, handleResizeEnd]);
+
+    const handleMouseUp = () => {
+      setIsDragging(false);
+      setIsResizing(false);
+      document.body.style.cursor = '';
+      (document.body.style as any).userSelect = '';
+    };
+
+    if (isDragging || isResizing) {
+      document.addEventListener('mousemove', handleMouseMove);
+      document.addEventListener('mouseup', handleMouseUp);
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, isResizing, dragStart, resizeStart, size, pos]);
 
   if (!isOpen || !textObj) return null;
 
@@ -164,10 +132,11 @@ const TextPropertiesModal: React.FC<TextPropertiesModalProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 z-50">
+    <div className="fixed inset-0 z-50 pointer-events-none">
       <div
-        className="absolute bg-gray-800 rounded-lg shadow-2xl border border-gray-700 overflow-hidden"
+        className="bg-gray-800 rounded-lg shadow-2xl border border-gray-700 overflow-hidden pointer-events-auto"
         style={{
+          position: 'fixed',
           top: pos?.top ?? 100,
           left: pos?.left ?? 100,
           width: size.width,

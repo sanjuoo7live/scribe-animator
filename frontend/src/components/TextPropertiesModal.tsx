@@ -15,6 +15,120 @@ const TextPropertiesModal: React.FC<TextPropertiesModalProps> = ({
   const { currentProject, updateObject } = useAppStore();
   const textObj = currentProject?.objects.find(obj => obj.id === textObjId);
 
+  // Draggable modal state
+  const modalRef = React.useRef<HTMLDivElement | null>(null);
+  const [pos, setPos] = React.useState<{ top: number; left: number } | null>(null);
+  const posRef = React.useRef<{ top: number; left: number }>({ top: 100, left: 100 });
+  const dragStartRef = React.useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const draggingRef = React.useRef(false);
+
+  // Resizable modal state
+  const [size, setSize] = React.useState<{ width: number; height: number }>({ width: 400, height: 600 });
+  const sizeRef = React.useRef<{ width: number; height: number }>({ width: 400, height: 600 });
+  const resizeStartRef = React.useRef<{ x: number; y: number; width: number; height: number }>({ x: 0, y: 0, width: 0, height: 0 });
+  const resizingRef = React.useRef(false);
+
+  // Set initial position when opened
+  React.useLayoutEffect(() => {
+    if (!isOpen) return;
+    const w = sizeRef.current.width;
+    const h = sizeRef.current.height;
+    const left = Math.max(0, (window.innerWidth - w) / 2);
+    const top = Math.max(0, (window.innerHeight - h) / 2);
+    posRef.current = { top, left };
+    setPos({ top, left });
+  }, [isOpen]);
+
+  const handleDragStart = (e: React.MouseEvent) => {
+    if (e.button !== 0) return; // left click only
+    e.preventDefault();
+    draggingRef.current = true;
+    dragStartRef.current = { x: e.clientX, y: e.clientY };
+    // Ensure we start from actual on-screen coordinates
+    if (modalRef.current) {
+      const rect = modalRef.current.getBoundingClientRect();
+      posRef.current = { top: rect.top, left: rect.left };
+      setPos({ top: rect.top, left: rect.left });
+    }
+    document.body.style.cursor = 'grabbing';
+    (document.body.style as any).userSelect = 'none';
+    window.addEventListener('mousemove', handleDragMove);
+    window.addEventListener('mouseup', handleDragEnd);
+  };
+
+  const handleDragMove = React.useCallback((e: MouseEvent) => {
+    if (!draggingRef.current) return;
+    const dx = e.clientX - dragStartRef.current.x;
+    const dy = e.clientY - dragStartRef.current.y;
+    const next = { top: posRef.current.top + dy, left: posRef.current.left + dx };
+    // Clamp to viewport
+    const w = sizeRef.current.width;
+    const h = sizeRef.current.height;
+    const maxLeft = Math.max(0, window.innerWidth - w - 20);
+    const maxTop = Math.max(0, window.innerHeight - h - 20);
+    const clamped = { 
+      top: Math.min(Math.max(0, next.top), maxTop), 
+      left: Math.min(Math.max(0, next.left), maxLeft) 
+    };
+    setPos(clamped);
+  }, []);
+
+  const handleDragEnd = React.useCallback(() => {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    if (pos) posRef.current = { ...pos };
+    window.removeEventListener('mousemove', handleDragMove);
+    window.removeEventListener('mouseup', handleDragEnd);
+    document.body.style.cursor = '';
+    (document.body.style as any).userSelect = '';
+  }, [pos, handleDragMove]);
+
+  const handleResizeStart = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    resizingRef.current = true;
+    resizeStartRef.current = { 
+      x: e.clientX, 
+      y: e.clientY, 
+      width: sizeRef.current.width, 
+      height: sizeRef.current.height 
+    };
+    document.body.style.cursor = 'nw-resize';
+    (document.body.style as any).userSelect = 'none';
+    window.addEventListener('mousemove', handleResizeMove);
+    window.addEventListener('mouseup', handleResizeEnd);
+  };
+
+  const handleResizeMove = React.useCallback((e: MouseEvent) => {
+    if (!resizingRef.current) return;
+    const dx = e.clientX - resizeStartRef.current.x;
+    const dy = e.clientY - resizeStartRef.current.y;
+    const newWidth = Math.max(320, resizeStartRef.current.width + dx);
+    const newHeight = Math.max(400, resizeStartRef.current.height + dy);
+    const newSize = { width: newWidth, height: newHeight };
+    sizeRef.current = newSize;
+    setSize(newSize);
+  }, []);
+
+  const handleResizeEnd = React.useCallback(() => {
+    if (!resizingRef.current) return;
+    resizingRef.current = false;
+    window.removeEventListener('mousemove', handleResizeMove);
+    window.removeEventListener('mouseup', handleResizeEnd);
+    document.body.style.cursor = '';
+    (document.body.style as any).userSelect = '';
+  }, [handleResizeMove]);
+
+  // Cleanup listeners on unmount
+  React.useEffect(() => {
+    return () => {
+      window.removeEventListener('mousemove', handleDragMove);
+      window.removeEventListener('mouseup', handleDragEnd);
+      window.removeEventListener('mousemove', handleResizeMove);
+      window.removeEventListener('mouseup', handleResizeEnd);
+    };
+  }, [handleDragMove, handleDragEnd, handleResizeMove, handleResizeEnd]);
+
   if (!isOpen || !textObj) return null;
 
   const updateProperty = (path: string, value: any) => {
@@ -50,19 +164,39 @@ const TextPropertiesModal: React.FC<TextPropertiesModalProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-gray-800 rounded-lg p-6 w-96 max-w-[90vw] max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-between items-center mb-6">
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50">
+      <div
+        className="absolute bg-gray-800 rounded-lg shadow-2xl border border-gray-700 overflow-hidden"
+        style={{
+          top: pos?.top ?? 100,
+          left: pos?.left ?? 100,
+          width: size.width,
+          height: size.height,
+          minWidth: 320,
+          minHeight: 400,
+          maxWidth: '90vw',
+          maxHeight: '90vh'
+        }}
+        ref={modalRef}
+      >
+        {/* Drag Handle */}
+        <div
+          className="flex justify-between items-center p-4 bg-gray-700 cursor-move select-none border-b border-gray-600"
+          onMouseDown={handleDragStart}
+        >
           <h2 className="text-xl font-bold text-white">Text Properties</h2>
           <button
             onClick={onClose}
-            className="text-gray-400 hover:text-white text-2xl"
+            className="text-gray-400 hover:text-white text-2xl font-bold w-8 h-8 flex items-center justify-center rounded hover:bg-gray-600 transition-colors"
+            onMouseDown={(e) => e.stopPropagation()}
           >
             ×
           </button>
         </div>
 
-        <div className="space-y-6">
+        {/* Content */}
+        <div className="p-6 overflow-y-auto" style={{ height: size.height - 80 }}>
+          <div className="space-y-6">
           {/* Text Content */}
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
@@ -267,6 +401,13 @@ const TextPropertiesModal: React.FC<TextPropertiesModalProps> = ({
             Close
           </button>
         </div>
+        </div>
+
+        {/* Resize Handle */}
+        <div
+          className="absolute bottom-0 right-0 w-4 h-4 cursor-nw-resize bg-gray-600 hover:bg-gray-500 border-t border-l border-gray-500"
+          onMouseDown={handleResizeStart}
+        />
       </div>
     </div>
   );

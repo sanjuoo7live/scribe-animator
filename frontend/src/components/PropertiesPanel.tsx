@@ -36,6 +36,33 @@ const PropertiesPanel: React.FC = () => {
     updateObject(selectedObj.id, { [property]: value });
   };
 
+  // Get available animation types based on object type
+  const getAvailableAnimationTypes = (objType: string) => {
+    const baseTypes = ['none', 'fadeIn', 'slideIn', 'scaleIn'];
+    
+    switch (objType) {
+      case 'text':
+        return [...baseTypes, 'drawIn', 'pathFollow', 'typewriter'];
+      case 'shape':
+        return [...baseTypes, 'drawIn', 'pathFollow'];
+      case 'drawPath':
+        return [...baseTypes, 'drawIn', 'pathFollow'];
+      case 'image':
+        return [...baseTypes, 'drawIn', 'pathFollow'];
+      case 'icon':
+      case 'svg':
+        return [...baseTypes, 'drawIn', 'pathFollow'];
+      case 'hand':
+      case 'character':
+      case 'prop':
+        return [...baseTypes, 'drawIn', 'pathFollow'];
+      default:
+        return baseTypes;
+    }
+  };
+
+  const availableAnimationTypes = getAvailableAnimationTypes(selectedObj.type);
+
   return (
     <div className="h-full p-4 bg-gray-800 text-white overflow-y-auto">
       <h3 className="text-lg font-semibold text-gray-300 mb-4">Properties</h3>
@@ -281,11 +308,18 @@ const PropertiesPanel: React.FC = () => {
               onChange={(e) => updateObjectProperty('animationType', e.target.value)}
               className="w-full p-2 bg-gray-700 text-white rounded text-sm"
             >
-              <option value="none">None</option>
-              <option value="fadeIn">Fade In</option>
-              <option value="slideIn">Slide In</option>
-              <option value="scaleIn">Scale In</option>
-              <option value="drawIn">Draw In</option>
+              {availableAnimationTypes.map(type => (
+                <option key={type} value={type}>
+                  {type === 'none' ? 'None' :
+                   type === 'fadeIn' ? 'Fade In' :
+                   type === 'slideIn' ? 'Slide In' :
+                   type === 'scaleIn' ? 'Scale In' :
+                   type === 'drawIn' ? 'Draw In' :
+                   type === 'pathFollow' ? 'Path Follow' :
+                   type === 'typewriter' ? 'Typewriter' :
+                   type}
+                </option>
+              ))}
             </select>
           </div>
           <div>

@@ -59,7 +59,6 @@ const SvgImporter: React.FC = () => {
   const [drawSvgSnapshot, setDrawSvgSnapshot] = React.useState<string | null>(null);
   const domSvgHolderRef = React.useRef<HTMLDivElement | null>(null);
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
-  const vivusRef = React.useRef<any | null>(null);
   const [advOpen, setAdvOpen] = React.useState(true);
   const drawStateRef = React.useRef<{
     vb: { x: number; y: number; w: number; h: number } | null;
@@ -708,10 +707,7 @@ const SvgImporter: React.FC = () => {
     if (!showDrawPreview || !drawSvgSnapshot) return;
     const svgMarkup = drawSvgSnapshot;
     
-    // Clear vivus reference on new snapshot
-    vivusRef.current = null;
-    
-    // Render DOM-SVG for Vivus animation
+    // Render DOM-SVG for animation
     const holder = domSvgHolderRef.current;
     if (holder) {
       // Do not render static SVG in holder; keep it empty so only canvas drawing is visible
@@ -722,7 +718,6 @@ const SvgImporter: React.FC = () => {
         svgEl.setAttribute('width', '100%');
         svgEl.setAttribute('height', '100%');
         svgEl.style.display = 'block';
-        // Don't auto-initialize Vivus here - wait for play button
       }
     }
     

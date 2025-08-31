@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import CanvasEditor from './components/CanvasEditor';
+import CanvasEditorRefactored from './components/CanvasEditorRefactored';
 import Timeline from './components/Timeline';
 import AssetPanel from './components/AssetPanel';
 import PropertiesPanel from './components/PropertiesPanel';
@@ -307,7 +307,7 @@ const App: React.FC = () => {
         
   <div className={`main-content`}>
           <div className="canvas-container">
-            <CanvasEditor />
+            <CanvasEditorRefactored />
           </div>
           <div 
             className={`timeline-resizer ${isResizingTimeline ? 'resizing' : ''}`}

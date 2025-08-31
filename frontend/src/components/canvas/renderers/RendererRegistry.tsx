@@ -1,6 +1,6 @@
 import React from 'react';
 
-// Base renderer props interface
+// Base interface for all renderers
 export interface BaseRendererProps {
   obj: any;
   animatedProps: any;
@@ -10,32 +10,32 @@ export interface BaseRendererProps {
   onDragEnd: (id: string, node: any) => void;
   onDragMove?: (id: string, node: any) => void;
   onTransformEnd: (id: string, node: any) => void;
+  onDblClick?: (e: any) => void;
 }
 
-// Renderer registry class
-export class RendererRegistry {
-  private static instance: RendererRegistry;
-  private renderers: Map<string, React.ComponentType<BaseRendererProps>> = new Map();
+// Renderer function type
+export type RendererFunction = React.ComponentType<BaseRendererProps>;
 
-  static getInstance(): RendererRegistry {
-    if (!RendererRegistry.instance) {
-      RendererRegistry.instance = new RendererRegistry();
-    }
-    return RendererRegistry.instance;
-  }
+// Registry of renderers by object type
+class RendererRegistry {
+  private renderers: Map<string, RendererFunction> = new Map();
 
-  register(type: string, renderer: React.ComponentType<BaseRendererProps>) {
+  register(type: string, renderer: RendererFunction): void {
     this.renderers.set(type, renderer);
   }
 
-  get(type: string): React.ComponentType<BaseRendererProps> | undefined {
+  get(type: string): RendererFunction | undefined {
     return this.renderers.get(type);
   }
 
-  getAll(): Map<string, React.ComponentType<BaseRendererProps>> {
-    return this.renderers;
+  has(type: string): boolean {
+    return this.renderers.has(type);
+  }
+
+  getAllTypes(): string[] {
+    return Array.from(this.renderers.keys());
   }
 }
 
-// Export singleton instance
-export const rendererRegistry = RendererRegistry.getInstance();
+// Global registry instance
+export const rendererRegistry = new RendererRegistry();

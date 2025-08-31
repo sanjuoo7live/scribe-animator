@@ -75,9 +75,21 @@ export const usePointerEvents = (
   onDrawingMove: (point: { x: number; y: number }) => void,
   onDrawingEnd: () => void
 ) => {
+  const getPointer = (stage: any) => {
+    if (!stage) return { x: 0, y: 0 };
+    const pos = stage.getPointerPosition();
+    if (!pos) return { x: 0, y: 0 };
+    // convert screen coords to stage (content) coords accounting for scale and pan
+    const transform = stage.getAbsoluteTransform().copy();
+    transform.invert();
+    const scenePos = transform.point(pos);
+    return { x: scenePos.x, y: scenePos.y };
+  };
+
   const handleMouseDown = useCallback((e: any) => {
     if (tool === 'pen') {
-      const pos = e.target.getStage().getPointerPosition();
+      const stage = e.target.getStage();
+      const pos = getPointer(stage);
       onDrawingStart({ x: pos.x, y: pos.y });
     } else {
       // Check if clicking on background
@@ -89,7 +101,8 @@ export const usePointerEvents = (
 
   const handleMouseMove = useCallback((e: any) => {
     if (tool === 'pen' && e.evt.buttons === 1) {
-      const pos = e.target.getStage().getPointerPosition();
+      const stage = e.target.getStage();
+      const pos = getPointer(stage);
       onDrawingMove({ x: pos.x, y: pos.y });
     }
   }, [tool, onDrawingMove]);

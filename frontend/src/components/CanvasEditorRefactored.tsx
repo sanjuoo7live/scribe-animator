@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { Stage, Layer, Rect, Transformer } from 'react-konva';
+import { Stage, Layer, Rect, Transformer, Line } from 'react-konva';
 import Konva from 'konva';
 import { useAppStore } from '../store/appStore';
 import CanvasSettings from './CanvasSettings';
@@ -82,6 +82,10 @@ const CanvasEditorRefactored: React.FC = () => {
   const [fitMode, setFitMode] = useState<'width' | 'contain'>('contain');
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
   const [hasMounted, setHasMounted] = useState(false);
+
+  // Drawing state
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [currentPath, setCurrentPath] = useState<{ x: number; y: number }[]>([]);
 
   // Update canvas size based on container and fit mode (like original CanvasEditor)
   useEffect(() => {
@@ -199,16 +203,48 @@ const CanvasEditorRefactored: React.FC = () => {
   }, [tool, selectObject]);
 
   const handleDrawingStart = useCallback((point: { x: number; y: number }) => {
-    // Drawing logic will be implemented
-  }, []);
+    if (tool === 'pen') {
+      setIsDrawing(true);
+      setCurrentPath([{ x: point.x, y: point.y }]);
+    }
+  }, [tool]);
 
   const handleDrawingMove = useCallback((point: { x: number; y: number }) => {
-    // Drawing logic will be implemented
-  }, []);
+    if (isDrawing && tool === 'pen') {
+      setCurrentPath(prev => [...prev, { x: point.x, y: point.y }]);
+    }
+  }, [isDrawing, tool]);
 
   const handleDrawingEnd = useCallback(() => {
-    // Drawing logic will be implemented
-  }, []);
+    if (isDrawing && tool === 'pen' && currentPath.length > 1) {
+      // Create a new draw path object
+      const minX = Math.min(...currentPath.map(p => p.x));
+      const minY = Math.min(...currentPath.map(p => p.y));
+      const maxX = Math.max(...currentPath.map(p => p.x));
+      const maxY = Math.max(...currentPath.map(p => p.y));
+      
+      addObject({
+        id: `draw-${Date.now()}`,
+        type: 'drawPath',
+        x: minX,
+        y: minY,
+        width: Math.max(1, maxX - minX),
+        height: Math.max(1, maxY - minY),
+        rotation: 0,
+        properties: { 
+          points: currentPath.map(p => ({ x: p.x - minX, y: p.y - minY })),
+          strokeColor: strokeColor, 
+          strokeWidth: strokeWidth 
+        },
+        animationStart: 0,
+        animationDuration: currentProject?.duration || 5,
+        animationType: 'none',
+        animationEasing: 'easeOut',
+      });
+    }
+    setIsDrawing(false);
+    setCurrentPath([]);
+  }, [isDrawing, tool, currentPath, strokeColor, strokeWidth, addObject, currentProject?.duration]);
 
   // Event hooks
   useCanvasEvents(
@@ -639,6 +675,19 @@ const CanvasEditorRefactored: React.FC = () => {
                     if (tool === 'select') selectObject(null);
                   }}
                 />
+
+                {/* Temporary drawing lines - simple approach from original */}
+                {isDrawing && currentPath.length > 1 && (
+                  <Line
+                    points={currentPath.flatMap(p => [p.x, p.y])}
+                    stroke={strokeColor}
+                    strokeWidth={strokeWidth}
+                    tension={0.5}
+                    lineCap="round"
+                    lineJoin="round"
+                    opacity={1}
+                  />
+                )}
 
                 {/* Render objects using new system */}
                 {(currentProject?.objects || []).map(renderObject)}

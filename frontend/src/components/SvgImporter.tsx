@@ -1,5 +1,4 @@
 import React from 'react';
-import Vivus from 'vivus';
 import { useAppStore } from '../store/appStore';
 import { traceImageDataToPaths } from '../vtrace/simpleTrace';
 // MediaPipe segmentation removed per UI simplification
@@ -7,19 +6,18 @@ import { traceImageDataToPaths } from '../vtrace/simpleTrace';
 type ParsedPath = { d: string; stroke?: string; strokeWidth?: number; fill?: string; fillRule?: 'nonzero'|'evenodd' };
 
 // Lightweight item used in Path Refinement UI
-type RefineItem = {
-  id: string;
-  d: string;
-  bbox: { x: number; y: number; width: number; height: number };
-  points: { x: number; y: number }[];
-  selected: boolean;
-  kind?: 'path' | 'connector';
-};
+// type RefineItem = {
+//   id: string;
+//   d: string;
+//   bbox: { x: number; y: number; width: number; height: number };
+//   points: { x: number; y: number }[];
+//   selected: boolean;
+//   kind?: 'path' | 'connector';
+// };
 
 const SvgImporter: React.FC = () => {
   const addObject = useAppStore(s => s.addObject);
   const currentProject = useAppStore(s => s.currentProject);
-  const currentTime = useAppStore(s => s.currentTime);
 
   const [status, setStatus] = React.useState<string>('');
   const [traceThreshold, setTraceThreshold] = React.useState<number>(128);
@@ -32,7 +30,7 @@ const SvgImporter: React.FC = () => {
   const [busy, setBusy] = React.useState<boolean>(false);
   const [maxDim] = React.useState<number>(768);
   const [engine, setEngine] = React.useState<'basic' | 'tiled' | 'wasm'>('wasm'); // Default to WASM
-  const [addMode, setAddMode] = React.useState<'drawPathLayers' | 'svgCombined'>('drawPathLayers');
+  const [addMode] = React.useState<'drawPathLayers' | 'svgCombined'>('drawPathLayers');
   // Layer selection heuristic (now default off; prefer foreground isolation below)
   // Removed: keepOnlyBiggest UI; always keep multiple non-overlapping layers
   
@@ -269,10 +267,10 @@ const SvgImporter: React.FC = () => {
   // Runtime indicators
   const [lastEngine, setLastEngine] = React.useState<null | 'official' | 'npm' | 'local' | 'minimal'>(null);
   // Path Refinement modal state
-  const [refineOpen, setRefineOpen] = React.useState(false);
-  const [refineItems, setRefineItems] = React.useState<RefineItem[] | null>(null);
+  // const [refineOpen, setRefineOpen] = React.useState(false);
+  // const [refineItems, setRefineItems] = React.useState<RefineItem[] | null>(null);
   // Removed: top-30 cap toggle in refiner
-  const [refineViewport, setRefineViewport] = React.useState<{ width: number; height: number } | null>(null);
+  // const [refineViewport, setRefineViewport] = React.useState<{ width: number; height: number } | null>(null);
   // Tracing presets for common use cases
   type Preset = 'photo-subject' | 'line-art' | 'logo-flat' | 'noisy-photo' | 'custom';
   const [preset, setPreset] = React.useState<Preset>('photo-subject');
@@ -1319,20 +1317,20 @@ const SvgImporter: React.FC = () => {
                       });
                       // Sort by total curve length, longest first
                       measured.sort((a, b) => b.length - a.length);
-                      const allItems: RefineItem[] = measured.map((m, rank) => ({
-                        id: `p-${m.i}`,
-                        d: m.d,
-                        bbox: m.bbox,
-                        points: m.points,
-                        selected: true,
-                        kind: 'path'
-                      }));
+                      // const allItems: RefineItem[] = measured.map((m, rank) => ({
+                      //   id: `p-${m.i}`,
+                      //   d: m.d,
+                      //   bbox: m.bbox,
+                      //   points: m.points,
+                      //   selected: true,
+                      //   kind: 'path'
+                      // }));
                       // Persist full list and apply optional top-30 cap based on UI toggle
-                      const items = allItems;
-                      setRefineItems(items);
-                      setRefineViewport({ width: w, height: h });
-                      setRefineOpen(true);
-                      setStatus(`Refine ${items.length} paths: click to toggle, delete noise, connect gaps, then Generate Single Path.`);
+                      // const items = allItems;
+                      // setRefineItems(items);
+                      // setRefineViewport({ width: w, height: h });
+                      // setRefineOpen(true);
+                      setStatus(`Traced ${measured.length} paths successfully.`);
                     }
                   } catch (e: any) {
                     setStatus(`❌ Trace failed: ${e?.message || e}`);
@@ -1344,335 +1342,13 @@ const SvgImporter: React.FC = () => {
                 img.src = tracePreview;
               }}
             >{busy ? 'Vectorizing…' : 'Vectorize'}</button>
-
-            {/* Crop UI removed */}
-
-            <div className="flex items-center gap-2 text-[11px] text-gray-300">
-              <span>Add as:</span>
-              <button type="button" className={`px-2 py-1 rounded ${addMode==='drawPathLayers'?'bg-blue-600':'bg-gray-700'}`} onClick={()=>setAddMode('drawPathLayers')}>Draw Path layers</button>
-              <button type="button" className={`px-2 py-1 rounded ${addMode==='svgCombined'?'bg-blue-600':'bg-gray-700'}`} onClick={()=>setAddMode('svgCombined')}>Combined SVG</button>
-            </div>
-
-            <div className="text-[11px] text-gray-400">WASM provides highest quality vectorization. JS fallback is used automatically if needed.</div>
           </div>
         </div>
 
-        {/* Enhanced Draw Preview section - fixed sizes, same row */}
-        {false && showDrawPreview && (
-          <div className="mt-4 p-3 bg-gray-900/50 rounded border border-gray-600">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-sm font-semibold text-white">Draw Preview Comparison</div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button" 
-                  className="px-2 py-1 rounded text-xs bg-purple-600 hover:bg-purple-500"
-                  onClick={() => {
-                    // Play or replay animation on DOM SVG (manual start)
-                    const holder = domSvgHolderRef.current;
-                    if (!holder) return;
-                    const svgEl = holder.querySelector('svg');
-                    if (!svgEl) return;
-                    try {
-                      // Always create fresh Vivus instance
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      vivusRef.current = new (Vivus as any)(svgEl as any, { 
-                        duration: 150, 
-                        type: 'delayed', 
-                        start: 'manual',
-                        animTimingFunction: (Vivus as any).EASE_OUT
-                      });
-                      vivusRef.current.play(1);
-                      setStatus('🎬 Drawing animation started');
-                    } catch (e) {
-                      setStatus('❌ Animation failed to start');
-                    }
-                  }}
-                >
-                  ▶ Play Draw
-                </button>
-                <button
-                  type="button"
-                  className="px-2 py-1 rounded text-xs bg-emerald-600 hover:bg-emerald-500"
-                  onClick={() => {
-                    if (!drawSvgSnapshot || !currentProject) return;
-                    // Add draw preview as a canvas object
-                    const ok = buildCanvasAnimFromSvg(drawSvgSnapshot);
-                    if (!ok) { setStatus('Failed to parse SVG'); return; }
-                    const st = drawStateRef.current;
-                    let w = 400, h = 300;
-                    if (st.vb) {
-                      w = Math.max(64, Math.round(st.vb.w));
-                      h = Math.max(64, Math.round(st.vb.h));
-                    }
-
-                    const baseId = Date.now();
-                    const pathObjs = st.paths.map((p, i) => ({
-                      d: p.d,
-                      stroke: p.stroke || 'transparent',
-                      strokeWidth: p.strokeWidth || 2,
-                      fill: p.fill || 'transparent',
-                      m: p.m,
-                      len: st.lens[i] || 0,
-                    }));
-                    // Duration based on path length ensures preview speed scales
-                    // with SVG complexity when first added to canvas.
-                    const duration = Math.max(1, st.total / 300);
-                    addObject({
-                      id: `draw-preview-${baseId}`,
-                      type: 'svgPath',
-                      x: 150,
-                      y: 150,
-                      width: w,
-                      height: h,
-                      rotation: 0,
-                      properties: { paths: pathObjs, totalLen: st.total },
-                      animationType: 'drawIn',
-                      animationStart: currentTime,
-                      animationDuration: duration,
-                      animationEasing: 'easeOut',
-                    });
-                    setStatus('✅ Draw preview added to canvas');
-                  }}
-                >
-                  ➕ Add to Canvas
-                </button>
-              </div>
-            </div>
-            
-            {/* Fixed-size preview row */}
-            <div className="grid grid-cols-4 gap-3">
-              {/* Original uploaded image */}
-              <div className="rounded border border-blue-500 bg-gray-800 overflow-hidden" style={{height: '12rem', position: 'relative'}}>
-                <div className="absolute top-1 left-1 text-xs text-blue-400 bg-black/60 px-1 rounded z-10">Original</div>
-                <div className="w-full h-full flex items-center justify-center" style={{backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '12px 12px'}}>
-                  {tracePreview ? (
-                    <img
-                      src={tracePreview || undefined}
-                      alt="original"
-                      className="max-w-full max-h-full object-contain"
-                    />
-                  ) : (
-                    <div className="text-xs text-gray-500">No image</div>
-                  )}
-                </div>
-              </div>
-              
-              {/* SVG Static preview */}
-              <div className="rounded border border-green-500 bg-gray-800 overflow-hidden" style={{height: '12rem', position: 'relative'}}>
-                <div className="absolute top-1 left-1 text-xs text-green-400 bg-black/60 px-1 rounded z-10">SVG Static</div>
-                <div className="w-full h-full p-1" style={{backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '12px 12px'}}>
-                  <div className="w-full h-full" dangerouslySetInnerHTML={{ __html: normalizedSvg || '<div class="flex items-center justify-center h-full text-xs text-gray-500">No SVG</div>' }} />
-                </div>
-              </div>
-
-              {/* DOM SVG (Vivus) animated */}
-              <div className="rounded border border-purple-500 bg-gray-800 overflow-hidden" style={{height: '12rem', position: 'relative'}}>
-                <div className="absolute top-1 left-1 text-xs text-purple-400 bg-black/60 px-1 rounded z-10">DOM SVG (Vivus)</div>
-                <div className="w-full h-full p-1" style={{backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '12px 12px'}}>
-                  <div ref={domSvgHolderRef} className="w-full h-full flex items-center justify-center" />
-                </div>
-              </div>
-
-              {/* Canvas (Resvg) rasterized */}
-              <div className="rounded border border-orange-500 bg-gray-800 overflow-hidden" style={{height: '12rem', position: 'relative'}}>
-                <div className="absolute top-1 left-1 text-xs text-orange-400 bg-black/60 px-1 rounded z-10">Canvas (Resvg)</div>
-                <div className="w-full h-full p-1" style={{backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.1) 1px, transparent 1px)', backgroundSize: '12px 12px'}}>
-                  <div className="w-full h-full flex items-center justify-center">
-                    <canvas ref={canvasRef} style={{maxWidth:'100%', maxHeight:'100%', display:'block'}} />
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <div className="mt-2 text-xs text-gray-400 text-center">
-              Original → SVG Static → DOM SVG (vector animation) → Canvas (rasterized)
-            </div>
-          </div>
-        )}
       </div>
     </div>
-  {refineOpen && !!refineItems && !!refineViewport && (
-      <PathRefiner
-        open={true}
-        onClose={() => setRefineOpen(false)}
-        viewport={refineViewport!}
-        items={refineItems!}
-        setItems={(updater) => setRefineItems(prev => prev ? updater(prev) : prev)}
-        onApplySingle={(combinedD) => {
-          // Add a single svgPath with one combined path
-          const svgNS = 'http://www.w3.org/2000/svg';
-          const pathEl = document.createElementNS(svgNS, 'path');
-          pathEl.setAttribute('d', combinedD);
-          let len = 0;
-          try { len = (pathEl as any).getTotalLength(); } catch {}
-          const duration = Math.max(1, len / 300);
-          useAppStore.getState().addObject({
-            id: `svg-${Date.now()}`,
-            type: 'svgPath',
-            x: 100,
-            y: 100,
-      width: refineViewport!.width,
-      height: refineViewport!.height,
-            rotation: 0,
-            properties: {
-              paths: [{ d: combinedD, stroke: '#111827', strokeWidth: 2, fill: 'transparent' }]
-            },
-            animationType: 'drawIn',
-            animationStart: 0,
-            animationDuration: duration,
-            animationEasing: 'easeOut'
-          });
-          setStatus('Added single combined path ✔');
-          setRefineOpen(false);
-          setRefineItems(null);
-        }}
-      />
-    )}
     </>
   );
 };
 
 export default SvgImporter;
-
-// Mount the PathRefiner overlay inside SvgImporter render tree
-// Inject right before export by augmenting SvgImporter return is not feasible here;
-// Instead, we rely on placing the component above and rendering it conditionally where SvgImporter returns.
-
-// Inline Path Refinement modal component (scoped to SvgImporter helpers)
-const PathRefiner: React.FC<{
-  open: boolean;
-  onClose: () => void;
-  viewport: { width: number; height: number };
-  items: RefineItem[];
-  setItems: (updater: (prev: RefineItem[]) => RefineItem[]) => void;
-  // simplified props; limit toggle removed
-  onApplySingle: (combinedD: string) => void;
-}> = ({ open, onClose, viewport, items, setItems, onApplySingle }) => {
-  const [hoverId, setHoverId] = React.useState<string | null>(null);
-
-  // Compute combined bbox to center/fit content so it doesn't hide off-screen
-  const vb = React.useMemo(() => {
-    const svgNS = 'http://www.w3.org/2000/svg';
-    const svg = document.createElementNS(svgNS, 'svg');
-    svg.setAttribute('width', '0'); svg.setAttribute('height', '0');
-    svg.style.position = 'absolute'; svg.style.left = '-99999px'; svg.style.top = '-99999px';
-    document.body.appendChild(svg);
-    let minX = Number.POSITIVE_INFINITY, minY = Number.POSITIVE_INFINITY, maxX = Number.NEGATIVE_INFINITY, maxY = Number.NEGATIVE_INFINITY;
-    try {
-      for (const it of items) {
-        const path = document.createElementNS(svgNS, 'path');
-        path.setAttribute('d', it.d);
-        svg.appendChild(path);
-        const b = path.getBBox();
-        minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
-        maxX = Math.max(maxX, b.x + b.width); maxY = Math.max(maxY, b.y + b.height);
-      }
-    } catch {}
-    document.body.removeChild(svg);
-    if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
-      return { x: 0, y: 0, w: viewport.width, h: viewport.height };
-    }
-    const pad = Math.max(1, Math.round(Math.max(maxX - minX, maxY - minY) * 0.05));
-    return { x: Math.floor(minX) - pad, y: Math.floor(minY) - pad, w: Math.ceil(maxX - minX) + 2 * pad, h: Math.ceil(maxY - minY) + 2 * pad };
-  }, [items, viewport.width, viewport.height]);
-
-  const toggle = (id: string) => {
-    setItems(prev => prev.map(it => it.id === id ? { ...it, selected: !it.selected } : it));
-  };
-
-  const deleteSelected = () => {
-    setItems(prev => prev.filter(it => !it.selected));
-  };
-
-  const selectAll = (val: boolean) => {
-    setItems(prev => prev.map(it => ({ ...it, selected: val })));
-  };
-
-  const connectTwo = () => {
-    const sel = items.filter(it => it.selected);
-    if (sel.length !== 2) return;
-    const [a, b] = sel;
-    if (a.points.length === 0 || b.points.length === 0) return;
-    const aEnds = [a.points[0], a.points[a.points.length - 1]];
-    const bEnds = [b.points[0], b.points[b.points.length - 1]];
-    let best: { ai: number; bi: number; d: number } | null = null;
-    for (let ai = 0; ai < 2; ai++) for (let bi = 0; bi < 2; bi++) {
-      const dx = aEnds[ai].x - bEnds[bi].x;
-      const dy = aEnds[ai].y - bEnds[bi].y;
-      const dist = Math.hypot(dx, dy);
-      if (!best || dist < best.d) best = { ai, bi, d: dist };
-    }
-    if (!best) return;
-  // Capture narrowed values into locals to satisfy TS across the closure
-  const bai = best.ai;
-  const bbi = best.bi;
-  const d = `M ${aEnds[bai].x} ${aEnds[bai].y} L ${bEnds[bbi].x} ${bEnds[bbi].y}`;
-  const id = `connector-${Date.now()}`;
-  const p1 = aEnds[bai];
-  const p2 = bEnds[bbi];
-  setItems(prev => prev.concat([{ id, d, bbox: { x: 0, y: 0, width: 0, height: 0 }, points: [p1, p2], selected: true, kind: 'connector' }]));
-  };
-
-  const applySingle = () => {
-    const ds = items.filter(it => it.selected).map(it => it.d);
-    if (ds.length === 0) return;
-    const combined = ds.join(' ');
-    onApplySingle(combined);
-  };
-
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="bg-gray-900 border border-gray-700 rounded-lg shadow-xl p-3 w-[90vw] h-[85vh] flex flex-col">
-        <div className="flex items-center justify-between mb-2">
-          <div className="text-sm text-gray-200 font-medium">Path Refinement</div>
-          <button className="px-2 py-1 rounded bg-gray-700 text-gray-200" onClick={onClose}>Close</button>
-        </div>
-        <div className="flex-1 grid grid-cols-[1fr_280px] gap-3 overflow-hidden">
-          <div className="relative overflow-auto bg-white">
-            <svg
-              width={viewport.width}
-              height={viewport.height}
-              viewBox={`${vb.x} ${vb.y} ${Math.max(1, vb.w)} ${Math.max(1, vb.h)}`}
-              className="block"
-            >
-              {items.map(it => (
-                <path
-                  key={it.id}
-                  d={it.d}
-                  fill="none"
-                  stroke={it.selected ? (hoverId===it.id? '#22d3ee' : '#2563eb') : '#9ca3af'}
-                  strokeWidth={it.selected ? (hoverId===it.id? 3 : 2) : 1}
-                  opacity={it.kind==='connector' ? 0.9 : (it.selected ? 0.95 : 0.4)}
-                  style={{ cursor: 'pointer', pointerEvents: 'stroke' as any }}
-                  onMouseEnter={() => setHoverId(it.id)}
-                  onMouseLeave={() => setHoverId(prev => prev===it.id? null : prev)}
-                  onClick={() => toggle(it.id)}
-                />
-              ))}
-            </svg>
-          </div>
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <div className="text-xs text-gray-300">Paths: {items.length} | Selected: {items.filter(i=>i.selected).length}</div>
-              <div />
-            </div>
-            <div className="flex gap-2">
-              <button className="px-2 py-1 rounded bg-gray-700 text-gray-200" onClick={() => selectAll(true)}>Select all</button>
-              <button className="px-2 py-1 rounded bg-gray-700 text-gray-200" onClick={() => selectAll(false)}>Select none</button>
-            </div>
-            <div className="flex gap-2">
-              <button className="px-2 py-1 rounded bg-rose-700 text-white" onClick={deleteSelected}>Delete selected</button>
-              <button className="px-2 py-1 rounded bg-emerald-700 text-white" onClick={connectTwo} title="Select exactly two paths to bridge them">Connect 2</button>
-            </div>
-            <div className="mt-2 pt-2 border-t border-gray-700" />
-            <button className="px-3 py-2 rounded bg-blue-600 text-white" onClick={applySingle}>Generate Single Path and Add</button>
-            <div className="text-[11px] text-gray-400">
-              Tips: Click paths to toggle selection. Connect 2 joins nearest endpoints with a line. The final single path concatenates selected paths and connectors.
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};

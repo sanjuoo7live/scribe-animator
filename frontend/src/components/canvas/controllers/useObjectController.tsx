@@ -4,7 +4,8 @@ import { useCallback } from 'react';
 export const useObjectController = (
   obj: any,
   onUpdate: (id: string, updates: any) => void,
-  onSelect: (id: string | null) => void
+  onSelect: (id: string | null) => void,
+  onDblClick?: (id: string) => void
 ) => {
   const handleClick = useCallback((id: string) => {
     onSelect(id);
@@ -52,11 +53,13 @@ export const useObjectController = (
 
   const handleDblClick = useCallback((id: string) => {
     // Handle double-click actions (e.g., edit text)
-    if (obj.type === 'text') {
-      // This would trigger text editing mode
+    if (onDblClick) {
+      onDblClick(id);
+    } else if (obj.type === 'text') {
+      // Fallback for text editing if no callback provided
       console.log('Edit text for', id);
     }
-  }, [obj.type]);
+  }, [obj.type, onDblClick]);
 
   return {
     handleClick,

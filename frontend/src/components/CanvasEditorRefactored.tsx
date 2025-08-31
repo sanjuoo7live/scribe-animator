@@ -4,6 +4,7 @@ import Konva from 'konva';
 import { useAppStore } from '../store/appStore';
 import CanvasSettings from './CanvasSettings';
 import CameraControls from './CameraControls';
+import TextPropertiesModal from './TextPropertiesModal';
 
 // Import our new modular components
 import {
@@ -82,6 +83,10 @@ const CanvasEditorRefactored: React.FC = () => {
   const [fitMode, setFitMode] = useState<'width' | 'contain'>('contain');
   const [canvasSize, setCanvasSize] = useState({ width: 800, height: 600 });
   const [hasMounted, setHasMounted] = useState(false);
+
+  // Text properties modal state
+  const [showTextPropertiesModal, setShowTextPropertiesModal] = useState(false);
+  const [textPropertiesModalId, setTextPropertiesModalId] = useState<string | null>(null);
 
   // Drawing state
   const [isDrawing, setIsDrawing] = useState(false);
@@ -287,6 +292,18 @@ const CanvasEditorRefactored: React.FC = () => {
       }
     }
   }, [selectedObject, removeObject]);
+
+  // Text properties modal functions
+  const openTextPropertiesModal = useCallback((textObjId: string) => {
+    setTextPropertiesModalId(textObjId);
+    setShowTextPropertiesModal(true);
+    selectObject(textObjId);
+  }, [selectObject]);
+
+  const closeTextPropertiesModal = useCallback(() => {
+    setShowTextPropertiesModal(false);
+    setTextPropertiesModalId(null);
+  }, []);
 
   const { handleMouseDown, handleMouseMove, handleMouseUp } = usePointerEvents(
     tool,
@@ -518,7 +535,7 @@ const CanvasEditorRefactored: React.FC = () => {
         onDblClick: (id: string) => {
           // Handle double-click actions
           if (obj.type === 'text') {
-            // TODO: Implement text editing functionality
+            openTextPropertiesModal(id);
           }
         },
       });
@@ -526,7 +543,7 @@ const CanvasEditorRefactored: React.FC = () => {
 
     // Fallback for unsupported types
     return null;
-  }, [currentTime, selectedObject, tool, handleObjectClick, handleObjectDrag, handleObjectDragMove, handleObjectTransform]);
+  }, [currentTime, selectedObject, tool, handleObjectClick, handleObjectDrag, handleObjectDragMove, handleObjectTransform, openTextPropertiesModal]);
 
   // Get board background
   const getBoardBackground = useCallback((style: string, color: string) => {
@@ -611,6 +628,17 @@ const CanvasEditorRefactored: React.FC = () => {
             }}>
               📝 Text
             </button>
+
+            {/* Text Properties Button - only show when text object is selected */}
+            {selectedObject && currentProject?.objects.find(obj => obj.id === selectedObject)?.type === 'text' && (
+              <button
+                className="px-3 py-1 bg-purple-600 rounded hover:bg-purple-700 text-sm font-medium transition-colors"
+                onClick={() => openTextPropertiesModal(selectedObject)}
+                title="Edit Text Properties"
+              >
+                🎨 Text Props
+              </button>
+            )}
 
             <button
               className={`px-3 py-1 rounded text-sm font-medium transition-colors ${fitMode === 'width' ? 'bg-green-600 text-white' : 'bg-gray-600 text-gray-300 hover:bg-gray-500'}`}
@@ -742,6 +770,15 @@ const CanvasEditorRefactored: React.FC = () => {
         {/* Canvas Settings Modal */}
         {showCanvasSettings && (
           <CanvasSettings isOpen={showCanvasSettings} onClose={() => setShowCanvasSettings(false)} />
+        )}
+
+        {/* Text Properties Modal */}
+        {showTextPropertiesModal && textPropertiesModalId && (
+          <TextPropertiesModal
+            isOpen={showTextPropertiesModal}
+            onClose={closeTextPropertiesModal}
+            textObjId={textPropertiesModalId}
+          />
         )}
       </div>
     </CanvasProvider>

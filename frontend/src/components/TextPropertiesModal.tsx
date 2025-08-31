@@ -21,19 +21,27 @@ const TextPropertiesModal: React.FC<TextPropertiesModalProps> = ({
   const [size, setSize] = React.useState<{ width: number; height: number }>({ width: 400, height: 600 });
   const [isDragging, setIsDragging] = React.useState(false);
   const [isResizing, setIsResizing] = React.useState(false);
+  const [resizeHandle, setResizeHandle] = React.useState('');
   const [dragStart, setDragStart] = React.useState({ x: 0, y: 0 });
-  const [resizeStart, setResizeStart] = React.useState({ x: 0, y: 0, width: 0, height: 0 });
+  const [resizeStart, setResizeStart] = React.useState({
+    x: 0,
+    y: 0,
+    width: 0,
+    height: 0,
+    top: 0,
+    left: 0
+  });
 
   // Set initial position when opened (centered by default)
   React.useLayoutEffect(() => {
     if (!isOpen) return;
-    // Center the modal on screen
+    // Center the modal on screen when opened
     const w = size.width;
     const h = size.height;
     const left = Math.max(0, (window.innerWidth - w) / 2);
     const top = Math.max(0, (window.innerHeight - h) / 2);
     setPos({ top, left });
-  }, [isOpen, size.width, size.height]);
+  }, [isOpen]);
 
   const handleDragStart = (e: React.MouseEvent) => {
     if (e.button !== 0) return; // left click only
@@ -47,18 +55,32 @@ const TextPropertiesModal: React.FC<TextPropertiesModalProps> = ({
     (document.body.style as any).userSelect = 'none';
   };
 
-  const handleResizeStart = (e: React.MouseEvent) => {
-    if (e.button !== 0) return; // left click only
+  const handleResizeStart = (e: React.MouseEvent, handle: string) => {
+    if (e.button !== 0) return;
     e.preventDefault();
-    e.stopPropagation(); // Prevent drag from starting
+    e.stopPropagation();
     setIsResizing(true);
+    setResizeHandle(handle);
     setResizeStart({
       x: e.clientX,
       y: e.clientY,
       width: size.width,
-      height: size.height
+      height: size.height,
+      top: pos?.top ?? 0,
+      left: pos?.left ?? 0
     });
-    document.body.style.cursor = 'se-resize';
+
+    const cursorMap: Record<string, string> = {
+      right: 'ew-resize',
+      left: 'ew-resize',
+      top: 'ns-resize',
+      bottom: 'ns-resize',
+      'top-right': 'ne-resize',
+      'bottom-right': 'se-resize',
+      'top-left': 'nw-resize',
+      'bottom-left': 'sw-resize'
+    };
+    document.body.style.cursor = cursorMap[handle] || 'se-resize';
     (document.body.style as any).userSelect = 'none';
   };
 
@@ -71,28 +93,50 @@ const TextPropertiesModal: React.FC<TextPropertiesModalProps> = ({
         setPos({ top: newY, left: newX });
       }
 
-      if (isResizing) {
+      if (isResizing && resizeHandle) {
         const deltaX = e.clientX - resizeStart.x;
         const deltaY = e.clientY - resizeStart.y;
-        
-        // Calculate new dimensions with constraints
-        const newWidth = Math.max(320, resizeStart.width + deltaX);
-        const newHeight = Math.max(400, resizeStart.height + deltaY);
-        
-        // Ensure the modal doesn't go beyond viewport bounds
-        const maxWidth = window.innerWidth - (pos?.left ?? 0) - 20;
-        const maxHeight = window.innerHeight - (pos?.top ?? 0) - 20;
-        
-        const constrainedWidth = Math.min(newWidth, maxWidth);
-        const constrainedHeight = Math.min(newHeight, maxHeight);
-        
-        setSize({ width: constrainedWidth, height: constrainedHeight });
+
+        let newWidth = resizeStart.width;
+        let newHeight = resizeStart.height;
+        let newLeft = resizeStart.left;
+        let newTop = resizeStart.top;
+
+        const minWidth = 320;
+        const minHeight = 400;
+        const padding = 20;
+
+        if (resizeHandle.includes('right')) {
+          newWidth = Math.max(minWidth, Math.min(window.innerWidth - newLeft - padding, resizeStart.width + deltaX));
+        }
+        if (resizeHandle.includes('left')) {
+          const maxWidthIncrease = resizeStart.left;
+          const deltaWidth = -deltaX;
+          newWidth = Math.max(minWidth, Math.min(resizeStart.width + maxWidthIncrease, resizeStart.width + deltaWidth));
+          newLeft = Math.max(0, resizeStart.left - Math.max(0, newWidth - resizeStart.width));
+        }
+        if (resizeHandle.includes('bottom')) {
+          newHeight = Math.max(minHeight, Math.min(window.innerHeight - newTop - padding, resizeStart.height + deltaY));
+        }
+        if (resizeHandle.includes('top')) {
+          const maxHeightIncrease = resizeStart.top;
+          const deltaHeight = -deltaY;
+          newHeight = Math.max(minHeight, Math.min(resizeStart.height + maxHeightIncrease, resizeStart.height + deltaHeight));
+          newTop = Math.max(0, resizeStart.top - Math.max(0, newHeight - resizeStart.height));
+        }
+
+        newLeft = Math.max(0, Math.min(window.innerWidth - newWidth, newLeft));
+        newTop = Math.max(0, Math.min(window.innerHeight - newHeight, newTop));
+
+        setSize({ width: newWidth, height: newHeight });
+        setPos({ top: newTop, left: newLeft });
       }
     };
 
     const handleMouseUp = () => {
       setIsDragging(false);
       setIsResizing(false);
+      setResizeHandle('');
       document.body.style.cursor = '';
       (document.body.style as any).userSelect = '';
     };
@@ -106,7 +150,26 @@ const TextPropertiesModal: React.FC<TextPropertiesModalProps> = ({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, isResizing, dragStart, resizeStart, size, pos]);
+  }, [isDragging, isResizing, dragStart, resizeStart, size, pos, resizeHandle]);
+
+  // Close modal when Escape key is pressed
+  React.useEffect(() => {
+    if (!isOpen) return;
+
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKey, { capture: true });
+    return () => {
+      window.removeEventListener('keydown', handleKey, {
+        capture: true,
+      } as any);
+    };
+  }, [isOpen, onClose]);
 
   if (!isOpen || !textObj) return null;
 
@@ -373,25 +436,60 @@ const TextPropertiesModal: React.FC<TextPropertiesModalProps> = ({
           </div>
         </div>
 
-        <div className="flex justify-end gap-3 mt-6">
+        <div className="flex justify-end mt-6">
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-500 transition-colors"
+            className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-500 transition-colors"
           >
-            Close
+            Apply
           </button>
         </div>
         </div>
 
-        {/* Resize Handle */}
+        {/* Resize Handles */}
+        {/* Right */}
         <div
-          className="absolute bottom-0 right-0 w-6 h-6 cursor-se-resize bg-gray-600 hover:bg-gray-500 border-t border-l border-gray-500 rounded-tl-md transition-colors duration-200 pointer-events-auto"
-          onMouseDown={handleResizeStart}
+          onMouseDown={(e) => handleResizeStart(e, 'right')}
+          className="absolute top-5 bottom-5 right-0 w-1 cursor-ew-resize"
+        />
+        {/* Bottom */}
+        <div
+          onMouseDown={(e) => handleResizeStart(e, 'bottom')}
+          className="absolute left-5 right-5 bottom-0 h-1 cursor-ns-resize"
+        />
+        {/* Bottom Right Corner */}
+        <div
+          onMouseDown={(e) => handleResizeStart(e, 'bottom-right')}
+          className="absolute bottom-0 right-0 w-5 h-5 cursor-nwse-resize"
           style={{
-            background: 'linear-gradient(135deg, transparent 30%, rgba(255,255,255,0.1) 30%, rgba(255,255,255,0.1) 40%, transparent 40%, transparent 60%, rgba(255,255,255,0.1) 60%, rgba(255,255,255,0.1) 70%, transparent 70%)',
-            boxShadow: 'inset 1px 1px 0 rgba(255,255,255,0.1), inset -1px -1px 0 rgba(0,0,0,0.2)'
+            background: 'linear-gradient(135deg, transparent 50%, rgba(255,255,255,0.2) 50%)'
           }}
           title="Drag to resize modal"
+        />
+        {/* Left */}
+        <div
+          onMouseDown={(e) => handleResizeStart(e, 'left')}
+          className="absolute top-5 bottom-5 left-0 w-1 cursor-ew-resize"
+        />
+        {/* Top */}
+        <div
+          onMouseDown={(e) => handleResizeStart(e, 'top')}
+          className="absolute left-5 right-5 top-0 h-1 cursor-ns-resize"
+        />
+        {/* Top Left Corner */}
+        <div
+          onMouseDown={(e) => handleResizeStart(e, 'top-left')}
+          className="absolute top-0 left-0 w-5 h-5 cursor-nw-resize"
+        />
+        {/* Top Right Corner */}
+        <div
+          onMouseDown={(e) => handleResizeStart(e, 'top-right')}
+          className="absolute top-0 right-0 w-5 h-5 cursor-ne-resize"
+        />
+        {/* Bottom Left Corner */}
+        <div
+          onMouseDown={(e) => handleResizeStart(e, 'bottom-left')}
+          className="absolute bottom-0 left-0 w-5 h-5 cursor-sw-resize"
         />
       </div>
     </div>

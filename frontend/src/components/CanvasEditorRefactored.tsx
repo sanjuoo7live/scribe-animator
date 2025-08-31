@@ -86,6 +86,11 @@ const CanvasEditorRefactored: React.FC = () => {
   // Drawing state
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPath, setCurrentPath] = useState<{ x: number; y: number }[]>([]);
+  const [currentLineStyle, setCurrentLineStyle] = useState<{
+    opacity?: number;
+    dash?: number[];
+    composite?: GlobalCompositeOperation;
+  }>({});
 
   // Update canvas size based on container and fit mode (like original CanvasEditor)
   useEffect(() => {
@@ -204,10 +209,24 @@ const CanvasEditorRefactored: React.FC = () => {
 
   const handleDrawingStart = useCallback((point: { x: number; y: number }) => {
     if (tool === 'pen') {
+      // Derive style from pen type (from original CanvasEditor)
+      const style = (() => {
+        switch (penType) {
+          case 'highlighter':
+            return { opacity: 0.35, dash: undefined as number[] | undefined, composite: 'multiply' as const };
+          case 'dashed':
+            return { opacity: 1, dash: [strokeWidth * 2, Math.max(4, Math.round(strokeWidth * 1.2))], composite: 'source-over' as const };
+          case 'brush':
+          default:
+            return { opacity: 1, dash: undefined as number[] | undefined, composite: 'source-over' as const };
+        }
+      })();
+
       setIsDrawing(true);
+      setCurrentLineStyle(style);
       setCurrentPath([{ x: point.x, y: point.y }]);
     }
-  }, [tool]);
+  }, [tool, penType, strokeWidth]);
 
   const handleDrawingMove = useCallback((point: { x: number; y: number }) => {
     if (isDrawing && tool === 'pen') {
@@ -234,7 +253,11 @@ const CanvasEditorRefactored: React.FC = () => {
         properties: { 
           points: currentPath.map(p => ({ x: p.x - minX, y: p.y - minY })),
           strokeColor: strokeColor, 
-          strokeWidth: strokeWidth 
+          strokeWidth: strokeWidth,
+          penType: penType,
+          opacity: currentLineStyle.opacity,
+          dash: currentLineStyle.dash,
+          composite: currentLineStyle.composite
         },
         animationStart: 0,
         animationDuration: currentProject?.duration || 5,
@@ -244,7 +267,7 @@ const CanvasEditorRefactored: React.FC = () => {
     }
     setIsDrawing(false);
     setCurrentPath([]);
-  }, [isDrawing, tool, currentPath, strokeColor, strokeWidth, addObject, currentProject?.duration]);
+  }, [isDrawing, tool, currentPath, strokeColor, strokeWidth, penType, currentLineStyle, addObject, currentProject?.duration]);
 
   // Event hooks
   useCanvasEvents(
@@ -685,7 +708,9 @@ const CanvasEditorRefactored: React.FC = () => {
                     tension={0.5}
                     lineCap="round"
                     lineJoin="round"
-                    opacity={1}
+                    opacity={currentLineStyle.opacity ?? 1}
+                    dash={currentLineStyle.dash}
+                    globalCompositeOperation={currentLineStyle.composite as any}
                   />
                 )}
 

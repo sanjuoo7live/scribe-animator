@@ -172,6 +172,8 @@ export const DrawPathRenderer: React.FC<BaseRendererProps> = ({
           lineJoin="round"
           perfectDrawEnabled={false}
           globalCompositeOperation={opts.composite as any}
+          opacity={obj.properties?.opacity ?? 1}
+          dash={obj.properties?.dash}
           listening={tool === 'select'}
           hitStrokeWidth={20}
         />
@@ -268,7 +270,11 @@ export const DrawPathRenderer: React.FC<BaseRendererProps> = ({
         fill="rgba(0,0,0,0.01)"
         listening={tool === 'select'}
       />
-      {renderSegmentLines(revealedSegments, { stroke: isSelected ? '#4f46e5' : (obj.properties.strokeColor || '#000'), strokeWidth: (obj.properties.strokeWidth || 2) + (isSelected ? 1 : 0) })}
+      {renderSegmentLines(revealedSegments, { 
+        stroke: isSelected ? '#4f46e5' : (obj.properties.strokeColor || '#000'), 
+        strokeWidth: (obj.properties.strokeWidth || 2) + (isSelected ? 1 : 0),
+        composite: obj.properties?.composite
+      })}
       {/* Tool follower for drawPath */}
       {(() => {
         if (!(obj.animationType === 'drawIn' && head && prev && progress < 1)) return null;

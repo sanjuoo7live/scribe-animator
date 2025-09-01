@@ -37,6 +37,34 @@ export const TextRenderer: React.FC<BaseRendererProps> = ({
       )
     : textString;
 
+  // Build font family stack with robust emoji fallbacks
+  const containsEmoji = (s: string) => {
+    for (let i = 0; i < s.length; i++) {
+      const cp = s.codePointAt(i) ?? 0;
+      // If code point is above BMP, advance index extra
+      if (cp > 0xffff) i++;
+      if (
+        (cp >= 0x1f300 && cp <= 0x1faff) ||
+        (cp >= 0x1f900 && cp <= 0x1f9ff) ||
+        (cp >= 0x2600 && cp <= 0x27bf)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
+  const fontStack = (() => {
+    const base = props.fontFamily || 'Arial';
+    const custom = props.fontFamilyCustom?.trim();
+    const emojiFallback = "'Apple Color Emoji','Segoe UI Emoji','Noto Color Emoji','Twemoji Mozilla','EmojiOne Color','Segoe UI Symbol'";
+    const preferEmoji = !!props.forceEmojiFont || containsEmoji(textString);
+    if (preferEmoji) {
+      // Prioritize emoji fonts then base/custom
+      return `${emojiFallback}, ${custom ? custom + ', ' : ''}${base}`;
+    }
+    return `${custom ? custom + ', ' : ''}${base}, ${emojiFallback}`;
+  })();
+
   return (
     <Text
       key={obj.id}
@@ -45,7 +73,7 @@ export const TextRenderer: React.FC<BaseRendererProps> = ({
       y={animatedProps.y ?? obj.y}
       text={displayText}
       fontSize={props.fontSize || 16}
-  fontFamily={props.fontFamilyCustom || props.fontFamily || 'Arial'}
+      fontFamily={fontStack}
       fontStyle={props.fontStyle || 'normal'}
       textDecoration={props.textDecoration || 'none'}
       align={props.align || 'left'}

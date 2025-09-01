@@ -88,13 +88,18 @@ const CanvasImage: React.FC<{
 
   if (!img) {
     return (
-      <Text
+      <Group
         x={animatedProps.x ?? obj.x}
         y={animatedProps.y ?? obj.y}
-        text="Loading..."
-        fontSize={12}
-        fill="#999"
-      />
+        width={obj.width || 100}
+        height={obj.height || 100}
+        rotation={animatedProps.rotation ?? obj.rotation ?? 0}
+        scaleX={animatedProps.scaleX ?? 1}
+        scaleY={animatedProps.scaleY ?? 1}
+        opacity={animatedProps.opacity ?? 1}
+      >
+        <Text text="Loading..." fontSize={12} fill="#999" />
+      </Group>
     );
   }
 

@@ -97,6 +97,21 @@ export const getAnimatedProperties = (
   return animatedProps;
 };
 
+// Grapheme segmentation helper (avoids splitting emoji/ZWJ sequences)
+export const segmentGraphemes = (text: string): string[] => {
+  try {
+    // @ts-ignore Intl.Segmenter may not be in TS lib
+    if (typeof (Intl as any).Segmenter === 'function') {
+      // @ts-ignore
+      const seg = new (Intl as any).Segmenter(undefined, { granularity: 'grapheme' });
+      // @ts-ignore
+      return Array.from(seg.segment(text), (s: any) => s.segment);
+    }
+  } catch (_) { /* ignore */ }
+  // Fallback: Array.from iterates code points (better than code units)
+  return Array.from(text);
+};
+
 // Typewriter animation helper
 export const getTypewriterText = (
   fullText: string,
@@ -106,9 +121,10 @@ export const getTypewriterText = (
 ): string => {
   const elapsed = Math.min(Math.max(currentTime - animationStart, 0), animationDuration);
   const progress = animationDuration > 0 ? elapsed / animationDuration : 1;
-  const total = fullText.length;
+  const clusters = segmentGraphemes(fullText);
+  const total = clusters.length;
   const visibleCount = Math.max(0, Math.floor(progress * total + 0.00001));
-  return fullText.slice(0, visibleCount);
+  return clusters.slice(0, visibleCount).join('');
 };
 
 // Draw path animation helper
@@ -164,8 +180,8 @@ export const getDrawInText = (
     animationDuration,
     animationEasing
   );
-  
-  const total = fullText.length;
+  const clusters = segmentGraphemes(fullText);
+  const total = clusters.length;
   const visibleCount = Math.max(0, Math.floor(progress * total + 0.00001));
-  return fullText.slice(0, visibleCount);
+  return clusters.slice(0, visibleCount).join('');
 };

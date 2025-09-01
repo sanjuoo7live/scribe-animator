@@ -14,7 +14,7 @@ const MockText = Text as jest.MockedFunction<any>;
 describe('TextRenderer', () => {
   const mockObj = {
     id: 'text-1',
-    type: 'text',
+    type: 'text' as const,
     x: 100,
     y: 200,
     width: 150,
@@ -33,7 +33,7 @@ describe('TextRenderer', () => {
       stroke: '#000000',
       strokeWidth: 0,
     },
-    animationType: 'none',
+    animationType: 'none' as const,
   };
 
   const mockAnimatedProps = {
@@ -44,12 +44,12 @@ describe('TextRenderer', () => {
     opacity: 1,
   };
 
-  const mockProps = {
+  const defaultProps = {
     obj: mockObj,
     animatedProps: mockAnimatedProps,
-  currentTime: 1,
+    currentTime: 1,
     isSelected: false,
-    tool: 'select',
+    tool: 'select' as const,
     onClick: jest.fn(),
     onDragEnd: jest.fn(),
     onTransformEnd: jest.fn(),
@@ -60,23 +60,23 @@ describe('TextRenderer', () => {
     jest.clearAllMocks();
   });
 
-  it('renders Text component with correct props', () => {
-    render(<TextRenderer {...mockProps} />);
+  it('renders Text with correct props and emoji fallbacks in fontFamily', () => {
+    render(<TextRenderer {...defaultProps} />);
 
-    expect(MockText).toHaveBeenCalledWith(
+    const call = MockText.mock.calls[0][0];
+    expect(call).toEqual(
       expect.objectContaining({
         id: 'text-1',
         x: 100,
         y: 200,
+        width: 150,
         text: 'Hello World',
         fontSize: 24,
-        fontFamily: 'Arial',
         fontStyle: 'normal',
         textDecoration: 'none',
         align: 'left',
         lineHeight: 1.2,
         letterSpacing: 0,
-        width: 150,
         rotation: 0,
         scaleX: 1,
         scaleY: 1,
@@ -85,20 +85,17 @@ describe('TextRenderer', () => {
         stroke: undefined,
         strokeWidth: 0,
         draggable: true,
-      }),
-      undefined
+      })
     );
+    expect(typeof call.fontFamily).toBe('string');
+    expect(call.fontFamily).toContain('Arial');
+    expect(call.fontFamily).toMatch(/Apple Color Emoji|Segoe UI Emoji|Noto Color Emoji/);
   });
 
   it('applies selected styling when isSelected is true', () => {
-    render(<TextRenderer {...mockProps} isSelected={true} />);
-
-    expect(MockText).toHaveBeenCalledWith(
-      expect.objectContaining({
-        fill: '#4f46e5',
-      }),
-      undefined
-    );
+    render(<TextRenderer {...defaultProps} isSelected={true} />);
+    const call = MockText.mock.calls[0][0];
+    expect(call.fill).toBe('#4f46e5');
   });
 
   it('renders with stroke when strokeWidth > 0', () => {
@@ -111,79 +108,52 @@ describe('TextRenderer', () => {
       },
     };
 
-    render(<TextRenderer {...mockProps} obj={objWithStroke} />);
-
-    expect(MockText).toHaveBeenCalledWith(
-      expect.objectContaining({
-        stroke: '#ff0000',
-        strokeWidth: 2,
-      }),
-      undefined
-    );
+    render(<TextRenderer {...defaultProps} obj={objWithStroke} />);
+    const call = MockText.mock.calls[0][0];
+    expect(call.stroke).toBe('#ff0000');
+    expect(call.strokeWidth).toBe(2);
   });
 
   it('handles typewriter animation type', () => {
-    const objWithTypewriter = {
-      ...mockObj,
-      animationType: 'typewriter',
-    };
-
-    render(<TextRenderer {...mockProps} obj={objWithTypewriter} />);
-    // During animation, partial text is shown (not full text)
+    const objWithTypewriter = { ...mockObj, animationType: 'typewriter' as const };
+    render(<TextRenderer {...defaultProps} obj={objWithTypewriter} />);
     const call = MockText.mock.calls[0][0];
     expect(call.text).toBeDefined();
     expect(call.text).not.toBe('Hello World');
   });
 
-  it('calls onClick with correct parameters', () => {
-    const mockOnClick = jest.fn();
-    render(<TextRenderer {...mockProps} onClick={mockOnClick} />);
-
-    // Get the onClick handler from the Text mock
-    const textProps = MockText.mock.calls[0][0];
-    const mockEvent = { cancelBubble: false };
-
-    textProps.onClick(mockEvent);
-
-    expect(mockOnClick).toHaveBeenCalledWith(mockEvent);
-    expect(mockEvent.cancelBubble).toBe(true);
+  it('calls onClick and cancels bubbling', () => {
+    const onClick = jest.fn();
+    render(<TextRenderer {...defaultProps} onClick={onClick} />);
+    const props = MockText.mock.calls[0][0];
+    const evt = { cancelBubble: false } as any;
+    props.onClick(evt);
+    expect(onClick).toHaveBeenCalledWith(evt);
+    expect(evt.cancelBubble).toBe(true);
   });
 
   it('calls onDblClick with object id', () => {
-    const mockOnDblClick = jest.fn();
-    render(<TextRenderer {...mockProps} onDblClick={mockOnDblClick} />);
-
-    const textProps = MockText.mock.calls[0][0];
-
-    textProps.onDblClick();
-
-    expect(mockOnDblClick).toHaveBeenCalledWith('text-1');
+    const onDblClick = jest.fn();
+    render(<TextRenderer {...defaultProps} onDblClick={onDblClick} />);
+    const props = MockText.mock.calls[0][0];
+    props.onDblClick();
+    expect(onDblClick).toHaveBeenCalledWith('text-1');
   });
 
   it('is not draggable when tool is not select', () => {
-    render(<TextRenderer {...mockProps} tool="pen" />);
-
-    expect(MockText).toHaveBeenCalledWith(
-      expect.objectContaining({
-        draggable: false,
-      }),
-      undefined
-    );
+    render(<TextRenderer {...defaultProps} tool="pen" />);
+    const call = MockText.mock.calls[0][0];
+    expect(call.draggable).toBe(false);
   });
 
   it('uses default values when properties are missing', () => {
-    const objWithMinimalProps = {
-      ...mockObj,
-      properties: {},
-    };
-
-    render(<TextRenderer {...mockProps} obj={objWithMinimalProps} />);
-
-    expect(MockText).toHaveBeenCalledWith(
+    const objWithMinimalProps = { ...mockObj, properties: {} as any };
+    render(<TextRenderer {...defaultProps} obj={objWithMinimalProps} />);
+    const call = MockText.mock.calls[0][0];
+    expect(call).toEqual(
       expect.objectContaining({
         text: 'Text',
         fontSize: 16,
-        fontFamily: 'Arial',
         fontStyle: 'normal',
         textDecoration: 'none',
         align: 'left',
@@ -192,8 +162,10 @@ describe('TextRenderer', () => {
         fill: '#000',
         stroke: undefined,
         strokeWidth: 0,
-      }),
-      undefined
+      })
     );
+    expect(call.fontFamily).toContain('Arial');
+    expect(call.fontFamily).toMatch(/Apple Color Emoji|Segoe UI Emoji|Noto Color Emoji/);
   });
 });
+

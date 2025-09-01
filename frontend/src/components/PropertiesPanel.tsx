@@ -5,7 +5,6 @@ const PropertiesPanel: React.FC = () => {
   const { currentProject, selectedObject, updateObject, moveObjectLayer } = useAppStore();
   // Local UI state for motion path utilities
   const [motionTargetId, setMotionTargetId] = React.useState<string>('');
-  const [pathJsonInput, setPathJsonInput] = React.useState<string>('');
   
   const selectedObj = currentProject?.objects.find(obj => obj.id === selectedObject);
 
@@ -278,6 +277,15 @@ const PropertiesPanel: React.FC = () => {
                 <option value="'Noto Sans', 'Noto Emoji', 'Noto Sans Symbols', Arial">Noto (broad glyphs)</option>
               </select>
             </div>
+            <div className="flex items-center gap-2">
+              <input
+                id="forceEmojiFont"
+                type="checkbox"
+                checked={!!selectedObj.properties.forceEmojiFont}
+                onChange={(e) => updateProperty('forceEmojiFont', e.target.checked)}
+              />
+              <label htmlFor="forceEmojiFont" className="text-xs text-gray-300">Force Emoji Font (prioritize emoji glyphs)</label>
+            </div>
             <div>
               <label className="block text-xs text-gray-400 mb-1">Custom Font Family (optional)</label>
               <input
@@ -313,37 +321,62 @@ const PropertiesPanel: React.FC = () => {
               </label>
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">Path Points (JSON array of {`{x,y}`})</label>
-              <textarea
-                value={pathJsonInput !== '' ? pathJsonInput : JSON.stringify(selectedObj.properties?.pathPoints || [], null, 0)}
-                onChange={(e) => setPathJsonInput(e.target.value)}
-                onBlur={() => {
-                  try {
-                    const parsed = JSON.parse(pathJsonInput || '[]');
-                    if (Array.isArray(parsed)) {
-                      updateProperty('pathPoints', parsed);
-                    }
-                  } catch (_) {
-                    // ignore parse errors, keep old value
-                  } finally {
-                    setPathJsonInput('');
-                  }
-                }}
-                className="w-full p-2 bg-gray-700 text-white rounded text-xs h-20 font-mono"
-                placeholder='e.g. [{"x":0,"y":0},{"x":100,"y":50}]'
-              />
-              <div className="flex gap-2 mt-2">
-                <button
-                  className="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-xs"
-                  onClick={() => updateProperty('pathPoints', [])}
-                >Clear Path</button>
-                <button
-                  className="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-xs"
-                  onClick={() => updateProperty('pathPoints', [
-                    { x: selectedObj.x, y: selectedObj.y },
-                    { x: (selectedObj.x || 0) + (selectedObj.width || 100), y: selectedObj.y || 0 }
-                  ])}
-                >Create Simple Line</button>
+              <label className="block text-xs text-gray-400 mb-2">Path Points</label>
+              <div className="space-y-2">
+                {(selectedObj.properties?.pathPoints || []).map((pt: any, idx: number) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <span className="text-[11px] text-gray-400 w-6">#{idx}</span>
+                    <label className="text-[11px] text-gray-400">x</label>
+                    <input
+                      type="number"
+                      value={Number(pt.x) || 0}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        const arr = [...(selectedObj.properties?.pathPoints || [])];
+                        arr[idx] = { x: val, y: arr[idx]?.y ?? 0 };
+                        updateProperty('pathPoints', arr);
+                      }}
+                      className="w-20 p-1 bg-gray-700 text-white rounded text-xs"
+                    />
+                    <label className="text-[11px] text-gray-400">y</label>
+                    <input
+                      type="number"
+                      value={Number(pt.y) || 0}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        const arr = [...(selectedObj.properties?.pathPoints || [])];
+                        arr[idx] = { x: arr[idx]?.x ?? 0, y: val };
+                        updateProperty('pathPoints', arr);
+                      }}
+                      className="w-20 p-1 bg-gray-700 text-white rounded text-xs"
+                    />
+                    <button
+                      className="ml-2 px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-xs"
+                      onClick={() => {
+                        const arr = [...(selectedObj.properties?.pathPoints || [])];
+                        arr.splice(idx, 1);
+                        updateProperty('pathPoints', arr);
+                      }}
+                    >Remove</button>
+                  </div>
+                ))}
+                <div className="flex gap-2 mt-2">
+                  <button
+                    className="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-xs"
+                    onClick={() => updateProperty('pathPoints', [...(selectedObj.properties?.pathPoints || []), { x: 0, y: 0 }])}
+                  >Add Point</button>
+                  <button
+                    className="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-xs"
+                    onClick={() => updateProperty('pathPoints', [])}
+                  >Clear</button>
+                  <button
+                    className="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-xs"
+                    onClick={() => updateProperty('pathPoints', [
+                      { x: selectedObj.x, y: selectedObj.y },
+                      { x: (selectedObj.x || 0) + (selectedObj.width || 100), y: selectedObj.y || 0 }
+                    ])}
+                  >Simple Line</button>
+                </div>
               </div>
             </div>
             <p className="text-[11px] text-gray-500">Tip: Use "Make motion path" on a drawn path to auto-fill these points.</p>

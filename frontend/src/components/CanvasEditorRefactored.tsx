@@ -289,12 +289,23 @@ const CanvasEditorRefactored: React.FC = () => {
 
   // React-compatible keyboard handler for canvas container
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    // Ignore when typing into inputs/textareas/contenteditable
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || (t as any).isContentEditable)) {
+      return;
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      selectObject(null);
+      return;
+    }
     if (e.key === 'Delete' || e.key === 'Backspace') {
       if (selectedObject) {
+        e.preventDefault();
         removeObject(selectedObject);
       }
     }
-  }, [selectedObject, removeObject]);
+  }, [selectedObject, removeObject, selectObject]);
 
   // Text properties modal functions
   const openTextPropertiesModal = useCallback((textObjId: string) => {
@@ -709,7 +720,11 @@ const CanvasEditorRefactored: React.FC = () => {
                   fill="rgba(0,0,0,0)"
                   listening={true}
                   onMouseDown={() => {
-                    if (tool === 'select') selectObject(null);
+                    if (tool === 'select') {
+                      selectObject(null);
+                      // Ensure any focused input loses focus so keyboard shortcuts apply
+                      try { (document.activeElement as HTMLElement | null)?.blur?.(); } catch {}
+                    }
                   }}
                 />
 

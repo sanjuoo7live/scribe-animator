@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { useAppStore } from '../store/appStore';
 
 const KeyboardShortcuts: React.FC = () => {
-  const { undo, redo, canUndo, canRedo, removeObject, selectedObject } = useAppStore();
+  const { undo, redo, canUndo, canRedo, removeObject, selectedObject, selectObject } = useAppStore();
 
   // Helper function to show notifications
   const showNotification = (message: string, type: 'success' | 'info' = 'info') => {
@@ -24,8 +24,29 @@ const KeyboardShortcuts: React.FC = () => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore when typing into inputs/textareas/contenteditable
+      const t = e.target as HTMLElement | null;
+      if (
+        t && (
+          t.tagName === 'INPUT' ||
+          t.tagName === 'TEXTAREA' ||
+          (t as any).isContentEditable ||
+          (typeof (t as any).closest === 'function' && (t as any).closest('input,textarea,[contenteditable="true"]'))
+        )
+      ) {
+        return;
+      }
+
+      // Escape only deselects; never deletes
+      if (e.key === 'Escape') {
+        if (selectedObject) {
+          e.preventDefault();
+          selectObject(null);
+        }
+        return;
+      }
       // Always handle Delete/Backspace for deleting selected object
-      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedObject) {
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selectedObject) {
         e.preventDefault();
         removeObject(selectedObject);
         showNotification('Object deleted', 'success');
@@ -75,7 +96,7 @@ const KeyboardShortcuts: React.FC = () => {
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [undo, redo, canUndo, canRedo, removeObject, selectedObject]);
+  }, [undo, redo, canUndo, canRedo, removeObject, selectedObject, selectObject]);
 
   return null; // This component doesn't render anything
 };

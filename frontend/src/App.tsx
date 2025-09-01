@@ -166,14 +166,17 @@ const App: React.FC = () => {
 
   const handleRightPanelMouseUp = useCallback(() => {
     setIsResizingRight(false);
-    document.removeEventListener('mousemove', handleRightPanelMouseMove);
-    document.removeEventListener('mouseup', handleRightPanelMouseUp);
+    window.removeEventListener('mousemove', handleRightPanelMouseMove);
+    window.removeEventListener('mouseup', handleRightPanelMouseUp);
   }, [handleRightPanelMouseMove]);
 
   const handleRightPanelMouseDown = (e: React.MouseEvent) => {
     setIsResizingRight(true);
-    document.addEventListener('mousemove', handleRightPanelMouseMove);
-    document.addEventListener('mouseup', handleRightPanelMouseUp);
+    // Prime layout read once to avoid 0 rect edge case on first drag
+    const layout = document.querySelector('.app-layout') as HTMLElement | null;
+    if (layout) { layout.getBoundingClientRect(); }
+    window.addEventListener('mousemove', handleRightPanelMouseMove, { passive: false });
+    window.addEventListener('mouseup', handleRightPanelMouseUp, { passive: false });
     e.preventDefault();
   };
 
@@ -184,8 +187,8 @@ const App: React.FC = () => {
       document.removeEventListener('mouseup', handleLeftPanelMouseUp);
       document.removeEventListener('mousemove', handleTimelineMouseMove);
       document.removeEventListener('mouseup', handleTimelineMouseUp);
-      document.removeEventListener('mousemove', handleRightPanelMouseMove);
-      document.removeEventListener('mouseup', handleRightPanelMouseUp);
+  window.removeEventListener('mousemove', handleRightPanelMouseMove);
+  window.removeEventListener('mouseup', handleRightPanelMouseUp);
     };
   }, [
     handleLeftPanelMouseMove,

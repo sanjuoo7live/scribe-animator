@@ -1040,17 +1040,10 @@ const SvgImporter: React.FC = () => {
                     type="button"
                     className="btn btn-gray"
                     disabled={!lastSvg}
-                    onClick={() => addSnapshotToCanvas('standard')}
+                      onClick={() => addSnapshotToCanvas()}
                   >➕ Add to Canvas</button>
                 </div>
-                <div>
-                  <button
-                    className="btn btn-blue"
-                    disabled={!lastSvg}
-                    onClick={() => addSnapshotToCanvas('preview')}
-                    title="Add using the same timing as Play Draw"
-                  >➕ Add as Preview Draw</button>
-                </div>
+                
               </div>
               <div className="draw-area" style={{position:'relative'}}>
                 <div ref={domSvgHolderRef} className="draw-svg-holder" style={{position:'absolute', inset:0}} />

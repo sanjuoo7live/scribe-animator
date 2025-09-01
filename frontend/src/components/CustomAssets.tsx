@@ -27,12 +27,8 @@ const CustomAssets: React.FC = () => {
     return saved === 'list' ? 'list' : 'grid';
   });
 
-  // Dynamic backend URL based on current frontend port
-  const getBackendUrl = () => {
-    const currentPort = window.location.port;
-    const backendPort = currentPort === '3002' ? '3001' : '3001'; // Can be made more dynamic if needed
-    return `${window.location.protocol}//${window.location.hostname}:${backendPort}`;
-  };
+  // Selected API base ("" for same-origin proxy, or explicit http://localhost:3001)
+  const [apiBase, setApiBase] = useState<string>('');
 
   // Local name map to persist renames client-side
   const getNameMap = (): Record<string, string> => {
@@ -47,17 +43,48 @@ const CustomAssets: React.FC = () => {
   };
 
   // Load custom assets from backend (repo baseline)
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const loadAssets = async () => {
     try {
-      const response = await fetch(`${getBackendUrl()}/api/assets`);
-      if (response.ok) {
-        const data: CustomAsset[] = await response.json();
-        const nameMap = getNameMap();
-        const mapped = data.map(a => ({ ...a, originalName: nameMap[a.id] || a.originalName }));
-        setAssets(mapped);
+      setLoadError(null);
+      // Try same-origin (works with CRA proxy and HTTPS)
+      const tryBases = [''];
+      // Fallbacks for local development without proxy
+      tryBases.push('http://localhost:3001');
+      tryBases.push('http://127.0.0.1:3001');
+
+      let found: string | null = null;
+  let lastStatus: number | null = null;
+
+      for (const base of tryBases) {
+        try {
+          const resp = await fetch(`${base}/api/assets`);
+          if (!resp.ok) {
+            lastStatus = resp.status;
+            continue;
+          }
+          const data: CustomAsset[] = await resp.json();
+          const nameMap = getNameMap();
+          const mapped = data.map(a => ({ ...a, originalName: nameMap[a.id] || a.originalName }));
+          setAssets(mapped);
+          setApiBase(base);
+          found = base;
+          break;
+  } catch {}
+      }
+
+      if (!found) {
+        setAssets([]);
+        if (lastStatus) {
+          setLoadError(`Failed to load assets (HTTP ${lastStatus})`);
+        } else {
+          setLoadError('Unable to reach assets API');
+        }
       }
     } catch (error) {
       console.error('Failed to load custom assets:', error);
+      setLoadError('Unable to reach assets API');
     }
   };
 
@@ -92,7 +119,7 @@ const CustomAssets: React.FC = () => {
       formData.append('asset', file);
 
       try {
-        const response = await fetch(`${getBackendUrl()}/api/upload`, {
+        const response = await fetch(`${apiBase}/api/upload`, {
           method: 'POST',
           body: formData,
         });
@@ -122,7 +149,7 @@ const CustomAssets: React.FC = () => {
       return;
     }
 
-    const newObject = {
+  const newObject = {
       id: `custom-${asset.id}-${Date.now()}`,
       type: 'image' as const,
       x: 200 + Math.random() * 100,
@@ -130,7 +157,7 @@ const CustomAssets: React.FC = () => {
       width: 150,
       height: 150,
       properties: {
-        src: `${getBackendUrl()}${asset.path}`,
+    src: `${apiBase}${asset.path}`,
         alt: asset.originalName,
         assetId: asset.id,
         assetName: asset.originalName,
@@ -151,7 +178,7 @@ const CustomAssets: React.FC = () => {
     if (!confirm(`Delete ${asset.originalName}?`)) return;
 
     try {
-      const response = await fetch(`${getBackendUrl()}/api/assets/${asset.filename}`, {
+      const response = await fetch(`${apiBase}/api/assets/${asset.filename}`, {
         method: 'DELETE',
       });
 
@@ -177,7 +204,7 @@ const CustomAssets: React.FC = () => {
     const name = prompt('Rename asset', current)?.trim();
     if (!name || name === current) return;
     try {
-      await fetch(`${getBackendUrl()}/api/assets/${asset.id}/rename`, {
+      await fetch(`${apiBase}/api/assets/${asset.id}/rename`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name })
@@ -358,7 +385,12 @@ const CustomAssets: React.FC = () => {
 
       {/* Asset List/Grid */}
       <div className={`flex-1 min-h-0 overflow-auto ${viewMode === 'grid' ? '' : ''}`}>
-        {filteredAssets.length === 0 ? (
+        {loadError ? (
+          <div className="text-center text-red-400 py-8">
+            <div className="text-sm">Error loading assets</div>
+            <div className="text-xs">{loadError}. Is the backend running on http://localhost:3001?</div>
+          </div>
+        ) : filteredAssets.length === 0 ? (
           <div className="text-center text-gray-400 py-8">
             {assets.length === 0 ? (
               <div>
@@ -388,7 +420,7 @@ const CustomAssets: React.FC = () => {
                 >
                   <div className="aspect-square bg-gray-600 rounded mb-2 flex items-center justify-center overflow-hidden">
                     <img
-                      src={`${getBackendUrl()}${asset.path}`}
+                      src={`${apiBase}${asset.path}`}
                       alt={asset.originalName}
                       className="w-full h-full object-contain"
                       loading="lazy"
@@ -433,7 +465,7 @@ const CustomAssets: React.FC = () => {
                   title={`Add ${asset.originalName} to canvas`}
                 >
                   <img
-                    src={`${getBackendUrl()}${asset.path}`}
+                    src={`${apiBase}${asset.path}`}
                     alt={asset.originalName}
                     className="w-full h-full object-contain"
                     loading="lazy"
@@ -469,7 +501,7 @@ const CustomAssets: React.FC = () => {
         return (
           <ProDrawEditor
             isOpen={true}
-            assetSrc={`${getBackendUrl()}${selectedAsset.path}`}
+            assetSrc={`${apiBase}${selectedAsset.path}`}
             assetId={selectedAsset.id}
             variant="floating"
             onClose={closeProEditor}

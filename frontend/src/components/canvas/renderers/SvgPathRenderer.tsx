@@ -29,9 +29,19 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
   const paths = Array.isArray(obj.properties?.paths) ? obj.properties.paths : [];
   const totalLen = obj.properties?.totalLen || 0;
   const draw = obj.animationType === 'drawIn';
+  const previewMode = !!obj.properties?.previewDraw;
+  const drawOptions = obj.properties?.drawOptions || null;
+  const fillKind: 'afterAll' | 'perPath' | 'batched' = drawOptions?.fillStrategy?.kind
+    || (previewMode ? 'perPath' : 'afterAll');
+  const batchesN = Math.max(2, Number(drawOptions?.fillStrategy?.batchesN || 4));
+  const previewStrokeColor = drawOptions?.previewStroke?.color || '#3b82f6';
+  const previewWidthBoost = typeof drawOptions?.previewStroke?.widthBoost === 'number' ? drawOptions.previewStroke.widthBoost : 1;
 
   // Reveal length is tied to object's duration so timeline edits directly influence drawing speed
   const targetLen = draw ? progress * totalLen : totalLen;
+  // Batched fill threshold
+  const batchIndex = totalLen > 0 ? Math.floor(Math.max(0, Math.min(0.999999, targetLen / totalLen)) * batchesN) : 0;
+  const batchThreshold = (fillKind === 'batched' && totalLen > 0) ? (batchIndex / batchesN) * totalLen : totalLen;
   let consumed = 0;
 
   return (
@@ -104,14 +114,14 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
         let dash: number[] | undefined;
         let dashOffset = 0;
         let fillColor: string | undefined = wantFill ? 'transparent' : undefined;
-        // Prefer selection color; otherwise prefer path stroke; during drawIn, use a visible preview color
+        // Prefer selection color; otherwise prefer path stroke; during drawIn, optionally use a visible preview color
         const baseStroke = (p.stroke && p.stroke !== 'none') ? p.stroke : '#111827';
         let strokeColor: string = isSelected ? '#4f46e5' : baseStroke;
-        if (draw && progress < 1) {
-          strokeColor = '#3b82f6'; // Blue preview color during drawIn
+        if (draw && progress < 1 && !previewMode) {
+          strokeColor = previewStrokeColor; // Preview color during drawIn (suppressed in preview mode)
         }
 
-        if (draw && len > 0 && totalLen > 0) {
+  if (draw && len > 0 && totalLen > 0) {
           const start = consumed;
           const end = consumed + len;
           if (targetLen <= start) {
@@ -120,16 +130,35 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
             dashOffset = 0;
             strokeColor = 'transparent';
           } else if (targetLen >= end) {
-            // This path fully revealed; only allow fill when the entire object is complete
+            // This path fully revealed
             dash = undefined;
             dashOffset = 0;
-            fillColor = wantFill && progress >= 1 ? (p.fill as string) : (wantFill ? 'transparent' : undefined);
+            // Fill policy
+            if (wantFill) {
+              if (fillKind === 'perPath') {
+                fillColor = p.fill as string;
+              } else if (fillKind === 'batched') {
+                // Only fill if the path end lies within the current batch threshold
+                const endPos = end;
+                fillColor = endPos <= batchThreshold ? (p.fill as string) : 'transparent';
+              } else {
+                // afterAll
+                fillColor = progress >= 1 ? (p.fill as string) : 'transparent';
+              }
+            } else {
+              fillColor = undefined;
+            }
           } else {
             // in progress
             const localReveal = Math.max(0, Math.min(len, targetLen - start));
             // Draw only the first localReveal portion visibly
             dash = [Math.max(0.001, localReveal), len];
             dashOffset = 0;
+            // If original path had no stroke, use a visible fallback during drawing
+            const hadStroke = !!(p.stroke && p.stroke !== 'none' && p.stroke !== 'transparent');
+            if (!hadStroke) {
+              strokeColor = previewStrokeColor;
+            }
           }
         } else {
           // no animation: show full with fill
@@ -147,8 +176,8 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
               ctx.save();
               if (matrix) ctx.transform(matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5]);
               const path = new Path2D(d);
-              // Slightly thicken during draw to improve visibility
-              ctx.lineWidth = (p.strokeWidth ?? 3) + (isSelected ? 0.5 : 0) + (draw ? 1 : 0);
+              // Slightly thicken during draw to improve visibility; configurable via previewWidthBoost
+              ctx.lineWidth = (p.strokeWidth ?? 3) + (isSelected ? 0.5 : 0) + (draw ? (previewWidthBoost || 0) : 0);
               ctx.lineCap = 'round';
               ctx.lineJoin = 'round';
               ctx.strokeStyle = strokeColor;

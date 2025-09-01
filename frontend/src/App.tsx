@@ -21,6 +21,9 @@ const App: React.FC = () => {
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
   const [timelineHeight, setTimelineHeight] = useState(300);
   const [isResizingLeft, setIsResizingLeft] = useState(false);
+  // Right panel (Properties) resizable
+  const [rightPanelWidth, setRightPanelWidth] = useState(320);
+  const [isResizingRight, setIsResizingRight] = useState(false);
   const [isResizingTimeline, setIsResizingTimeline] = useState(false);
   const [showRightPanel, setShowRightPanel] = useState(false); // Right panel is hidden by default
   const { selectedObject } = useAppStore();
@@ -144,6 +147,36 @@ const App: React.FC = () => {
     e.preventDefault();
   };
 
+  // Handle right panel resizing
+  const handleRightPanelMouseMove = useCallback((e: MouseEvent) => {
+    if (isResizingRight) {
+      // Compute width as distance from right edge of app-layout
+      const layout = document.querySelector('.app-layout') as HTMLElement | null;
+      if (layout) {
+        const rect = layout.getBoundingClientRect();
+        const fromRight = Math.max(0, rect.right - e.clientX);
+        const newWidth = Math.min(Math.max(fromRight, 260), 640);
+        setRightPanelWidth(newWidth);
+      } else {
+        // Fallback: clamp between 260 and 640 using clientX
+        setRightPanelWidth(prev => Math.min(Math.max(prev + (isResizingRight ? 0 : 0), 260), 640));
+      }
+    }
+  }, [isResizingRight]);
+
+  const handleRightPanelMouseUp = useCallback(() => {
+    setIsResizingRight(false);
+    document.removeEventListener('mousemove', handleRightPanelMouseMove);
+    document.removeEventListener('mouseup', handleRightPanelMouseUp);
+  }, [handleRightPanelMouseMove]);
+
+  const handleRightPanelMouseDown = (e: React.MouseEvent) => {
+    setIsResizingRight(true);
+    document.addEventListener('mousemove', handleRightPanelMouseMove);
+    document.addEventListener('mouseup', handleRightPanelMouseUp);
+    e.preventDefault();
+  };
+
   // Cleanup event listeners on unmount
   React.useEffect(() => {
     return () => {
@@ -151,8 +184,17 @@ const App: React.FC = () => {
       document.removeEventListener('mouseup', handleLeftPanelMouseUp);
       document.removeEventListener('mousemove', handleTimelineMouseMove);
       document.removeEventListener('mouseup', handleTimelineMouseUp);
+      document.removeEventListener('mousemove', handleRightPanelMouseMove);
+      document.removeEventListener('mouseup', handleRightPanelMouseUp);
     };
-  }, [handleLeftPanelMouseMove, handleLeftPanelMouseUp, handleTimelineMouseMove, handleTimelineMouseUp]);
+  }, [
+    handleLeftPanelMouseMove,
+    handleLeftPanelMouseUp,
+    handleTimelineMouseMove,
+    handleTimelineMouseUp,
+    handleRightPanelMouseMove,
+    handleRightPanelMouseUp,
+  ]);
 
   return (
     <div className="app">
@@ -319,7 +361,13 @@ const App: React.FC = () => {
         </div>
         
   {(showRightPanel && !(isPlaying && compactUIOnPlay)) && (
-          <div className="right-panel">
+          <div className="right-panel" style={{ width: `${rightPanelWidth}px` }}>
+            {/* Resizer on the left edge of the right panel */}
+            <div
+              className={`right-panel-resizer ${isResizingRight ? 'resizing' : ''}`}
+              onMouseDown={handleRightPanelMouseDown}
+              title="Drag to resize properties"
+            />
             <PropertiesPanel />
           </div>
         )}

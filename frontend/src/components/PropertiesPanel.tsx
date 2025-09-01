@@ -1,5 +1,6 @@
 import React from 'react';
 import { useAppStore } from '../store/appStore';
+import SvgDrawSettings, { SvgDrawOptions } from './SvgDrawSettings';
 
 const PropertiesPanel: React.FC = () => {
   const { currentProject, selectedObject, updateObject, moveObjectLayer } = useAppStore();
@@ -477,6 +478,20 @@ const PropertiesPanel: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* SVG Draw Settings */}
+      {selectedObj.type === 'svgPath' && (
+        <div className="mb-6">
+          <h4 className="text-sm font-semibold text-gray-400 mb-2">Draw Settings</h4>
+          <p className="text-[11px] text-gray-500 mb-2">Hand-draw animation uses stroke-dash reveal. Easing is forced to linear.</p>
+          <SvgDrawSettings
+            value={selectedObj.properties?.drawOptions as SvgDrawOptions | undefined}
+            onChange={(opts) => updateProperty('drawOptions', opts)}
+            totalLen={selectedObj.properties?.totalLen}
+            currentDurationSec={selectedObj.animationDuration}
+          />
+        </div>
+      )}
 
       {/* Draw Path Utilities */}
       {selectedObj.type === 'drawPath' && (

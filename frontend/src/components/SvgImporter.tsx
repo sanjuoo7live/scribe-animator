@@ -1,6 +1,7 @@
 import React from 'react';
 import { useAppStore } from '../store/appStore';
 import { traceImageDataToPaths } from '../vtrace/simpleTrace';
+import SvgDrawSettings, { SvgDrawOptions, defaultSvgDrawOptions } from './SvgDrawSettings';
 // MediaPipe segmentation removed per UI simplification
 
 type ParsedPath = { d: string; stroke?: string; strokeWidth?: number; fill?: string; fillRule?: 'nonzero'|'evenodd' };
@@ -60,6 +61,8 @@ const SvgImporter: React.FC = () => {
   const domSvgHolderRef = React.useRef<HTMLDivElement | null>(null);
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const [advOpen, setAdvOpen] = React.useState(true);
+  // Draw settings (unified)
+  const [drawOptions, setDrawOptions] = React.useState<SvgDrawOptions>(defaultSvgDrawOptions);
   const drawStateRef = React.useRef<{
     vb: { x: number; y: number; w: number; h: number } | null;
     paths: { d: string; stroke: string; strokeWidth: number; fill: string; m?: [number,number,number,number,number,number] }[];
@@ -182,6 +185,54 @@ const SvgImporter: React.FC = () => {
       return true;
     } catch { return false; }
   }, [resizeCanvasToHolder]);
+
+  // Helper: add current draw snapshot to canvas with configured options
+  const addSnapshotToCanvas = React.useCallback((mode?: 'standard' | 'preview') => {
+    if (!drawSvgSnapshot || !currentProject) return;
+    const ok = buildCanvasAnimFromSvg(drawSvgSnapshot);
+    if (!ok) { setStatus('Failed to parse SVG'); return; }
+    const st = drawStateRef.current;
+    const vb = st.vb;
+    let w = 400, h = 300;
+    if (vb) { w = Math.max(64, Math.round(vb.w)); h = Math.max(64, Math.round(vb.h)); }
+    const baseId = Date.now();
+    const pathObjs = st.paths.map((p, i) => ({
+      d: p.d,
+      stroke: p.stroke || 'transparent',
+      strokeWidth: p.strokeWidth || 2,
+      fill: p.fill || 'transparent',
+      m: p.m,
+      len: st.lens[i] || 0,
+    }));
+    // Determine options: prefer provided mode for legacy button, else use configured drawOptions
+    const opts: SvgDrawOptions = mode
+      ? { ...drawOptions, mode, fillStrategy: mode === 'preview' ? { kind: 'perPath' } : mode === 'standard' ? { kind: 'afterAll' } : drawOptions.fillStrategy }
+      : drawOptions;
+    // Compute duration from options
+    const durationSec = opts.speed.kind === 'duration'
+      ? Math.max(0.1, opts.speed.durationSec || 3)
+      : Math.max(0.5, st.total / Math.max(1, (opts.speed.pps || 300)));
+    addObject({
+      id: `draw-${mode}-${baseId}`,
+      type: 'svgPath',
+      x: 150,
+      y: 150,
+      width: w,
+      height: h,
+      rotation: 0,
+      properties: {
+        paths: pathObjs,
+        totalLen: st.total,
+        previewDraw: (opts.mode === 'preview'), // legacy flag for backward compatibility
+        drawOptions: opts,
+      },
+      animationType: 'drawIn',
+      animationStart: 0,
+      animationDuration: durationSec,
+      animationEasing: 'linear',
+    });
+    setStatus(opts.mode === 'preview' ? '✅ Preview-style draw added to canvas' : opts.mode === 'batched' ? '✅ Batched draw added to canvas' : '✅ Draw added to canvas');
+  }, [addObject, buildCanvasAnimFromSvg, currentProject, drawSvgSnapshot, drawOptions]);
   // Normalized SVG string for responsive preview (compute viewBox if missing; avoid TS deps)
   // ResizeObserver to auto-resize canvas on container or window resize
   React.useEffect(() => {
@@ -934,6 +985,16 @@ const SvgImporter: React.FC = () => {
             </div>
             {/* Draw Preview on Canvas */}
             <div className="subpanel">
+              {/* Unified Draw Settings */}
+              <div className="mb-3">
+                <SvgDrawSettings
+                  value={drawOptions}
+                  onChange={setDrawOptions}
+                  totalLen={drawStateRef.current.total}
+                  currentDurationSec={(drawStateRef.current.durationMs || 3000) / 1000}
+                  compact
+                />
+              </div>
               <div className="flex items-center justify-between" style={{marginBottom:8}}>
                 <div style={{color:'#e5e7eb', fontWeight:600}}>Draw Preview on Canvas</div>
                 <div className="flex items-center gap-2">
@@ -979,44 +1040,16 @@ const SvgImporter: React.FC = () => {
                     type="button"
                     className="btn btn-gray"
                     disabled={!lastSvg}
-                    onClick={() => {
-                      if (!drawSvgSnapshot || !currentProject) return;
-                      // Build path objects with transforms using same logic as Draw Preview
-                      const ok = buildCanvasAnimFromSvg(drawSvgSnapshot);
-                      if (!ok) { setStatus('Failed to parse SVG'); return; }
-                      const st = drawStateRef.current;
-                      const vb = st.vb;
-                      let w = 400, h = 300;
-                      if (vb) { w = Math.max(64, Math.round(vb.w)); h = Math.max(64, Math.round(vb.h)); }
-                      const baseId = Date.now();
-                      const pathObjs = st.paths.map((p, i) => ({
-                        d: p.d,
-                        stroke: p.stroke || 'transparent',
-                        strokeWidth: p.strokeWidth || 2,
-                        fill: p.fill || 'transparent',
-                        m: p.m,
-                        len: st.lens[i] || 0,
-                      }));
-                      // Estimate a default duration based on total path length so
-                      // initial playback speed roughly matches SVG complexity.
-                      const duration = Math.max(1, st.total / 300);
-                      addObject({
-                        id: `draw-preview-${baseId}`,
-                        type: 'svgPath',
-                        x: 150,
-                        y: 150,
-                        width: w,
-                        height: h,
-                        rotation: 0,
-                        properties: { paths: pathObjs, totalLen: st.total },
-                        animationType: 'drawIn', // SVG objects should have drawIn animation for hand drawing effect
-                        animationStart: 0,
-                        animationDuration: duration,
-                        animationEasing: 'linear', // Use linear easing for SVG objects
-                      });
-                      setStatus('✅ Draw preview added to canvas');
-                    }}
+                    onClick={() => addSnapshotToCanvas('standard')}
                   >➕ Add to Canvas</button>
+                </div>
+                <div>
+                  <button
+                    className="btn btn-blue"
+                    disabled={!lastSvg}
+                    onClick={() => addSnapshotToCanvas('preview')}
+                    title="Add using the same timing as Play Draw"
+                  >➕ Add as Preview Draw</button>
                 </div>
               </div>
               <div className="draw-area" style={{position:'relative'}}>

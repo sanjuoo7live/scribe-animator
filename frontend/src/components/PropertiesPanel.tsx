@@ -24,8 +24,13 @@ const PropertiesPanel: React.FC = () => {
         return [...baseTypes, 'drawIn', 'pathFollow'];
       case 'image':
         return [...baseTypes, 'drawIn', 'pathFollow'];
-      case 'icon':
       case 'svg':
+        // SVG objects should only have 'none' animation by default
+        return ['none'];
+      case 'svgPath':
+        // SVG path objects should only have drawIn animation for hand drawing effect
+        return ['none', 'drawIn'];
+      case 'icon':
         return [...baseTypes, 'drawIn', 'pathFollow'];
       case 'hand':
       case 'character':
@@ -41,14 +46,29 @@ const PropertiesPanel: React.FC = () => {
   }, [selectedObj, getAvailableAnimationTypes]);
 
   // Reset animation type to 'none' if current type is not available for this object type
+  // Special handling for SVG objects - always set to 'none'
   React.useEffect(() => {
     if (!selectedObj) return;
     
     const currentAnimationType = selectedObj.animationType || 'none';
+    
+    // Special case for SVG objects - default to 'drawIn' for hand drawing animation
+    if (selectedObj.type === 'svgPath') {
+      if (currentAnimationType !== 'drawIn' && currentAnimationType !== 'none') {
+        updateObjectProperty('animationType', 'drawIn');
+      }
+      // Also set easing to 'linear' for SVG objects (most neutral)
+      if ((selectedObj.animationEasing || 'easeOut') !== 'linear') {
+        updateObjectProperty('animationEasing', 'linear');
+      }
+      return;
+    }
+    
+    // For other objects, reset if current animation type is not available
     if (!availableAnimationTypes.includes(currentAnimationType)) {
       updateObjectProperty('animationType', 'none');
     }
-  }, [selectedObj, selectedObj?.animationType, availableAnimationTypes, updateObjectProperty]);
+  }, [selectedObj, selectedObj?.animationType, selectedObj?.animationEasing, availableAnimationTypes, updateObjectProperty]);
 
   if (!selectedObj) {
     return (

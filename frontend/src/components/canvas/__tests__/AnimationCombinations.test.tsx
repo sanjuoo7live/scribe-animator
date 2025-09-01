@@ -342,8 +342,8 @@ describe('Animation Type and Easing Combinations', () => {
       });
     });
 
-    // Test drawIn specific behavior
-    it('should apply dash animation for drawIn', () => {
+    // Test that SVG objects use drawIn animation for hand drawing effect
+    it('should apply drawIn animation for SVG objects (hand drawing effect)', () => {
       const props = {
         ...baseProps,
         obj: {

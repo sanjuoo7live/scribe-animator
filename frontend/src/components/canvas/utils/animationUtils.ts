@@ -35,18 +35,26 @@ export const getAnimatedProperties = (
       animatedProps.opacity = progress;
       break;
     case 'scaleIn':
-      animatedProps.scaleX = progress;
-      animatedProps.scaleY = progress;
+      // Don't apply scaleIn animation to SVG objects
+      if (obj.type !== 'svgPath') {
+        animatedProps.scaleX = progress;
+        animatedProps.scaleY = progress;
+      }
       break;
     case 'slideIn':
       animatedProps.x = obj.x + (1 - progress) * 100;
       animatedProps.y = obj.y;
       break;
     case 'drawIn':
-      // Simple drawIn implementation for shapes - combine opacity and scale
-      animatedProps.opacity = progress;
-      animatedProps.scaleX = 0.3 + (progress * 0.7); // Start small and grow
-      animatedProps.scaleY = 0.3 + (progress * 0.7);
+      // For SVG objects, only apply opacity animation (no scaling)
+      // For other objects, apply both opacity and scale animation
+      if (obj.type === 'svgPath') {
+        animatedProps.opacity = progress;
+      } else {
+        animatedProps.opacity = progress;
+        animatedProps.scaleX = 0.3 + (progress * 0.7); // Start small and grow
+        animatedProps.scaleY = 0.3 + (progress * 0.7);
+      }
       break;
     case 'pathFollow':
       if (obj.properties?.pathPoints && Array.isArray(obj.properties.pathPoints)) {

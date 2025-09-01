@@ -1009,10 +1009,10 @@ const SvgImporter: React.FC = () => {
                         height: h,
                         rotation: 0,
                         properties: { paths: pathObjs, totalLen: st.total },
-                        animationType: 'drawIn',
+                        animationType: 'drawIn', // SVG objects should have drawIn animation for hand drawing effect
                         animationStart: 0,
                         animationDuration: duration,
-                        animationEasing: 'easeOut',
+                        animationEasing: 'linear', // Use linear easing for SVG objects
                       });
                       setStatus('✅ Draw preview added to canvas');
                     }}

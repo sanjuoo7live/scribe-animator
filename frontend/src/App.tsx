@@ -419,8 +419,8 @@ const App: React.FC = () => {
         />
       )}
       
-      {/* AI Assistant - Floating Widget */}
-      <AIAssistant />
+  {/* AI Assistant - Floating Widget (temporarily hidden) */}
+  {false && <AIAssistant />}
     </div>
   );
 };

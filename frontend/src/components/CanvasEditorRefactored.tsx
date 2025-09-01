@@ -22,7 +22,6 @@ import { ShapeRenderer } from './canvas/renderers/ShapeRenderer';
 import { DrawPathRenderer } from './canvas/renderers/DrawPathRenderer';
 import { SvgPathRenderer } from './canvas/renderers/SvgPathRenderer';
 import { PathFollowerRenderer } from './canvas/renderers/PathFollowerRenderer';
-import { AnimationTest } from './AnimationTest';
 import { calculateAnimationProgress, getAnimatedProperties } from './canvas/utils/animationUtils';
 
 // Register renderers
@@ -683,7 +682,6 @@ const CanvasEditorRefactored: React.FC = () => {
           onKeyDown={handleKeyDown}
           style={{ outline: 'none' }}
         >
-          <AnimationTest />
           <div
             ref={stageWrapperRef}
             className="rounded shadow-lg overflow-hidden relative min-w-fit min-h-fit"

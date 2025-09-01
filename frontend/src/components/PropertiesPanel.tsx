@@ -100,7 +100,7 @@ const PropertiesPanel: React.FC = () => {
   };
 
   return (
-    <div className="h-full p-4 bg-gray-800 text-white overflow-y-auto">
+  <div className="h-full p-4 bg-gray-800 text-white overflow-y-auto">
       <h3 className="text-lg font-semibold text-gray-300 mb-4">Properties</h3>
       
       {/* Object Info */}
@@ -131,7 +131,7 @@ const PropertiesPanel: React.FC = () => {
       {/* Position */}
       <div className="mb-6">
         <h4 className="text-sm font-semibold text-gray-400 mb-2">Position</h4>
-        <div className="grid grid-cols-2 gap-2">
+  <div className="grid grid-cols-2" style={{ columnGap: 8, rowGap: 8 }}>
           <div>
             <label className="block text-xs text-gray-400 mb-1">X</label>
             <input
@@ -157,7 +157,7 @@ const PropertiesPanel: React.FC = () => {
       {selectedObj.type === 'shape' && (
         <div className="mb-6">
           <h4 className="text-sm font-semibold text-gray-400 mb-2">Size</h4>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-2" style={{ columnGap: 8, rowGap: 8 }}>
             <div>
               <label className="block text-xs text-gray-400 mb-1">Width</label>
               <input
@@ -184,10 +184,10 @@ const PropertiesPanel: React.FC = () => {
       {selectedObj.type === 'shape' && (
         <div className="mb-6">
           <h4 className="text-sm font-semibold text-gray-400 mb-2">Appearance</h4>
-          <div className="space-y-3">
+      <div className="space-y-3">
             <div>
               <label className="block text-xs text-gray-400 mb-1">Fill Color</label>
-              <div className="flex gap-2">
+        <div className="flex items-center" style={{ gap: 6 }}>
                 <input
                   type="color"
                   value={selectedObj.properties.fill === 'transparent' ? '#ffffff' : selectedObj.properties.fill || '#ffffff'}
@@ -278,7 +278,7 @@ const PropertiesPanel: React.FC = () => {
                 <option value="'Noto Sans', 'Noto Emoji', 'Noto Sans Symbols', Arial">Noto (broad glyphs)</option>
               </select>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center" style={{ gap: 6 }}>
               <input
                 id="forceEmojiFont"
                 type="checkbox"
@@ -325,7 +325,7 @@ const PropertiesPanel: React.FC = () => {
               <label className="block text-xs text-gray-400 mb-2">Path Points</label>
               <div className="space-y-2">
                 {(selectedObj.properties?.pathPoints || []).map((pt: any, idx: number) => (
-                  <div key={idx} className="flex items-center gap-2">
+                  <div key={idx} className="flex items-center" style={{ gap: 6 }}>
                     <span className="text-[11px] text-gray-400 w-6">#{idx}</span>
                     <label className="text-[11px] text-gray-400">x</label>
                     <input
@@ -337,7 +337,8 @@ const PropertiesPanel: React.FC = () => {
                         arr[idx] = { x: val, y: arr[idx]?.y ?? 0 };
                         updateProperty('pathPoints', arr);
                       }}
-                      className="w-20 p-1 bg-gray-700 text-white rounded text-xs"
+                      className="p-1 bg-gray-700 text-white rounded text-xs"
+                      style={{ width: 64 }}
                     />
                     <label className="text-[11px] text-gray-400">y</label>
                     <input
@@ -349,10 +350,11 @@ const PropertiesPanel: React.FC = () => {
                         arr[idx] = { x: arr[idx]?.x ?? 0, y: val };
                         updateProperty('pathPoints', arr);
                       }}
-                      className="w-20 p-1 bg-gray-700 text-white rounded text-xs"
+                      className="p-1 bg-gray-700 text-white rounded text-xs"
+                      style={{ width: 64 }}
                     />
                     <button
-                      className="ml-2 px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-xs"
+                      className="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-xs"
                       onClick={() => {
                         const arr = [...(selectedObj.properties?.pathPoints || [])];
                         arr.splice(idx, 1);
@@ -361,7 +363,7 @@ const PropertiesPanel: React.FC = () => {
                     >Remove</button>
                   </div>
                 ))}
-                <div className="flex gap-2 mt-2">
+                <div className="flex items-center mt-2" style={{ gap: 6 }}>
                   <button
                     className="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-xs"
                     onClick={() => updateProperty('pathPoints', [...(selectedObj.properties?.pathPoints || []), { x: 0, y: 0 }])}

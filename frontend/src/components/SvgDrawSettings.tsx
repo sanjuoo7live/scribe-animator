@@ -63,11 +63,12 @@ export const SvgDrawSettings: React.FC<Props> = ({ value, onChange, totalLen, cu
   return (
     <div className={(compact ? '' : 'p-2 rounded bg-gray-700/40 border border-gray-600 ') + 'w-full overflow-hidden'}>
       {!compact && (<h4 className="text-xs font-semibold text-gray-300 mb-2">Draw Settings</h4>)}
-      <div className="grid grid-cols-2 gap-2 text-xs w-full min-w-0">
-        <label className="flex items-center gap-2 col-span-2 w-full">
-          <span className="text-gray-300 w-28">Mode</span>
+      <div className="text-xs w-full min-w-0" style={{ paddingTop: 12, paddingBottom: 12 }}>
+        {/* Row 1: Mode */}
+        <div className="flex items-center" style={{ gap: 12, marginBottom: 12 }}>
+          <span className="text-gray-300 flex-shrink-0" style={{ width: 84 }}>Mode</span>
           <select
-            className="flex-1 min-w-0 bg-gray-700 text-gray-100 rounded px-2 py-1"
+            className="bg-gray-700 text-gray-100 rounded px-3 py-2 flex-1 min-w-0"
             value={v.mode}
             onChange={(e) => update({ mode: e.target.value as SvgDrawMode })}
           >
@@ -75,12 +76,14 @@ export const SvgDrawSettings: React.FC<Props> = ({ value, onChange, totalLen, cu
             <option value="preview">Preview (fill per path)</option>
             <option value="batched">Batched</option>
           </select>
-        </label>
+        </div>
 
-        <label className="flex flex-wrap items-center gap-2 col-span-2 w-full">
-          <span className="text-gray-300 w-28">Speed</span>
+        {/* Row 2: Speed */}
+        <div className="flex items-center flex-wrap" style={{ gap: 12, marginBottom: 12 }}>
+          <span className="text-gray-300 flex-shrink-0" style={{ width: 84 }}>Speed</span>
           <select
-            className="bg-gray-700 text-gray-100 rounded px-2 py-1 w-32 shrink-0"
+            className="bg-gray-700 text-gray-100 rounded px-3 py-2"
+            style={{ width: 140, flexShrink: 0 }}
             value={v.speed.kind}
             onChange={(e) => updateSpeed({ kind: e.target.value as 'duration' | 'pps' })}
           >
@@ -94,7 +97,8 @@ export const SvgDrawSettings: React.FC<Props> = ({ value, onChange, totalLen, cu
               step={0.1}
               value={v.speed.durationSec ?? currentDurationSec ?? 3}
               onChange={(e) => updateSpeed({ durationSec: Number(e.target.value) })}
-              className="bg-gray-700 text-gray-100 rounded px-2 py-1 w-20 shrink-0"
+              className="bg-gray-700 text-gray-100 rounded px-3 py-2 flex-shrink-0"
+              style={{ width: 80 }}
             />
           ) : (
             <input
@@ -103,49 +107,55 @@ export const SvgDrawSettings: React.FC<Props> = ({ value, onChange, totalLen, cu
               step={10}
               value={v.speed.pps ?? 300}
               onChange={(e) => updateSpeed({ pps: Number(e.target.value) })}
-              className="bg-gray-700 text-gray-100 rounded px-2 py-1 w-24 shrink-0"
+              className="bg-gray-700 text-gray-100 rounded px-3 py-2 flex-shrink-0"
+              style={{ width: 90 }}
             />
           )}
-          <span className="text-gray-400 shrink-0">
+          <span className="text-gray-400 flex-shrink-0">
             (~{effectiveDuration.toFixed(1)}s)
           </span>
-        </label>
+        </div>
 
-        <div className="col-span-2 grid grid-cols-2 gap-2">
-          <label className="flex items-center gap-2">
-            <span className="text-gray-300 w-28">Preview stroke</span>
+        {/* Row 3: Preview stroke + Width boost */}
+        <div className="flex items-center flex-wrap" style={{ gap: 12, marginBottom: 12 }}>
+          <div className="flex items-center" style={{ gap: 12 }}>
+            <span className="text-gray-300 flex-shrink-0" style={{ width: 84 }}>Preview stroke</span>
             <input
               type="color"
               value={v.previewStroke?.color || '#3b82f6'}
               onChange={(e) => updatePreviewStroke({ color: e.target.value })}
-              className="w-8 h-6 border border-gray-500 rounded"
+              className="border border-gray-500 rounded flex-shrink-0"
+              style={{ width: 40, height: 32 }}
             />
-          </label>
-          <label className="flex items-center gap-2">
-            <span className="text-gray-300 w-28">Width boost</span>
+          </div>
+          <div className="flex items-center" style={{ gap: 12 }}>
+            <span className="text-gray-300 flex-shrink-0" style={{ width: 84 }}>Width boost</span>
             <input
               type="number"
               min={0}
               step={0.5}
               value={v.previewStroke?.widthBoost ?? 1}
               onChange={(e) => updatePreviewStroke({ widthBoost: Number(e.target.value) })}
-              className="bg-gray-700 text-gray-100 rounded px-2 py-1 w-20 shrink-0"
+              className="bg-gray-700 text-gray-100 rounded px-3 py-2 flex-shrink-0"
+              style={{ width: 80 }}
             />
-          </label>
+          </div>
         </div>
 
+        {/* Row 4: Batches */}
         {v.mode === 'batched' && (
-          <label className="flex items-center gap-2 col-span-2 w-full">
-            <span className="text-gray-300 w-28">Batches</span>
+          <div className="flex items-center" style={{ gap: 12, marginBottom: 0 }}>
+            <span className="text-gray-300 flex-shrink-0" style={{ width: 84 }}>Batches</span>
             <input
               type="number"
               min={2}
               step={1}
               value={v.fillStrategy?.batchesN ?? 4}
               onChange={(e) => updateFill({ kind: 'batched', batchesN: Math.max(2, Number(e.target.value)) })}
-              className="bg-gray-700 text-gray-100 rounded px-2 py-1 w-20 shrink-0"
+              className="bg-gray-700 text-gray-100 rounded px-3 py-2 flex-shrink-0"
+              style={{ width: 80 }}
             />
-          </label>
+          </div>
         )}
       </div>
     </div>

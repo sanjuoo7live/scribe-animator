@@ -63,6 +63,7 @@ const SvgImporter: React.FC = () => {
   const [advOpen, setAdvOpen] = React.useState(true);
   // Draw settings (unified)
   const [drawOptions, setDrawOptions] = React.useState<SvgDrawOptions>(defaultSvgDrawOptions);
+  const [showDrawSettings, setShowDrawSettings] = React.useState<boolean>(false);
   const drawStateRef = React.useRef<{
     vb: { x: number; y: number; w: number; h: number } | null;
     paths: { d: string; stroke: string; strokeWidth: number; fill: string; m?: [number,number,number,number,number,number] }[];
@@ -985,19 +986,14 @@ const SvgImporter: React.FC = () => {
             </div>
             {/* Draw Preview on Canvas */}
             <div className="subpanel">
-              {/* Unified Draw Settings */}
-              <div className="mb-3">
-                <SvgDrawSettings
-                  value={drawOptions}
-                  onChange={setDrawOptions}
-                  totalLen={drawStateRef.current.total}
-                  currentDurationSec={(drawStateRef.current.durationMs || 3000) / 1000}
-                  compact
-                />
-              </div>
               <div className="flex items-center justify-between" style={{marginBottom:8}}>
                 <div style={{color:'#e5e7eb', fontWeight:600}}>Draw Preview on Canvas</div>
                 <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-gray"
+                    onClick={() => setShowDrawSettings(!showDrawSettings)}
+                  >⚙️ Settings</button>
                   <button
                     type="button"
                     className="btn btn-success"
@@ -1045,6 +1041,18 @@ const SvgImporter: React.FC = () => {
                 </div>
                 
               </div>
+              {/* Collapsible Draw Settings */}
+              {showDrawSettings && (
+                <div className="mb-3">
+                  <SvgDrawSettings
+                    value={drawOptions}
+                    onChange={setDrawOptions}
+                    totalLen={drawStateRef.current.total}
+                    currentDurationSec={(drawStateRef.current.durationMs || 3000) / 1000}
+                    compact
+                  />
+                </div>
+              )}
               <div className="draw-area" style={{position:'relative'}}>
                 <div ref={domSvgHolderRef} className="draw-svg-holder" style={{position:'absolute', inset:0}} />
                 <canvas ref={canvasRef} style={{position:'absolute', inset:0, width:'100%', height:'100%'}} />

@@ -21,6 +21,7 @@ const App: React.FC = () => {
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
   const [timelineHeight, setTimelineHeight] = useState(300);
   const [isResizingLeft, setIsResizingLeft] = useState(false);
+  const leftResizeRef = React.useRef(false);
   // Right panel (Properties) resizable
   const [rightPanelWidth, setRightPanelWidth] = useState(320);
   const [isResizingRight, setIsResizingRight] = useState(false);
@@ -105,22 +106,36 @@ const App: React.FC = () => {
 
   // Handle left panel resizing
   const handleLeftPanelMouseMove = useCallback((e: MouseEvent) => {
-    if (isResizingLeft) {
-      const newWidth = Math.min(Math.max(e.clientX, 250), 500);
-      setLeftPanelWidth(newWidth);
+    if (leftResizeRef.current) {
+      const layout = document.querySelector('.app-layout') as HTMLElement | null;
+      if (layout) {
+        const rect = layout.getBoundingClientRect();
+        const fromLeft = Math.max(0, e.clientX - rect.left);
+        const newWidth = Math.min(Math.max(fromLeft, 250), 500);
+        setLeftPanelWidth(newWidth);
+      } else {
+        // Fallback to clientX if layout not found
+        const fallback = Math.min(Math.max(e.clientX, 250), 500);
+        setLeftPanelWidth(fallback);
+      }
     }
-  }, [isResizingLeft]);
+  }, []);
 
   const handleLeftPanelMouseUp = useCallback(() => {
+    leftResizeRef.current = false;
     setIsResizingLeft(false);
-    document.removeEventListener('mousemove', handleLeftPanelMouseMove);
-    document.removeEventListener('mouseup', handleLeftPanelMouseUp);
+    window.removeEventListener('mousemove', handleLeftPanelMouseMove);
+    window.removeEventListener('mouseup', handleLeftPanelMouseUp);
   }, [handleLeftPanelMouseMove]);
 
   const handleLeftPanelMouseDown = (e: React.MouseEvent) => {
+    leftResizeRef.current = true;
     setIsResizingLeft(true);
-    document.addEventListener('mousemove', handleLeftPanelMouseMove);
-    document.addEventListener('mouseup', handleLeftPanelMouseUp);
+    // Prime layout read once to avoid first-drag glitch
+    const layout = document.querySelector('.app-layout') as HTMLElement | null;
+    if (layout) { layout.getBoundingClientRect(); }
+    window.addEventListener('mousemove', handleLeftPanelMouseMove, { passive: false });
+    window.addEventListener('mouseup', handleLeftPanelMouseUp, { passive: false });
     e.preventDefault();
   };
 
@@ -186,8 +201,8 @@ const App: React.FC = () => {
   // Cleanup event listeners on unmount
   React.useEffect(() => {
     return () => {
-      document.removeEventListener('mousemove', handleLeftPanelMouseMove);
-      document.removeEventListener('mouseup', handleLeftPanelMouseUp);
+  window.removeEventListener('mousemove', handleLeftPanelMouseMove);
+  window.removeEventListener('mouseup', handleLeftPanelMouseUp);
       document.removeEventListener('mousemove', handleTimelineMouseMove);
       document.removeEventListener('mouseup', handleTimelineMouseUp);
   window.removeEventListener('mousemove', handleRightPanelMouseMove);
@@ -220,6 +235,28 @@ const App: React.FC = () => {
       localStorage.setItem('rightPanelWidth', String(rightPanelWidth));
     } catch {}
   }, [rightPanelWidth]);
+
+  // Persist left panel width across reloads
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem('leftPanelWidth');
+      if (raw) {
+        const v = Number(raw);
+        if (!Number.isNaN(v)) {
+          setLeftPanelWidth(Math.min(Math.max(v, 250), 500));
+        }
+      }
+    } catch {}
+  }, []);
+
+  React.useEffect(() => {
+    try {
+      // Only persist when panel is expanded; keep last width otherwise
+      if (!leftPanelCollapsed) {
+        localStorage.setItem('leftPanelWidth', String(leftPanelWidth));
+      }
+    } catch {}
+  }, [leftPanelWidth, leftPanelCollapsed]);
 
   return (
     <div className="app">

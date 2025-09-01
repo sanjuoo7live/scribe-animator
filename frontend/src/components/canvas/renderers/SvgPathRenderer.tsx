@@ -144,7 +144,8 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
               } else if (fillKind === 'batched') {
                 // Only fill if the path end lies within the current batch threshold
                 const endPos = end;
-                fillColor = endPos <= batchThreshold ? (p.fill as string) : 'transparent';
+                const EPS = 1e-6;
+                fillColor = endPos <= (batchThreshold + EPS) ? (p.fill as string) : 'transparent';
               } else {
                 // afterAll
                 fillColor = progress >= 1 ? (p.fill as string) : 'transparent';

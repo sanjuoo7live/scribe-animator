@@ -46,11 +46,9 @@ export const getAnimatedProperties = (
       animatedProps.y = obj.y;
       break;
     case 'drawIn':
-      // For SVG objects, only apply opacity animation (no scaling)
-      // For other objects, apply both opacity and scale animation
-      if (obj.type === 'svgPath') {
-        animatedProps.opacity = progress;
-      } else {
+  // For svgPath, do not apply group-level opacity or scale.
+  // The SvgPathRenderer performs the actual stroke reveal using dashes.
+  if (obj.type !== 'svgPath') {
         animatedProps.opacity = progress;
         animatedProps.scaleX = 0.3 + (progress * 0.7); // Start small and grow
         animatedProps.scaleY = 0.3 + (progress * 0.7);

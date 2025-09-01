@@ -61,13 +61,13 @@ export const SvgDrawSettings: React.FC<Props> = ({ value, onChange, totalLen, cu
     : (currentDurationSec || 3);
 
   return (
-    <div className={compact ? '' : 'p-2 rounded bg-gray-700/40 border border-gray-600'}>
+    <div className={(compact ? '' : 'p-2 rounded bg-gray-700/40 border border-gray-600 ') + 'w-full overflow-hidden'}>
       {!compact && (<h4 className="text-xs font-semibold text-gray-300 mb-2">Draw Settings</h4>)}
-      <div className="grid grid-cols-2 gap-2 text-xs">
-        <label className="flex items-center gap-2 col-span-2">
+      <div className="grid grid-cols-2 gap-2 text-xs w-full min-w-0">
+        <label className="flex items-center gap-2 col-span-2 w-full">
           <span className="text-gray-300 w-28">Mode</span>
           <select
-            className="flex-1 bg-gray-700 text-gray-100 rounded px-2 py-1"
+            className="flex-1 min-w-0 bg-gray-700 text-gray-100 rounded px-2 py-1"
             value={v.mode}
             onChange={(e) => update({ mode: e.target.value as SvgDrawMode })}
           >
@@ -77,10 +77,10 @@ export const SvgDrawSettings: React.FC<Props> = ({ value, onChange, totalLen, cu
           </select>
         </label>
 
-        <label className="flex items-center gap-2 col-span-2">
+        <label className="flex flex-wrap items-center gap-2 col-span-2 w-full">
           <span className="text-gray-300 w-28">Speed</span>
           <select
-            className="bg-gray-700 text-gray-100 rounded px-2 py-1"
+            className="bg-gray-700 text-gray-100 rounded px-2 py-1 w-32 shrink-0"
             value={v.speed.kind}
             onChange={(e) => updateSpeed({ kind: e.target.value as 'duration' | 'pps' })}
           >
@@ -94,7 +94,7 @@ export const SvgDrawSettings: React.FC<Props> = ({ value, onChange, totalLen, cu
               step={0.1}
               value={v.speed.durationSec ?? currentDurationSec ?? 3}
               onChange={(e) => updateSpeed({ durationSec: Number(e.target.value) })}
-              className="flex-1 bg-gray-700 text-gray-100 rounded px-2 py-1"
+              className="bg-gray-700 text-gray-100 rounded px-2 py-1 w-20 shrink-0"
             />
           ) : (
             <input
@@ -103,10 +103,10 @@ export const SvgDrawSettings: React.FC<Props> = ({ value, onChange, totalLen, cu
               step={10}
               value={v.speed.pps ?? 300}
               onChange={(e) => updateSpeed({ pps: Number(e.target.value) })}
-              className="flex-1 bg-gray-700 text-gray-100 rounded px-2 py-1"
+              className="bg-gray-700 text-gray-100 rounded px-2 py-1 w-24 shrink-0"
             />
           )}
-          <span className="text-gray-400">
+          <span className="text-gray-400 shrink-0">
             (~{effectiveDuration.toFixed(1)}s)
           </span>
         </label>
@@ -129,13 +129,13 @@ export const SvgDrawSettings: React.FC<Props> = ({ value, onChange, totalLen, cu
               step={0.5}
               value={v.previewStroke?.widthBoost ?? 1}
               onChange={(e) => updatePreviewStroke({ widthBoost: Number(e.target.value) })}
-              className="flex-1 bg-gray-700 text-gray-100 rounded px-2 py-1"
+              className="bg-gray-700 text-gray-100 rounded px-2 py-1 w-20 shrink-0"
             />
           </label>
         </div>
 
         {v.mode === 'batched' && (
-          <label className="flex items-center gap-2 col-span-2">
+          <label className="flex items-center gap-2 col-span-2 w-full">
             <span className="text-gray-300 w-28">Batches</span>
             <input
               type="number"
@@ -143,7 +143,7 @@ export const SvgDrawSettings: React.FC<Props> = ({ value, onChange, totalLen, cu
               step={1}
               value={v.fillStrategy?.batchesN ?? 4}
               onChange={(e) => updateFill({ kind: 'batched', batchesN: Math.max(2, Number(e.target.value)) })}
-              className="flex-1 bg-gray-700 text-gray-100 rounded px-2 py-1"
+              className="bg-gray-700 text-gray-100 rounded px-2 py-1 w-20 shrink-0"
             />
           </label>
         )}

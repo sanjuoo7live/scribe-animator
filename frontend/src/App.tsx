@@ -24,6 +24,7 @@ const App: React.FC = () => {
   // Right panel (Properties) resizable
   const [rightPanelWidth, setRightPanelWidth] = useState(320);
   const [isResizingRight, setIsResizingRight] = useState(false);
+  const rightResizeRef = React.useRef(false);
   const [isResizingTimeline, setIsResizingTimeline] = useState(false);
   const [showRightPanel, setShowRightPanel] = useState(false); // Right panel is hidden by default
   const { selectedObject } = useAppStore();
@@ -149,7 +150,7 @@ const App: React.FC = () => {
 
   // Handle right panel resizing
   const handleRightPanelMouseMove = useCallback((e: MouseEvent) => {
-    if (isResizingRight) {
+    if (rightResizeRef.current) {
       // Compute width as distance from right edge of app-layout
       const layout = document.querySelector('.app-layout') as HTMLElement | null;
       if (layout) {
@@ -159,19 +160,21 @@ const App: React.FC = () => {
         setRightPanelWidth(newWidth);
       } else {
         // Fallback: clamp between 260 and 640 using clientX
-        setRightPanelWidth(prev => Math.min(Math.max(prev + (isResizingRight ? 0 : 0), 260), 640));
+        setRightPanelWidth(prev => Math.min(Math.max(prev, 260), 640));
       }
     }
-  }, [isResizingRight]);
+  }, []);
 
   const handleRightPanelMouseUp = useCallback(() => {
-    setIsResizingRight(false);
+  rightResizeRef.current = false;
+  setIsResizingRight(false);
     window.removeEventListener('mousemove', handleRightPanelMouseMove);
     window.removeEventListener('mouseup', handleRightPanelMouseUp);
   }, [handleRightPanelMouseMove]);
 
   const handleRightPanelMouseDown = (e: React.MouseEvent) => {
-    setIsResizingRight(true);
+  rightResizeRef.current = true;
+  setIsResizingRight(true);
     // Prime layout read once to avoid 0 rect edge case on first drag
     const layout = document.querySelector('.app-layout') as HTMLElement | null;
     if (layout) { layout.getBoundingClientRect(); }
@@ -198,6 +201,25 @@ const App: React.FC = () => {
     handleRightPanelMouseMove,
     handleRightPanelMouseUp,
   ]);
+
+  // Persist right panel width across reloads
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem('rightPanelWidth');
+      if (raw) {
+        const v = Number(raw);
+        if (!Number.isNaN(v)) {
+          setRightPanelWidth(Math.min(Math.max(v, 260), 640));
+        }
+      }
+    } catch {}
+  }, []);
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('rightPanelWidth', String(rightPanelWidth));
+    } catch {}
+  }, [rightPanelWidth]);
 
   return (
     <div className="app">

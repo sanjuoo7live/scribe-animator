@@ -21,6 +21,7 @@ import { ImageRenderer } from './canvas/renderers/ImageRenderer';
 import { ShapeRenderer } from './canvas/renderers/ShapeRenderer';
 import { DrawPathRenderer } from './canvas/renderers/DrawPathRenderer';
 import { SvgPathRenderer } from './canvas/renderers/SvgPathRenderer';
+import { PathFollowerRenderer } from './canvas/renderers/PathFollowerRenderer';
 import { AnimationTest } from './AnimationTest';
 import { calculateAnimationProgress, getAnimatedProperties } from './canvas/utils/animationUtils';
 
@@ -30,6 +31,7 @@ rendererRegistry.register('image', ImageRenderer);
 rendererRegistry.register('shape', ShapeRenderer);
 rendererRegistry.register('drawPath', DrawPathRenderer);
 rendererRegistry.register('svgPath', SvgPathRenderer);
+rendererRegistry.register('pathFollower', PathFollowerRenderer);
 
 // Canvas Provider component
 const CanvasProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {

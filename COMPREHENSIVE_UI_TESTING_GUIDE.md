@@ -1,14 +1,28 @@
 # Comprehensive UI Testing Guide for Animation System
 
 ## Overview
-This guide provides comprehensive testing scenarios for all animation combinations in the Scribe Animator application. It covers 196 core test cases across 7 animation types, 4 easing functions, and 7 element types.
+This guide provides comprehensive testing scenarios for all animation combinations in the Scribe Animator application.
+
+Note: The previously stated "196 core test cases" assumed every animation/easing applied to every element. In practice, some combinations are intentionally restricted by product policy. See Policy Constraints below. With current capabilities, the actionable matrix is smaller and fully covered by parameterized tests.
 
 ## Test Matrix
 - **Animation Types**: none, fadeIn, slideIn, scaleIn, drawIn, pathFollow, typewriter
 - **Easing Functions**: linear, easeIn, easeOut, easeInOut
 - **Element Types**: text, shapes, icons/SVG, hands, characters, props, images
 
-## Core Test Cases (196 combinations)
+## Policy Constraints (Authoritative)
+
+- svgPath: allowed animations = [none, drawIn]; easing forced to linear; no scaling during/after drawIn.
+- text: supports typewriter and drawIn (text reveal), plus fadeIn/slideIn/scaleIn.
+- shape: supports drawIn and pathFollow in addition to base animations.
+- image (bitmap): supports base animations [none, fadeIn, slideIn, scaleIn].
+- hands/characters/props: treated as shapes until specialized types are added.
+- easing for "none" is N/A.
+
+These constraints are enforced in the UI and renderers; invalid selections are coerced to valid defaults.
+
+## Core Test Cases (capability-driven)
+The parameterized Jest suite enumerates valid combinations per element per the constraints above.
 
 ### 1. Text Elements
 **Animation: none**

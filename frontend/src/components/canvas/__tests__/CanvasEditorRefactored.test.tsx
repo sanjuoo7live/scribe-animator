@@ -2,6 +2,7 @@ import React from 'react';
 import { render } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import CanvasEditorRefactored from '../../CanvasEditorRefactored';
+import { useAppStore } from '../../../store/appStore';
 
 // Mock the canvas module for Konva
 jest.mock('canvas', () => ({
@@ -35,12 +36,40 @@ jest.mock('canvas', () => ({
   registerFont: jest.fn()
 }), { virtual: true });
 
-// Mock the store first
-const mockUseAppStore = jest.fn();
-
-// Mock the store
+// Mock the store (avoid hoisting issues by defining jest.fn inside factory)
 jest.mock('../../../store/appStore', () => ({
-  useAppStore: mockUseAppStore,
+  useAppStore: jest.fn(),
+}));
+
+// Polyfill ResizeObserver for jsdom with a simple class
+class RO {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+// @ts-ignore
+global.ResizeObserver = RO as any;
+// Mock react-konva to avoid jsdom canvas context issues
+jest.mock('react-konva', () => {
+  const React = require('react');
+  const Stub = ({ children, 'data-testid': testId }: any) => (
+    <div data-testid={testId || 'rk-stub'}>{children}</div>
+  );
+  return {
+    Stage: ({ children }: any) => <Stub data-testid="stage">{children}</Stub>,
+    Layer: ({ children }: any) => <Stub data-testid="layer">{children}</Stub>,
+    Rect: () => <div data-testid="konva-rect" />,
+    Transformer: () => <div data-testid="transformer" />,
+    Line: () => <div data-testid="konva-line" />,
+  };
+});
+
+// Polyfill ResizeObserver for jsdom environment
+// @ts-ignore
+global.ResizeObserver = global.ResizeObserver || jest.fn().mockImplementation(() => ({
+  observe: jest.fn(),
+  unobserve: jest.fn(),
+  disconnect: jest.fn(),
 }));
 
 // Mock child components
@@ -83,7 +112,8 @@ describe('CanvasEditorRefactored', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    mockUseAppStore.mockReturnValue(mockStore);
+  const mockedUseAppStore = useAppStore as unknown as jest.Mock;
+  mockedUseAppStore.mockReturnValue(mockStore);
   });
 
   it('renders without crashing', () => {
@@ -91,7 +121,9 @@ describe('CanvasEditorRefactored', () => {
   });
 
   it('renders with empty project', () => {
-    mockUseAppStore.mockReturnValue({
+  const mockedUseAppStore = useAppStore as unknown as jest.Mock;
+  mockedUseAppStore.mockReturnValue({
+  // @ts-ignore
       ...mockStore,
       currentProject: null,
     });
@@ -100,7 +132,9 @@ describe('CanvasEditorRefactored', () => {
   });
 
   it('handles missing camera position', () => {
-    mockUseAppStore.mockReturnValue({
+  const mockedUseAppStore = useAppStore as unknown as jest.Mock;
+  mockedUseAppStore.mockReturnValue({
+  // @ts-ignore
       ...mockStore,
       currentProject: {
         ...mockStore.currentProject,

@@ -104,7 +104,7 @@ const CanvasImage: React.FC<{
       y={animatedProps.y ?? obj.y}
       width={obj.width || img.width}
       height={obj.height || img.height}
-      rotation={obj.rotation || 0}
+  rotation={animatedProps.rotation ?? obj.rotation ?? 0}
       scaleX={animatedProps.scaleX ?? 1}
       scaleY={animatedProps.scaleY ?? 1}
       opacity={animatedProps.opacity ?? 1}

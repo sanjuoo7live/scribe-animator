@@ -47,6 +47,7 @@ describe('TextRenderer', () => {
   const mockProps = {
     obj: mockObj,
     animatedProps: mockAnimatedProps,
+  currentTime: 1,
     isSelected: false,
     tool: 'select',
     onClick: jest.fn(),
@@ -128,14 +129,10 @@ describe('TextRenderer', () => {
     };
 
     render(<TextRenderer {...mockProps} obj={objWithTypewriter} />);
-
-    // Should still render the full text for now
-    expect(MockText).toHaveBeenCalledWith(
-      expect.objectContaining({
-        text: 'Hello World',
-      }),
-      undefined
-    );
+    // During animation, partial text is shown (not full text)
+    const call = MockText.mock.calls[0][0];
+    expect(call.text).toBeDefined();
+    expect(call.text).not.toBe('Hello World');
   });
 
   it('calls onClick with correct parameters', () => {

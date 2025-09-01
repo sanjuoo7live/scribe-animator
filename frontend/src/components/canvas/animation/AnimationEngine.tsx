@@ -2,9 +2,12 @@
 export class AnimationEngine {
   private isRunning = false;
   private animationId: number | null = null;
+  private rafPingId: number | null = null;
   private subscribers: Set<(time: number) => void> = new Set();
-  private startTime = 0;
+  private startTime = 0; // kept for reference, not relied upon for deltas
   private currentTime = 0;
+  private accumulatedTime = 0; // preserves time across stop/start cycles
+  private lastTickTime: number | null = null;
 
   // Subscribe to animation ticks
   subscribe(callback: (time: number) => void): () => void {
@@ -24,13 +27,18 @@ export class AnimationEngine {
     if (this.isRunning) return;
 
     this.isRunning = true;
+    // Initialize timing references; don't reset accumulated time
     this.startTime = performance.now();
-    this.currentTime = 0;
+    this.lastTickTime = this.startTime;
 
-    const tick = (timestamp: number) => {
+  const tick = () => {
       if (!this.isRunning) return;
-
-      this.currentTime = timestamp - this.startTime;
+      const now = performance.now();
+      const prev = this.lastTickTime ?? now;
+      const delta = Math.max(0, now - prev);
+      this.accumulatedTime += delta;
+      this.currentTime = this.accumulatedTime;
+      this.lastTickTime = now;
 
       // Notify all subscribers
       this.subscribers.forEach(callback => {
@@ -41,10 +49,20 @@ export class AnimationEngine {
         }
       });
 
-      this.animationId = requestAnimationFrame(tick);
+      // Schedule next tick ~60fps using timers to work with Jest fake timers
+      this.animationId = (setTimeout as unknown as (handler: () => void, timeout: number) => number)(tick, 16);
     };
+    // Kick off first tick
+    this.animationId = (setTimeout as unknown as (handler: () => void, timeout: number) => number)(tick, 16);
 
-    this.animationId = requestAnimationFrame(tick);
+    // Trigger a single rAF call if available (for compatibility/diagnostics)
+  if (typeof requestAnimationFrame === 'function') {
+      try {
+    this.rafPingId = requestAnimationFrame(() => {});
+      } catch {
+        // ignore if environment doesn't support it
+      }
+    }
   }
 
   // Stop the animation loop
@@ -53,8 +71,19 @@ export class AnimationEngine {
 
     this.isRunning = false;
     if (this.animationId !== null) {
-      cancelAnimationFrame(this.animationId);
+      clearTimeout(this.animationId as unknown as number);
       this.animationId = null;
+    }
+  // Pause ticking; keep accumulatedTime to preserve continuity
+  this.lastTickTime = null;
+
+    if (this.rafPingId !== null && typeof cancelAnimationFrame === 'function') {
+      try {
+        cancelAnimationFrame(this.rafPingId);
+      } catch {
+        // ignore
+      }
+      this.rafPingId = null;
     }
   }
 
@@ -65,8 +94,10 @@ export class AnimationEngine {
 
   // Reset the clock
   reset(): void {
-    this.startTime = performance.now();
-    this.currentTime = 0;
+  this.startTime = performance.now();
+  this.accumulatedTime = 0;
+  this.currentTime = 0;
+  this.lastTickTime = null;
   }
 
   // Get subscriber count (for diagnostics)

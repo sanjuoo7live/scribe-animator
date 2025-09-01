@@ -56,6 +56,13 @@ export const getAnimatedProperties = (
         animatedProps.scaleY = 0.3 + (progress * 0.7);
       }
       break;
+    case 'typewriter':
+      // For non-text elements, treat typewriter as a progressive reveal via opacity
+      // Text-specific typewriter is handled in TextRenderer via getTypewriterText
+      if (obj.type !== 'text') {
+        animatedProps.opacity = progress;
+      }
+      break;
     case 'pathFollow':
       if (obj.properties?.pathPoints && Array.isArray(obj.properties.pathPoints)) {
         const pathPoints = obj.properties.pathPoints;

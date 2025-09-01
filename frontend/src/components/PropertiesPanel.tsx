@@ -3,6 +3,9 @@ import { useAppStore } from '../store/appStore';
 
 const PropertiesPanel: React.FC = () => {
   const { currentProject, selectedObject, updateObject, moveObjectLayer } = useAppStore();
+  // Local UI state for motion path utilities
+  const [motionTargetId, setMotionTargetId] = React.useState<string>('');
+  const [pathJsonInput, setPathJsonInput] = React.useState<string>('');
   
   const selectedObj = currentProject?.objects.find(obj => obj.id === selectedObject);
 
@@ -267,12 +270,83 @@ const PropertiesPanel: React.FC = () => {
                 className="w-full p-2 bg-gray-700 text-white rounded text-sm"
               >
                 <option value="Arial">Arial</option>
-                <option value="Times New Roman">Times New Roman</option>
-                <option value="Courier New">Courier New</option>
                 <option value="Helvetica">Helvetica</option>
+                <option value="Times New Roman">Times New Roman</option>
                 <option value="Georgia">Georgia</option>
+                <option value="Courier New">Courier New</option>
+                <option value="Arial, 'Apple Color Emoji', 'Noto Color Emoji', 'Segoe UI Symbol'">Arial + Emoji Fallback</option>
+                <option value="'Noto Sans', 'Noto Emoji', 'Noto Sans Symbols', Arial">Noto (broad glyphs)</option>
               </select>
             </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Custom Font Family (optional)</label>
+              <input
+                type="text"
+                value={selectedObj.properties.fontFamilyCustom || ''}
+                onChange={(e) => updateProperty('fontFamilyCustom', e.target.value)}
+                placeholder="e.g. Inter, 'Apple Color Emoji', sans-serif"
+                className="w-full p-2 bg-gray-700 text-white rounded text-sm"
+              />
+              <p className="text-[10px] text-gray-500 mt-1">Overrides the dropdown if provided. Use to include emoji/symbol fallbacks.</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Path Follow for Text/Image */}
+      {(selectedObj.type === 'text' || selectedObj.type === 'image') && (
+        <div className="mb-6">
+          <h4 className="text-sm font-semibold text-gray-400 mb-2">Path Follow</h4>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <button
+                className="px-2 py-1 bg-blue-600 hover:bg-blue-700 rounded text-xs"
+                onClick={() => updateObjectProperty('animationType', 'pathFollow')}
+              >Enable Path Follow</button>
+              <label className="flex items-center gap-2 text-xs text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={!!selectedObj.properties?.rotateWithPath}
+                  onChange={(e) => updateProperty('rotateWithPath', e.target.checked)}
+                />
+                Rotate with path
+              </label>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-400 mb-1">Path Points (JSON array of {`{x,y}`})</label>
+              <textarea
+                value={pathJsonInput !== '' ? pathJsonInput : JSON.stringify(selectedObj.properties?.pathPoints || [], null, 0)}
+                onChange={(e) => setPathJsonInput(e.target.value)}
+                onBlur={() => {
+                  try {
+                    const parsed = JSON.parse(pathJsonInput || '[]');
+                    if (Array.isArray(parsed)) {
+                      updateProperty('pathPoints', parsed);
+                    }
+                  } catch (_) {
+                    // ignore parse errors, keep old value
+                  } finally {
+                    setPathJsonInput('');
+                  }
+                }}
+                className="w-full p-2 bg-gray-700 text-white rounded text-xs h-20 font-mono"
+                placeholder='e.g. [{"x":0,"y":0},{"x":100,"y":50}]'
+              />
+              <div className="flex gap-2 mt-2">
+                <button
+                  className="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-xs"
+                  onClick={() => updateProperty('pathPoints', [])}
+                >Clear Path</button>
+                <button
+                  className="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-xs"
+                  onClick={() => updateProperty('pathPoints', [
+                    { x: selectedObj.x, y: selectedObj.y },
+                    { x: (selectedObj.x || 0) + (selectedObj.width || 100), y: selectedObj.y || 0 }
+                  ])}
+                >Create Simple Line</button>
+              </div>
+            </div>
+            <p className="text-[11px] text-gray-500">Tip: Use "Make motion path" on a drawn path to auto-fill these points.</p>
           </div>
         </div>
       )}
@@ -370,6 +444,55 @@ const PropertiesPanel: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Draw Path Utilities */}
+      {selectedObj.type === 'drawPath' && (
+        <div className="mb-6">
+          <h4 className="text-sm font-semibold text-gray-400 mb-2">Motion Path</h4>
+          <p className="text-[11px] text-gray-400 mb-2">Copy this drawn path as a motion path (pathFollow) onto another object.</p>
+          <div className="space-y-2">
+            <label className="block text-xs text-gray-400">Target Object</label>
+            <select
+              value={motionTargetId}
+              onChange={(e) => setMotionTargetId(e.target.value)}
+              className="w-full p-2 bg-gray-700 text-white rounded text-sm"
+            >
+              <option value="">— Choose target —</option>
+              {(currentProject?.objects || [])
+                .filter(o => o.id !== selectedObj.id && (o.type === 'text' || o.type === 'image'))
+                .map(o => (
+                  <option key={o.id} value={o.id}>{o.type} • {o.id.slice(0, 8)}</option>
+                ))}
+            </select>
+            <div className="flex gap-2">
+              <button
+                disabled={!motionTargetId}
+                className={`px-3 py-1 rounded text-xs ${motionTargetId ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-700 text-gray-500 cursor-not-allowed'}`}
+                onClick={() => {
+                  if (!currentProject || !motionTargetId) return;
+                  const target = currentProject.objects.find(o => o.id === motionTargetId);
+                  if (!target) return;
+                  // Collect points from this drawPath
+                  const hasSegments = Array.isArray(selectedObj.properties?.segments) && selectedObj.properties.segments.length > 0;
+                  const segs: { x: number; y: number }[][] = hasSegments ? selectedObj.properties.segments : [selectedObj.properties.points || []];
+                  const absPoints = segs.flat().map((p: any) => ({ x: (selectedObj.x || 0) + p.x, y: (selectedObj.y || 0) + p.y }));
+                  // Update target with motion path
+                  const newProps = { ...(target.properties || {}), pathPoints: absPoints, rotateWithPath: target.properties?.rotateWithPath ?? true };
+                  updateObject(target.id, {
+                    properties: newProps,
+                    animationType: 'pathFollow',
+                  } as any);
+                }}
+              >Make motion path for selection</button>
+              <button
+                className="px-2 py-1 bg-gray-600 hover:bg-gray-500 rounded text-xs"
+                onClick={() => setMotionTargetId('')}
+              >Reset</button>
+            </div>
+            <p className="text-[11px] text-gray-500">Points are copied in absolute canvas coordinates and set on the target&apos;s properties.pathPoints.</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

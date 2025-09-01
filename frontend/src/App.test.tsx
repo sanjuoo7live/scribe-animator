@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import App from './App';
+// No store mocking: use real Zustand store
 
 // Mock ResizeObserver
 global.ResizeObserver = jest.fn().mockImplementation(() => ({
@@ -41,14 +41,28 @@ jest.mock('canvas', () => ({
   registerFont: jest.fn()
 }), { virtual: true });
 
-// Mock components that use import.meta.url
-jest.mock('./components/SvgImporter', () => ({
-  __esModule: true,
-  default: () => <div data-testid="svg-importer">SvgImporter Mock</div>
-}));
+// Mock react-konva primitives using shared sanitized mock
+jest.mock('react-konva', () => require('./testUtils/reactKonvaMock').default);
 
-test('renders learn react link', () => {
+// Mock heavy child components to keep this smoke test light
+jest.mock('./components/Timeline', () => ({ __esModule: true, default: () => <div data-testid="timeline">Timeline</div> }));
+jest.mock('./components/AssetPanel', () => ({ __esModule: true, default: () => <div data-testid="asset-panel">Assets</div> }));
+jest.mock('./components/PropertiesPanel', () => ({ __esModule: true, default: () => <div data-testid="properties-panel">Properties</div> }));
+jest.mock('./components/ProjectTemplates', () => ({ __esModule: true, default: () => <div data-testid="project-templates">Templates</div> }));
+jest.mock('./components/ProjectManager', () => ({ __esModule: true, default: () => <div data-testid="project-manager">Manager</div> }));
+jest.mock('./components/ExportSystem', () => ({ __esModule: true, default: () => <div data-testid="export-system">Export</div> }));
+jest.mock('./components/AIAssistant', () => ({ __esModule: true, default: () => <div data-testid="ai-assistant">AI</div> }));
+jest.mock('./components/CanvasEditorRefactored', () => ({ __esModule: true, default: () => <div data-testid="canvas-editor">Canvas</div> }));
+
+// Removed mocked store values and related configurations
+
+// Import App after mocks are set up
+const App = require('./App').default;
+
+test('renders app shell with header and panels', () => {
   render(<App />);
-  const linkElement = screen.getByText(/learn react/i);
-  expect(linkElement).toBeInTheDocument();
+  expect(screen.getByText('Scribe Animator')).toBeInTheDocument();
+  expect(screen.getByTestId('asset-panel')).toBeInTheDocument();
+  expect(screen.getByTestId('canvas-editor')).toBeInTheDocument();
+  expect(screen.getByTestId('timeline')).toBeInTheDocument();
 });

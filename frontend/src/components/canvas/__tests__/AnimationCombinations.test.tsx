@@ -7,19 +7,8 @@ import { ShapeRenderer } from '../renderers/ShapeRenderer';
 import { SvgPathRenderer } from '../renderers/SvgPathRenderer';
 import { ImageRenderer } from '../renderers/ImageRenderer';
 
-// Mock Konva components
-jest.mock('react-konva', () => ({
-  Group: ({ children, ...props }: any) => <div data-testid="konva-group" {...props}>{children}</div>,
-  Line: ({ children, ...props }: any) => <div data-testid="konva-line" {...props}>{children}</div>,
-  Rect: ({ children, ...props }: any) => <div data-testid="konva-rect" {...props}>{children}</div>,
-  Text: ({ children, ...props }: any) => <div data-testid="konva-text" {...props}>{children}</div>,
-  Circle: ({ children, ...props }: any) => <div data-testid="konva-circle" {...props}>{children}</div>,
-  Image: ({ children, ...props }: any) => <div data-testid="konva-image" {...props}>{children}</div>,
-  Star: ({ children, ...props }: any) => <div data-testid="konva-star" {...props}>{children}</div>,
-  RegularPolygon: ({ children, ...props }: any) => <div data-testid="konva-polygon" {...props}>{children}</div>,
-  Arrow: ({ children, ...props }: any) => <div data-testid="konva-arrow" {...props}>{children}</div>,
-  Shape: ({ children, ...props }: any) => <div data-testid="konva-shape" {...props}>{children}</div>,
-}));
+// Mock Konva components using shared sanitized mock
+jest.mock('react-konva', () => require('../../../testUtils/reactKonvaMock').default);
 
 // Mock the store
 const mockUseAppStore = jest.fn();

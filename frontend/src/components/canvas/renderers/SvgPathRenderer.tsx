@@ -39,9 +39,13 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
 
   // Reveal length is tied to object's duration so timeline edits directly influence drawing speed
   const targetLen = draw ? progress * totalLen : totalLen;
-  // Batched fill threshold
-  const batchIndex = totalLen > 0 ? Math.floor(Math.max(0, Math.min(0.999999, targetLen / totalLen)) * batchesN) : 0;
-  const batchThreshold = (fillKind === 'batched' && totalLen > 0) ? (batchIndex / batchesN) * totalLen : totalLen;
+  // Batched fill threshold (ensure last batch fills when complete)
+  const fraction = totalLen > 0 ? targetLen / totalLen : 1;
+  const clampedFraction = Math.max(0, Math.min(1, fraction));
+  const filledBatches = totalLen > 0 ? Math.floor(clampedFraction * batchesN + 1e-9) : 0; // 0..batchesN
+  const batchThreshold = (fillKind === 'batched' && totalLen > 0)
+    ? (Math.min(filledBatches, batchesN) / batchesN) * totalLen
+    : totalLen;
   let consumed = 0;
 
   return (

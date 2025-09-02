@@ -18,6 +18,7 @@ import AIAssistant from './AIAssistant';
 import AssetLibraryPopup from './AssetLibraryPopup';
 import { IconDefinition } from '../data/iconLibrary';
 import SvgImporter from './SvgImporter';
+import HandTesting from './HandTesting';
 
 interface AssetCategory {
   id: string;
@@ -41,7 +42,8 @@ const AssetPanel: React.FC = () => {
   vectors: false,
     templates: false,
     sceneTemplates: false,
-    plugins: false
+    plugins: false,
+    handTesting: false
   });
   
   const { addObject, currentProject, currentTime } = useAppStore();
@@ -71,7 +73,8 @@ const AssetPanel: React.FC = () => {
     // Advanced Tools
     { id: 'collaborate', name: 'Collaborate', icon: '👥', color: 'bg-teal-500', description: 'Team tools' },
     { id: 'analytics', name: 'Analytics', icon: '📊', color: 'bg-gray-500', description: 'Performance data' },
-    { id: 'ai', name: 'AI Assistant', icon: '🤖', color: 'bg-emerald-500', description: 'AI-powered tools' }
+    { id: 'ai', name: 'AI Assistant', icon: '🤖', color: 'bg-emerald-500', description: 'AI-powered tools' },
+    { id: 'handTesting', name: 'Hand Testing', icon: '✏️', color: 'bg-orange-600', description: 'Test hand following animations' }
   ];
 
   const categoryGroups = {
@@ -79,6 +82,7 @@ const AssetPanel: React.FC = () => {
   assets: { name: 'Visual Assets', categories: ['hands', 'characters', 'props', 'images', 'vectors'] },
     audio: { name: 'Audio Tools', categories: ['audio', 'advancedAudio'] },
     templates: { name: 'Templates & Effects', categories: ['templates', 'sceneTemplates', 'plugins'] },
+    testing: { name: 'Testing Tools', categories: ['handTesting'] },
     advanced: { name: 'Advanced Tools', categories: ['collaborate', 'analytics', 'ai'] }
   };
 
@@ -421,6 +425,41 @@ const AssetPanel: React.FC = () => {
                 </div>
               </div>
             </div>
+          ) : activeCategory === 'handTesting' ? (
+            <div className="space-y-4">
+              <button
+                onClick={() => openPopup('handTesting')}
+                className="asset-button-text w-full p-6 rounded-lg transition-all transform hover:scale-105 shadow-lg font-semibold"
+                style={{ 
+                  background: 'linear-gradient(135deg, #C2410C, #EA580C)',
+                  color: 'white',
+                  border: '2px solid #374151'
+                }}
+              >
+                <div className="text-xl font-bold mb-2" style={{ color: 'white' }}>✏️ Open Hand Testing</div>
+                <div className="text-sm mb-1" style={{ color: 'rgba(255, 255, 255, 0.9)' }}>Test hand following animations with real hand images</div>
+                <div className="text-xs" style={{ color: 'rgba(255, 255, 255, 0.75)' }}>• Upload Hand Image • Set Tip Position • Natural Animation</div>
+              </button>
+
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div className="p-3 bg-gray-700 rounded-lg border border-gray-600">
+                  <div className="text-white font-medium mb-2">🖐️ Phase 2 Features</div>
+                  <div className="space-y-1 text-gray-300">
+                    <div>• Natural smoothing</div>
+                    <div>• Corner lifting</div>
+                    <div>• Real hand images</div>
+                  </div>
+                </div>
+                <div className="p-3 bg-gray-700 rounded-lg border border-gray-600">
+                  <div className="text-white font-medium mb-2">⚡ Testing</div>
+                  <div className="space-y-1 text-gray-300">
+                    <div>• Visual tip calibration</div>
+                    <div>• Instant test paths</div>
+                    <div>• Live preview</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           ) : activeCategory === 'templates' ? (
             <div className="space-y-4">
               <button
@@ -638,6 +677,14 @@ const AssetPanel: React.FC = () => {
         title="Effects & Plugins - Visual Enhancements"
       >
         <PluginSystem />
+      </AssetLibraryPopup>
+
+      <AssetLibraryPopup
+        isOpen={openPopups.handTesting}
+        onClose={() => closePopup('handTesting')}
+        title="Hand Follower Testing - Phase 2 Features"
+      >
+        <HandTesting />
       </AssetLibraryPopup>
     </div>
   );

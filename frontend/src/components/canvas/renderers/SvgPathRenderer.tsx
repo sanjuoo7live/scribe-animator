@@ -2,6 +2,9 @@ import React from 'react';
 import { Group, Shape, Rect } from 'react-konva';
 import { BaseRendererProps } from '../renderers/RendererRegistry';
 import { calculateAnimationProgress } from '../utils/animationUtils';
+import { HandFollower } from '../../hands/HandFollower';
+import ThreeLayerHandFollower from '../../hands/ThreeLayerHandFollower';
+import { HandAssetManager } from '../../hands/HandAssetManager';
 
 // SVG Path Renderer component
 export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
@@ -26,7 +29,12 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
 
   const groupX = animatedProps.x ?? obj.x;
   const groupY = animatedProps.y ?? obj.y;
-  const paths = Array.isArray(obj.properties?.paths) ? obj.properties.paths : [];
+  
+  // Memoize paths to prevent hand follower from recalculating on every render
+  const paths = React.useMemo(() => {
+    return Array.isArray(obj.properties?.paths) ? obj.properties.paths : [];
+  }, [obj.properties?.paths]);
+  
   const totalLen = obj.properties?.totalLen || 0;
   const draw = obj.animationType === 'drawIn';
   const previewMode = !!obj.properties?.previewDraw;
@@ -205,6 +213,58 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
           />
         );
       })}
+      
+      {/* Hand Follower Integration */}
+      {React.useMemo(() => {
+        const handFollowerSettings = obj.properties?.handFollower;
+        
+        // Only show hand follower during drawIn animation and when enabled
+        if (obj.animationType !== 'drawIn' || progress >= 1) {
+          return null;
+        }
+        
+        if (!handFollowerSettings?.enabled) {
+          return null;
+        }
+        
+        // Get the first path for hand following (could be enhanced to follow specific path)
+        const firstPath = paths[0];
+        if (!firstPath?.d) {
+          return null;
+        }
+        
+        // Professional three-layer mode
+        if (handFollowerSettings.mode === 'professional' && handFollowerSettings.handAsset && handFollowerSettings.toolAsset) {
+          return (
+            <ThreeLayerHandFollower
+              key="hand-follower" // Add key for better React reconciliation
+              pathData={firstPath.d}
+              progress={progress}
+              handAsset={handFollowerSettings.handAsset}
+              toolAsset={handFollowerSettings.toolAsset}
+              scale={handFollowerSettings.scale || 1}
+              visible={handFollowerSettings.visible !== false}
+              debug={false}
+              mirror={!!handFollowerSettings.mirror}
+              showForeground={handFollowerSettings.showForeground !== false}
+              extraOffset={handFollowerSettings.calibrationOffset || handFollowerSettings.offset}
+            />
+          );
+        }
+
+        // Legacy single-image mode
+        return (
+          <HandFollower
+            key="hand-follower-legacy" // Add key for better React reconciliation
+            pathData={firstPath.d}
+            progress={progress}
+            handAsset={handFollowerSettings.handAsset || HandAssetManager.getDefaultHandAsset()}
+            visible={handFollowerSettings.visible !== false}
+            scale={handFollowerSettings.scale || 1}
+            offset={handFollowerSettings.offset || { x: 0, y: 0 }}
+          />
+        );
+      }, [obj.animationType, obj.properties?.handFollower, progress, paths])}
     </Group>
   );
 };

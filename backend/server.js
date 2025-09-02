@@ -183,6 +183,44 @@ app.post('/api/upload', upload.single('asset'), async (req, res) => {
   res.json(asset);
 });
 
+// Upload hand/tool assets with specific names (overwrites existing)
+app.post('/api/upload-hand-asset', upload.single('asset'), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'No file uploaded' });
+  }
+  
+  const { assetType } = req.body; // 'hand_bg', 'hand_fg', 'tool'
+  const validTypes = ['hand_bg', 'hand_fg', 'tool'];
+  
+  if (!validTypes.includes(assetType)) {
+    return res.status(400).json({ error: 'Invalid asset type. Must be: hand_bg, hand_fg, or tool' });
+  }
+  
+  try {
+    const targetPath = path.join('./data/assets/', `${assetType}.png`);
+    
+    // Move uploaded file to specific name
+    await fs.rename(req.file.path, targetPath);
+    
+    const asset = {
+      id: `${assetType}.png`,
+      originalName: req.file.originalname,
+      filename: `${assetType}.png`,
+      path: `/api/assets/${assetType}.png`,
+      size: req.file.size,
+      mimeType: req.file.mimetype,
+      uploadedAt: new Date().toISOString(),
+      category: 'hand-tool',
+      assetType
+    };
+    
+    res.json(asset);
+  } catch (error) {
+    console.error('Error saving hand asset:', error);
+    res.status(500).json({ error: 'Failed to save hand asset' });
+  }
+});
+
 // Delete asset
 app.delete('/api/assets/:filename', async (req, res) => {
   try {

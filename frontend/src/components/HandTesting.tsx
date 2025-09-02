@@ -32,6 +32,7 @@ const HandTesting: React.FC = () => {
   const [customHandAsset, setCustomHandAsset] = useState<ProHandAsset | null>(null);
   const [customToolAsset, setCustomToolAsset] = useState<ProToolAsset | null>(null);
   const [savingAssets, setSavingAssets] = useState(false);
+  // Two-bone system removed; keeping UI focused on three-layer mode
   
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { currentProject, addObject, currentTime } = useAppStore();
@@ -472,6 +473,19 @@ http://localhost:3001/api/assets/tool.png`);
         </p>
       </div>
 
+      {/* Quick Demo (three-layer only) */}
+      <div className="space-y-2">
+        <div className="text-sm font-semibold text-gray-300">Quick Demos</div>
+        <div className="grid grid-cols-1 gap-2">
+          <button
+            onClick={createDirectDemo}
+            className="w-full p-2 rounded bg-emerald-600 hover:bg-emerald-500 border border-emerald-400 text-white text-sm"
+          >
+            ▶ Run Direct Demo (preset 3-layer)
+          </button>
+        </div>
+      </div>
+
       {/* Mode Selection */}
       <div className="space-y-4">
         <div className="text-sm font-semibold text-gray-300">Testing Mode</div>
@@ -511,6 +525,8 @@ http://localhost:3001/api/assets/tool.png`);
           </button>
         </div>
       </div>
+
+  {/* Two-bone testing UI removed */}
 
       {/* Simple Mode Interface */}
       {testingMode === 'simple' && (

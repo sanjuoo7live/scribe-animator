@@ -55,6 +55,18 @@
 			"command": "cd backend && npm run dev",
 			"isBackground": true,
 			"group": "build"
+		},
+		{
+			"label": "Build Frontend Once",
+			"type": "shell",
+			"command": "cd frontend && npm run -s build",
+			"isBackground": false
+		},
+		{
+			"label": "Build Frontend Once",
+			"type": "shell",
+			"command": "cd frontend && npm run -s build",
+			"isBackground": false
 		}
 	]
 }

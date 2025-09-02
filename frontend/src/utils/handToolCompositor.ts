@@ -1,6 +1,19 @@
 import { HandAsset, ToolAsset, HandToolComposition, Point2D } from '../types/handAssets';
 
 export class HandToolCompositor {
+  private static lastAngle?: number;
+  private static debugEnabled: boolean = false;
+  private static normalizeAngle(angle: number) {
+    while (angle > Math.PI) angle -= 2 * Math.PI;
+    while (angle < -Math.PI) angle += 2 * Math.PI;
+    return angle;
+  }
+  static resetDebugState() {
+    this.lastAngle = undefined;
+  }
+  static setDebugEnabled(enabled: boolean) {
+    this.debugEnabled = enabled;
+  }
   
   /**
    * Calculate the complete hand-tool composition for a given path position
@@ -13,6 +26,20 @@ export class HandToolCompositor {
     scale: number = 1.0
   ): HandToolComposition {
     
+    // Debug large angle changes that might cause displacement
+    const current = this.normalizeAngle(pathAngle);
+    if (this.debugEnabled && this.lastAngle !== undefined) {
+      const prev = this.normalizeAngle(this.lastAngle);
+      let diff = current - prev;
+      if (diff > Math.PI) diff -= 2 * Math.PI;
+      if (diff < -Math.PI) diff += 2 * Math.PI;
+      const absDiff = Math.abs(diff);
+      if (absDiff > (120 * Math.PI) / 180) {
+        console.log(`[HandToolCompositor] Large angle change: ${(absDiff * 180 / Math.PI).toFixed(1)}° at position (${pathPosition.x.toFixed(1)}, ${pathPosition.y.toFixed(1)})`);
+      }
+    }
+    this.lastAngle = current;
+    
     // 1. Calculate tool transform to align tip with path position
     const toolTransform = this.calculateToolTransform(toolAsset, pathPosition, pathAngle, scale);
     
@@ -21,6 +48,16 @@ export class HandToolCompositor {
     
     // 3. Compute final tip position (should match pathPosition)
     const finalTipPosition = this.computeFinalTipPosition(toolAsset, toolTransform);
+
+    // Diagnostics: measure actual tip error vs path target
+    if (this.debugEnabled) {
+      const dxErr = finalTipPosition.x - pathPosition.x;
+      const dyErr = finalTipPosition.y - pathPosition.y;
+      const err = Math.hypot(dxErr, dyErr);
+      if (err > 0.75) {
+        console.log(`[HandToolCompositor] Tip displacement ${err.toFixed(2)}px at (${pathPosition.x.toFixed(1)}, ${pathPosition.y.toFixed(1)})`);
+      }
+    }
     
     return {
       handAsset,
@@ -37,6 +74,7 @@ export class HandToolCompositor {
   
   /**
    * Calculate tool transformation to place tip at target position with target angle
+   * Uses tip-centric approach to ensure pen tip remains absolutely fixed
    */
   private static calculateToolTransform(
     tool: ToolAsset,
@@ -46,21 +84,28 @@ export class HandToolCompositor {
   ) {
     // Apply rotation offset if tool sprite is drawn off-axis
     const adjustedAngle = targetAngle + (tool.rotationOffsetDeg || 0) * Math.PI / 180;
-    // Compute rotated tip anchor to place the top-left origin.
-    // We want: position + R * tipAnchor * scale = targetPosition
+    
+    // CRITICAL: Calculate tool position so that the tip anchor rotates around the target position
+    // This ensures the tip stays exactly at targetPosition regardless of rotation
     const cos = Math.cos(adjustedAngle);
     const sin = Math.sin(adjustedAngle);
-    const rotatedTip = {
-      x: tool.tipAnchor.x * cos - tool.tipAnchor.y * sin,
-      y: tool.tipAnchor.x * sin + tool.tipAnchor.y * cos
-    };
+    
+    // Transform tip anchor by rotation and scale
+    const transformedTipX = tool.tipAnchor.x * cos - tool.tipAnchor.y * sin;
+    const transformedTipY = tool.tipAnchor.x * sin + tool.tipAnchor.y * cos;
+    
+    // Tool origin position = target - transformed tip anchor
     const toolPosition = {
-      x: targetPosition.x - rotatedTip.x * scale,
-      y: targetPosition.y - rotatedTip.y * scale
+      x: targetPosition.x - transformedTipX * scale,
+      y: targetPosition.y - transformedTipY * scale
     };
     
+    // High precision to prevent drift during large rotations
     return {
-      position: toolPosition,
+      position: {
+        x: Math.round(toolPosition.x * 10000) / 10000,
+        y: Math.round(toolPosition.y * 10000) / 10000
+      },
       rotation: adjustedAngle,
       scale
     };
@@ -68,6 +113,7 @@ export class HandToolCompositor {
   
   /**
    * Calculate hand transformation to properly grip the tool
+   * Ensures hand grips tool correctly while tool tip remains fixed
    */
   private static calculateHandTransform(
     hand: HandAsset,
@@ -75,20 +121,18 @@ export class HandToolCompositor {
     toolTransform: any,
     scale: number
   ) {
-    // Calculate the grip alignment
-    // Hand's grip direction vector
+    // Calculate the grip alignment vectors
     const handGripVector = {
       x: hand.gripForward.x - hand.gripBase.x,
       y: hand.gripForward.y - hand.gripBase.y
     };
     
-    // Tool's socket direction vector
     const toolSocketVector = {
       x: tool.socketForward.x - tool.socketBase.x,
       y: tool.socketForward.y - tool.socketBase.y
     };
     
-    // Calculate angle between grip directions
+    // Calculate alignment angle between grip directions
     const handGripAngle = Math.atan2(handGripVector.y, handGripVector.x);
     const toolSocketAngle = Math.atan2(toolSocketVector.y, toolSocketVector.x);
     const alignmentAngle = toolTransform.rotation - (toolSocketAngle - handGripAngle);
@@ -96,11 +140,11 @@ export class HandToolCompositor {
     // Apply natural tilt if specified
     const finalHandRotation = alignmentAngle + (hand.naturalTiltDeg || 0) * Math.PI / 180;
     
-    // Calculate hand position to align grip points
-    // First, find where hand's grip point would be after rotation
+    // High precision rotation calculations
     const cos = Math.cos(finalHandRotation);
     const sin = Math.sin(finalHandRotation);
     
+    // Calculate where hand's grip point will be after rotation
     const rotatedGripOffset = {
       x: hand.gripBase.x * cos - hand.gripBase.y * sin,
       y: hand.gripBase.x * sin + hand.gripBase.y * cos
@@ -111,10 +155,13 @@ export class HandToolCompositor {
       y: rotatedGripOffset.y * scale
     };
     
-    // Tool's socket position in world coordinates
+    // Calculate tool's socket position in world coordinates with high precision
+    const toolCos = Math.cos(toolTransform.rotation);
+    const toolSin = Math.sin(toolTransform.rotation);
+    
     const toolSocketWorldPos = {
-      x: toolTransform.position.x + (tool.socketBase.x * Math.cos(toolTransform.rotation) - tool.socketBase.y * Math.sin(toolTransform.rotation)) * scale,
-      y: toolTransform.position.y + (tool.socketBase.x * Math.sin(toolTransform.rotation) + tool.socketBase.y * Math.cos(toolTransform.rotation)) * scale
+      x: toolTransform.position.x + (tool.socketBase.x * toolCos - tool.socketBase.y * toolSin) * scale,
+      y: toolTransform.position.y + (tool.socketBase.x * toolSin + tool.socketBase.y * toolCos) * scale
     };
     
     // Hand position = tool socket position - rotated grip offset
@@ -123,8 +170,12 @@ export class HandToolCompositor {
       y: toolSocketWorldPos.y - scaledGripOffset.y
     };
     
+    // Ultra-high precision to prevent drift during large rotations
     return {
-      position: handPosition,
+      position: {
+        x: Math.round(handPosition.x * 10000) / 10000,
+        y: Math.round(handPosition.y * 10000) / 10000
+      },
       rotation: finalHandRotation,
       scale
     };

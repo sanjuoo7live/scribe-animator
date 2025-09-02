@@ -24,7 +24,9 @@ export class ThreeLayerHandRenderer {
   private dbg = {
     handRect: null as Konva.Rect | null,
     toolRect: null as Konva.Rect | null,
-    tipCircle: null as Konva.Circle | null,
+  tipCircle: null as Konva.Circle | null,
+  targetCircle: null as Konva.Circle | null,
+  errorLine: null as Konva.Line | null,
   };
 
   /**
@@ -65,66 +67,95 @@ export class ThreeLayerHandRenderer {
       throw new Error('Assets not loaded. Call loadAssets() first.');
     }
 
-    // Calculate the composition transforms
+    // Apply calibration offset to the target position before calculating composition
+    const calibratedTarget = {
+      x: config.pathPosition.x + (config.extraOffset?.x || 0),
+      y: config.pathPosition.y + (config.extraOffset?.y || 0)
+    };
+
+    // Calculate the composition transforms using the calibrated target
     const handForCalc = config.mirror ? HandToolCompositor.mirrorHandAsset(config.handAsset) : config.handAsset;
-    const pos = config.extraOffset ? { x: config.pathPosition.x + config.extraOffset.x, y: config.pathPosition.y + config.extraOffset.y } : config.pathPosition;
     this.composition = HandToolCompositor.composeHandTool(
       handForCalc,
       config.toolAsset,
-      pos,
+      calibratedTarget,
       config.pathAngle,
       config.scale
     );
+
+  // Use the composition positions directly (no additional offset needed)
+    const handPos = this.composition.handPosition;
+    const toolPos = this.composition.toolPosition;
+  const handRotDeg = (this.composition.handRotation * 180) / Math.PI;
+  const toolRotDeg = (this.composition.toolRotation * 180) / Math.PI;
 
   // Create the main group
     const handGroup = new Konva.Group({
       x: 0,
       y: 0,
-      opacity: config.opacity || 1.0
+      opacity: config.opacity || 1.0,
     });
 
     // Layer 1 (Bottom): Hand Background (palm + lower fingers)
     const handBgNode = new Konva.Image({
       image: this.handBgImage,
-      x: this.composition.handPosition.x,
-      y: this.composition.handPosition.y,
-      rotation: this.composition.handRotation,
+      x: handPos.x,
+      y: handPos.y,
+  rotation: handRotDeg,
       scaleX: (config.mirror ? -1 : 1) * this.composition.handScale,
-      scaleY: this.composition.handScale
+      scaleY: this.composition.handScale,
+      // Set offset to ensure rotation around pen tip instead of image origin
+      offsetX: 0,
+      offsetY: 0,
     });
 
     // Layer 2 (Middle): Tool (pen, brush, marker, etc.)
     const toolNode = new Konva.Image({
       image: this.toolImage,
-      x: this.composition.toolPosition.x,
-      y: this.composition.toolPosition.y,
-      rotation: this.composition.toolRotation,
+      x: toolPos.x,
+      y: toolPos.y,
+  rotation: toolRotDeg,
       scaleX: this.composition.toolScale,
-      scaleY: this.composition.toolScale
+      scaleY: this.composition.toolScale,
+      // Set offset to ensure rotation around pen tip
+      offsetX: 0,
+      offsetY: 0,
     });
 
     // Layer 3 (Top): Hand Foreground (top fingers + thumb for depth)
     const handFgNode = new Konva.Image({
       image: this.handFgImage,
-      x: this.composition.handPosition.x,
-      y: this.composition.handPosition.y,
-      rotation: this.composition.handRotation,
+      x: handPos.x,
+      y: handPos.y,
+  rotation: handRotDeg,
       scaleX: (config.mirror ? -1 : 1) * this.composition.handScale,
-      scaleY: this.composition.handScale
+      scaleY: this.composition.handScale,
+      // Set offset to ensure rotation around pen tip instead of image origin
+      offsetX: 0,
+      offsetY: 0,
     });
     if (config.showForeground === false) {
       handFgNode.visible(false);
     }
 
-    // Add layers in correct Z-order with explicit ordering
-    handGroup.add(handBgNode);  // Bottom layer
-    handGroup.add(toolNode);    // Middle layer
-    handGroup.add(handFgNode);  // Top layer
-    
-    // Explicitly ensure proper Z-order (Konva specific)
-    handBgNode.zIndex(0);  // Bottom
-    toolNode.zIndex(1);    // Middle  
-    handFgNode.zIndex(2);  // Top (thumb should be over pen)
+  // Add layers in correct Z-order; avoid per-frame zIndex churn
+  handGroup.add(handBgNode);  // Bottom layer
+  handGroup.add(toolNode);    // Middle layer
+  handGroup.add(handFgNode);  // Top layer
+
+    // Optional debug overlay
+    this.debugEnabled = !!config.debug;
+    if (this.debugEnabled) {
+      const target = { x: calibratedTarget.x, y: calibratedTarget.y };
+      const tip = { x: this.composition.finalTipPosition.x, y: this.composition.finalTipPosition.y };
+      const errPts = [target.x, target.y, tip.x, tip.y];
+      this.dbg.targetCircle = new Konva.Circle({ x: target.x, y: target.y, radius: 3, fill: 'magenta', opacity: 0.9 });
+      this.dbg.tipCircle = new Konva.Circle({ x: tip.x, y: tip.y, radius: 3, fill: 'lime', opacity: 0.9 });
+      this.dbg.errorLine = new Konva.Line({ points: errPts, stroke: 'orange', strokeWidth: 1, opacity: 0.7 });
+      handGroup.add(this.dbg.errorLine);
+      handGroup.add(this.dbg.targetCircle);
+      handGroup.add(this.dbg.tipCircle);
+    }
 
     return handGroup;
   }
@@ -136,41 +167,49 @@ export class ThreeLayerHandRenderer {
     handGroup: Konva.Group,
     config: ThreeLayerHandConfig
   ): void {
-    if (!handGroup || handGroup.children.length !== 3) {
+    // Accept groups that may include extra debug nodes; ensure at least the 3 image layers exist
+    if (!handGroup || handGroup.children.length < 3) {
       console.error('Invalid hand group for position update');
       return;
     }
 
-    // Recalculate composition for new position
-    const handForCalc = config.mirror ? HandToolCompositor.mirrorHandAsset(config.handAsset) : config.handAsset;
-    const pos = config.extraOffset ? { x: config.pathPosition.x + config.extraOffset.x, y: config.pathPosition.y + config.extraOffset.y } : config.pathPosition;
+    // Apply calibration offset to the target position before calculating composition
+    const calibratedTarget = {
+      x: config.pathPosition.x + (config.extraOffset?.x || 0),
+      y: config.pathPosition.y + (config.extraOffset?.y || 0)
+    };
+
+    // Recalculate composition for new position using calibrated target
+    const handForCalc = config.mirror
+      ? HandToolCompositor.mirrorHandAsset(config.handAsset)
+      : config.handAsset;
     this.composition = HandToolCompositor.composeHandTool(
       handForCalc,
       config.toolAsset,
-      pos,
+      calibratedTarget,
       config.pathAngle,
       config.scale
     );
-
+  // Always pick the first three children as the image layers (bg, tool, fg)
   const [handBgNode, toolNode, handFg] = handGroup.children.slice(0, 3) as Konva.Image[];
 
-    // Update hand background and foreground (they move together)
+    // Update hand background and foreground (they move together) - no additional offset needed
     const handTransform = {
       x: this.composition.handPosition.x,
       y: this.composition.handPosition.y,
-      rotation: this.composition.handRotation,
+      rotation: (this.composition.handRotation * 180) / Math.PI,
       scaleX: (config.mirror ? -1 : 1) * this.composition.handScale,
-      scaleY: this.composition.handScale
+      scaleY: this.composition.handScale,
     };
 
   handBgNode.setAttrs(handTransform);
   handFg.setAttrs(handTransform);
 
-    // Update tool independently
+    // Update tool independently - no additional offset needed
     toolNode.setAttrs({
       x: this.composition.toolPosition.x,
       y: this.composition.toolPosition.y,
-      rotation: this.composition.toolRotation,
+  rotation: (this.composition.toolRotation * 180) / Math.PI,
       scaleX: this.composition.toolScale,
       scaleY: this.composition.toolScale
     });
@@ -180,13 +219,35 @@ export class ThreeLayerHandRenderer {
       handFg.visible(false);
     } else {
       handFg.visible(true);
-      // Ensure foreground stays on top during updates
-      handFg.moveToTop();
+    }
+
+    // Update debug overlay
+    if (config.debug) {
+      this.debugEnabled = true;
+      const target = { x: calibratedTarget.x, y: calibratedTarget.y };
+      const tip = { x: this.composition.finalTipPosition.x, y: this.composition.finalTipPosition.y };
+      if (!this.dbg.tipCircle || !this.dbg.targetCircle || !this.dbg.errorLine) {
+        // Create if missing
+        this.dbg.targetCircle = new Konva.Circle({ x: target.x, y: target.y, radius: 3, fill: 'magenta', opacity: 0.9 });
+        this.dbg.tipCircle = new Konva.Circle({ x: tip.x, y: tip.y, radius: 3, fill: 'lime', opacity: 0.9 });
+        this.dbg.errorLine = new Konva.Line({ points: [target.x, target.y, tip.x, tip.y], stroke: 'orange', strokeWidth: 1, opacity: 0.7 });
+        handGroup.add(this.dbg.errorLine);
+        handGroup.add(this.dbg.targetCircle);
+        handGroup.add(this.dbg.tipCircle);
+      } else {
+        this.dbg.targetCircle.position(target);
+        this.dbg.tipCircle.position(tip);
+        this.dbg.errorLine.points([target.x, target.y, tip.x, tip.y]);
+        // Keep markers on top of images
+        this.dbg.errorLine.moveToTop();
+        this.dbg.targetCircle.moveToTop();
+        this.dbg.tipCircle.moveToTop();
+      }
     }
   }
 
   /**
-   * Get the final tip position for path alignment verification
+   * Get the final tip position for path alignment verification (now includes any calibration)
    */
   getTipPosition(): { x: number; y: number } | null {
     return this.composition?.finalTipPosition || null;
@@ -200,7 +261,7 @@ export class ThreeLayerHandRenderer {
 
     if (!this.composition) return debugGroup;
 
-    // Hand grip points
+    // Hand grip points (no additional offset needed - already in composition)
     const handGripCircle = new Konva.Circle({
       x: this.composition.handPosition.x,
       y: this.composition.handPosition.y,
@@ -209,7 +270,7 @@ export class ThreeLayerHandRenderer {
       opacity: 0.7
     });
 
-    // Tool socket points
+    // Tool socket points (no additional offset needed - already in composition)
     const toolSocketCircle = new Konva.Circle({
       x: this.composition.toolPosition.x,
       y: this.composition.toolPosition.y,
@@ -218,7 +279,7 @@ export class ThreeLayerHandRenderer {
       opacity: 0.7
     });
 
-    // Final tip position
+    // Final tip position (no additional offset needed - already in composition)
     const tipCircle = new Konva.Circle({
       x: this.composition.finalTipPosition.x,
       y: this.composition.finalTipPosition.y,
@@ -230,15 +291,15 @@ export class ThreeLayerHandRenderer {
     // Connection lines
     const gripLine = new Konva.Line({
       points: [
-        this.composition.handPosition.x, this.composition.handPosition.y,
-        this.composition.toolPosition.x, this.composition.toolPosition.y
+        this.composition.handPosition.x,
+        this.composition.handPosition.y,
+        this.composition.toolPosition.x,
+        this.composition.toolPosition.y,
       ],
       stroke: 'yellow',
       strokeWidth: 1,
       opacity: 0.5
-    });
-
-    debugGroup.add(handGripCircle);
+    });    debugGroup.add(handGripCircle);
     debugGroup.add(toolSocketCircle);
     debugGroup.add(tipCircle);
     debugGroup.add(gripLine);

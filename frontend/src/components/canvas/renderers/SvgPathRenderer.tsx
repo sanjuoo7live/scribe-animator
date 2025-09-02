@@ -2,9 +2,7 @@ import React from 'react';
 import { Group, Shape, Rect } from 'react-konva';
 import { BaseRendererProps } from '../renderers/RendererRegistry';
 import { calculateAnimationProgress } from '../utils/animationUtils';
-import { HandFollower } from '../../hands/HandFollower';
 import ThreeLayerHandFollower from '../../hands/ThreeLayerHandFollower';
-import { HandAssetManager } from '../../hands/HandAssetManager';
 
 // SVG Path Renderer component
 export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
@@ -34,6 +32,11 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
   const paths = React.useMemo(() => {
     return Array.isArray(obj.properties?.paths) ? obj.properties.paths : [];
   }, [obj.properties?.paths]);
+  
+  // Check if we need to apply calibration offset to path drawing
+  const handFollowerSettings = obj.properties?.handFollower;
+  const hasActiveHandFollower = handFollowerSettings?.enabled && obj.animationType === 'drawIn' && progress < 1;
+  const calibrationOffset = hasActiveHandFollower ? (handFollowerSettings.calibrationOffset || handFollowerSettings.offset) : null;
   
   const totalLen = obj.properties?.totalLen || 0;
   const draw = obj.animationType === 'drawIn';
@@ -119,7 +122,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
           onClick(e);
         }}
       />
-      {paths.map((p: any, idx: number) => {
+  {paths.map((p: any, idx: number) => {
         const d = p.d as string;
         const len = p.len || 0;
         const wantFill = !!(p.fill && p.fill !== 'none' && p.fill !== 'transparent');
@@ -182,13 +185,28 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
         consumed += len;
 
         const matrix = p.m as number[] | undefined;
+        // Cache Path2D per path index to reduce allocations
+        const cachedPathKey = `__path2d_${idx}`;
+        if (!(p as any)[cachedPathKey]) {
+          try { (p as any)[cachedPathKey] = new Path2D(d); } catch { /* ignore */ }
+        }
+        const cachedPath2D: Path2D | undefined = (p as any)[cachedPathKey];
+
         return (
           <Shape
             key={`${obj.id}-p-${idx}-${progress}-${isSelected}`}
             sceneFunc={(ctx, shape) => {
               ctx.save();
+              
               if (matrix) ctx.transform(matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5]);
-              const path = new Path2D(d);
+              
+              // Apply calibration offset to drawing context if hand follower is active
+              if (calibrationOffset && hasActiveHandFollower) {
+                ctx.translate(calibrationOffset.x || 0, calibrationOffset.y || 0);
+              }
+              
+              const path = cachedPath2D || new Path2D(d);
+              
               // Slightly thicken during draw to improve visibility; configurable via previewWidthBoost
               ctx.lineWidth = (p.strokeWidth ?? 3) + (isSelected ? 0.5 : 0) + (draw ? (previewWidthBoost || 0) : 0);
               ctx.lineCap = 'round';
@@ -227,24 +245,65 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
           return null;
         }
         
-        // Get the first path for hand following (could be enhanced to follow specific path)
-        const firstPath = paths[0];
-        if (!firstPath?.d) {
+        // Determine which path segment is currently being revealed and local progress within it
+        let activePath: any | null = null;
+        let localProgress = 0;
+        if (Array.isArray(paths) && paths.length > 0) {
+          let used = 0;
+          for (let i = 0; i < paths.length; i++) {
+            const pth = paths[i];
+            const len = Math.max(0, Number(pth.len || 0));
+            const start = used;
+            const end = used + len;
+            // Skip zero-length paths for follower purposes
+            if (len <= 0) {
+              used = end;
+              continue;
+            }
+            if (targetLen <= start) {
+              // Before this non-empty path starts
+              activePath = pth;
+              localProgress = 0;
+              break;
+            }
+            if (targetLen < end) {
+              // Currently revealing this non-empty path
+              const localReveal = Math.max(0, targetLen - start);
+              localProgress = len > 0 ? localReveal / len : 0;
+              activePath = pth;
+              break;
+            }
+            used = end;
+          }
+          if (!activePath) {
+            // If nothing matched (e.g., only zero-length paths so far), find first non-empty path as fallback
+            activePath = paths.find((p: any) => Number(p.len || 0) > 0) || null;
+            localProgress = 0;
+          }
+        }
+  if (!activePath?.d) {
           return null;
         }
         
+  // Two-bone arm mode removed
+
         // Professional three-layer mode
-        if (handFollowerSettings.mode === 'professional' && handFollowerSettings.handAsset && handFollowerSettings.toolAsset) {
+  if (handFollowerSettings.mode === 'professional' && handFollowerSettings.handAsset && handFollowerSettings.toolAsset) {
+      // Compute an approximate backtrack so tip aligns with the rendered stroke end (round caps extend by ~0.5*lineWidth)
+      const effectiveLineWidth = (activePath.strokeWidth ?? 3) + (isSelected ? 0.5 : 0) + (draw ? (previewWidthBoost || 0) : 0);
+      const tipBacktrackPx = draw ? Math.max(0, effectiveLineWidth * 0.5) : 0;
           return (
             <ThreeLayerHandFollower
               key="hand-follower" // Add key for better React reconciliation
-              pathData={firstPath.d}
-              progress={progress}
+        pathData={activePath.d}
+        pathMatrix={activePath.m as number[] | undefined}
+        progress={localProgress}
+        tipBacktrackPx={tipBacktrackPx}
               handAsset={handFollowerSettings.handAsset}
               toolAsset={handFollowerSettings.toolAsset}
               scale={handFollowerSettings.scale || 1}
               visible={handFollowerSettings.visible !== false}
-              debug={false}
+              debug={!!handFollowerSettings.debug}
               mirror={!!handFollowerSettings.mirror}
               showForeground={handFollowerSettings.showForeground !== false}
               extraOffset={handFollowerSettings.calibrationOffset || handFollowerSettings.offset}
@@ -252,19 +311,9 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
           );
         }
 
-        // Legacy single-image mode
-        return (
-          <HandFollower
-            key="hand-follower-legacy" // Add key for better React reconciliation
-            pathData={firstPath.d}
-            progress={progress}
-            handAsset={handFollowerSettings.handAsset || HandAssetManager.getDefaultHandAsset()}
-            visible={handFollowerSettings.visible !== false}
-            scale={handFollowerSettings.scale || 1}
-            offset={handFollowerSettings.offset || { x: 0, y: 0 }}
-          />
-        );
-      }, [obj.animationType, obj.properties?.handFollower, progress, paths])}
+  // Legacy single-image mode (disabled when professional mode is configured)
+  return null;
+  }, [obj.animationType, obj.properties?.handFollower, progress, paths, targetLen, draw, isSelected, previewWidthBoost])}
     </Group>
   );
 };

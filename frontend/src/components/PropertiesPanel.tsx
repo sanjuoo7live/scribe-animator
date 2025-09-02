@@ -588,6 +588,19 @@ const PropertiesPanel: React.FC = () => {
                     Show Foreground
                   </label>
                 </div>
+
+                {/* Debug overlay toggle */}
+                <label className="flex items-center gap-2 text-xs text-gray-300 mt-1">
+                  <input
+                    type="checkbox"
+                    checked={!!selectedObj.properties?.handFollower?.debug}
+                    onChange={(e)=>{
+                      const current = selectedObj.properties?.handFollower || {};
+                      updateProperty('handFollower', { ...current, debug: e.target.checked });
+                    }}
+                  />
+                  Show Debug Overlay (tip/target)
+                </label>
                 
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">Hand Scale</label>
@@ -611,9 +624,9 @@ const PropertiesPanel: React.FC = () => {
                   </div>
                 </div>
                 
-                <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-2">
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1">Offset X</label>
+          <label className="block text-xs text-gray-400 mb-1">Offset X (temp)</label>
                     <input
                       type="number"
                       value={selectedObj.properties?.handFollower?.offset?.x || 0}
@@ -632,7 +645,7 @@ const PropertiesPanel: React.FC = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-400 mb-1">Offset Y</label>
+          <label className="block text-xs text-gray-400 mb-1">Offset Y (temp)</label>
                     <input
                       type="number"
                       value={selectedObj.properties?.handFollower?.offset?.y || 0}
@@ -908,9 +921,9 @@ const PropertiesPanel: React.FC = () => {
                 </div>
 
                 {/* Calibration controls */}
-                <div className="flex items-center justify-between mt-3">
+        <div className="flex items-center justify-between mt-3">
                   <div className="text-xs text-gray-400">
-                    Calibration: per hand+tool offset stored locally
+          Calibration: per hand+tool offset stored locally (use Calibrate 1s, then Apply Saved)
                   </div>
                   <div className="flex gap-2">
                     <button

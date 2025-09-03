@@ -6,6 +6,74 @@ import SvgDrawSettings, { SvgDrawOptions, defaultSvgDrawOptions } from './SvgDra
 
 type ParsedPath = { d: string; stroke?: string; strokeWidth?: number; fill?: string; fillRule?: 'nonzero'|'evenodd' };
 
+// TODO: move this work into a dedicated Worker for heavy SVGs
+async function measureSvgLengthsChunked(
+  items: { d: string; m?: [number, number, number, number, number, number] }[],
+  budgetMs = 12,
+  signal?: AbortSignal
+): Promise<{ lens: number[]; total: number }> {
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(svgNS, 'svg');
+  svg.setAttribute('width', '0');
+  svg.setAttribute('height', '0');
+  svg.style.position = 'absolute';
+  svg.style.left = '-99999px';
+  svg.style.top = '-99999px';
+  document.body.appendChild(svg);
+
+  const pathEl = document.createElementNS(svgNS, 'path');
+  svg.appendChild(pathEl);
+
+  const lens: number[] = [];
+  let total = 0;
+  let last = performance.now();
+  try {
+    for (let i = 0; i < items.length; i++) {
+      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+      const it = items[i];
+      try {
+        pathEl.setAttribute('d', it.d);
+        if (it.m && it.m.length >= 6) {
+          pathEl.setAttribute('transform', `matrix(${it.m[0]} ${it.m[1]} ${it.m[2]} ${it.m[3]} ${it.m[4]} ${it.m[5]})`);
+        } else {
+          pathEl.removeAttribute('transform');
+        }
+        const L = (pathEl as any).getTotalLength ? (pathEl as any).getTotalLength() : 0;
+        const steps = Math.max(32, Math.min(220, Math.round((L || 1) / 6)));
+        let prev = (pathEl as any).getPointAtLength ? (pathEl as any).getPointAtLength(0) : { x: 0, y: 0 };
+        let acc = 0;
+        for (let j = 1; j <= steps; j++) {
+          if ((j & 63) === 0) {
+            const now = performance.now();
+            if (now - last >= budgetMs) {
+              await new Promise(res => requestAnimationFrame(() => res(null)));
+              last = performance.now();
+              if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+            }
+          }
+          const pt = (pathEl as any).getPointAtLength
+            ? (pathEl as any).getPointAtLength((j / steps) * (L || 1))
+            : prev;
+          acc += Math.hypot(pt.x - prev.x, pt.y - prev.y);
+          prev = pt;
+        }
+        lens.push(acc);
+        total += acc;
+      } catch {
+        lens.push(0);
+      }
+      const now = performance.now();
+      if (now - last >= budgetMs) {
+        await new Promise(res => requestAnimationFrame(() => res(null)));
+        last = performance.now();
+      }
+    }
+  } finally {
+    document.body.removeChild(svg);
+  }
+  return { lens, total };
+}
+
 // Lightweight item used in Path Refinement UI
 // type RefineItem = {
 //   id: string;
@@ -66,131 +134,384 @@ const SvgImporter: React.FC = () => {
   const [showDrawSettings, setShowDrawSettings] = React.useState<boolean>(false);
   const drawStateRef = React.useRef<{
     vb: { x: number; y: number; w: number; h: number } | null;
-    paths: { d: string; stroke: string; strokeWidth: number; fill: string; m?: [number,number,number,number,number,number] }[];
+    paths: { d: string; stroke: string; strokeWidth: number; fill: string; m?: [number,number,number,number,number,number], p2d?: Path2D | null }[];
     lens: number[];
     total: number;
     raf: number | null;
     playing: boolean;
     durationMs: number;
     startedAt: number;
-  }>({ vb: null, paths: [], lens: [], total: 0, raf: null, playing: false, durationMs: 3000, startedAt: 0 });
+    measureAbort?: AbortController;
+    accumCanvas?: HTMLCanvasElement | OffscreenCanvas | null;
+    accumCtx?: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+    accumIndex: number;
+    cursorIndex: number;
+    cursorStartLen: number;
+    lastEp: number;
+    pendingFills: number[];
+  }>({
+    vb: null,
+    paths: [],
+    lens: [],
+    total: 0,
+    raf: null,
+    playing: false,
+    durationMs: 3000,
+    startedAt: 0,
+    measureAbort: undefined,
+    accumCanvas: null,
+    accumCtx: null,
+    accumIndex: -1,
+    cursorIndex: 0,
+    cursorStartLen: 0,
+    lastEp: 0,
+    pendingFills: [],
+  });
 
-  const stopCanvasAnim = React.useCallback(() => {
+  const cancelMeasurement = React.useCallback(() => {
+    const st = drawStateRef.current;
+    if (st.measureAbort) {
+      st.measureAbort.abort();
+      st.measureAbort = undefined;
+    }
+  }, []);
+
+  const stopPlaybackOnly = React.useCallback(() => {
     const st = drawStateRef.current;
     st.playing = false;
     if (st.raf) cancelAnimationFrame(st.raf);
     st.raf = null;
   }, []);
 
+  const stopCanvasAnim = React.useCallback(() => {
+    stopPlaybackOnly();
+    cancelMeasurement();
+  }, [stopPlaybackOnly, cancelMeasurement]);
+
+  React.useEffect(() => () => { stopCanvasAnim(); }, [stopCanvasAnim]);
+
   const renderCanvasProgress = React.useCallback((ep: number) => {
     const st = drawStateRef.current;
-    const vb = st.vb; const cvs = canvasRef.current; if (!vb || !cvs) return;
-    const g = cvs.getContext('2d'); if (!g) return;
-    // Clear
-    g.clearRect(0, 0, cvs.width, cvs.height);
-    // Map vb to canvas
+    const vb = st.vb;
+    const cvs = canvasRef.current;
+    if (!vb || !cvs) return;
+    const ctx = cvs.getContext('2d');
+    if (!ctx) return;
+
     const dpr = window.devicePixelRatio || 1;
-    // Canvas backing is set with DPR, but CSS displays at logical px; compensate here
-    const displayW = cvs.clientWidth || (cvs.width / dpr);
-    const displayH = cvs.clientHeight || (cvs.height / dpr);
+    const displayW = cvs.clientWidth || cvs.width / dpr;
+    const displayH = cvs.clientHeight || cvs.height / dpr;
     const scaleX = (displayW * dpr) / Math.max(1, vb.w);
     const scaleY = (displayH * dpr) / Math.max(1, vb.h);
-    g.save();
-    g.translate(-vb.x * scaleX, -vb.y * scaleY);
-    g.scale(scaleX, scaleY);
-    let consumed = 0;
-    for (let i = 0; i < st.paths.length; i++) {
-      const p = st.paths[i]; const len = st.lens[i] || 0;
-      const start = consumed; const end = start + len; const target = ep * (st.total || 1);
-      let path: Path2D | null = null;
-      try { path = new Path2D(p.d); } catch { path = null; }
-      if (!path) { consumed += len; continue; }
-      g.lineWidth = p.strokeWidth || 2; g.lineCap = 'round'; g.lineJoin = 'round'; g.strokeStyle = p.stroke || '#111827';
-      if (p.m) { g.save(); g.transform(p.m[0], p.m[1], p.m[2], p.m[3], p.m[4], p.m[5]); }
-      if (len > 0 && st.total > 0) {
-        if (target <= start) {
-          g.setLineDash([len, len]); g.lineDashOffset = len; g.stroke(path);
-        } else if (target >= end) {
-          g.setLineDash([]); g.stroke(path);
-          if (p.fill && p.fill !== 'none' && p.fill !== 'transparent') { g.fillStyle = p.fill; g.fill(path); }
-        } else {
-          const local = Math.max(0, Math.min(len, target - start));
-          g.setLineDash([len, len]); g.lineDashOffset = Math.max(0, len - local); g.stroke(path);
-        }
-      } else {
-        g.stroke(path);
+
+    if (ep < st.lastEp) {
+      if (st.accumCtx && st.accumCanvas) {
+        st.accumCtx.clearRect(0, 0, st.accumCanvas.width, st.accumCanvas.height);
       }
-      if (p.m) g.restore();
-      consumed += len;
+      st.accumIndex = -1;
+      st.cursorIndex = 0;
+      st.cursorStartLen = 0;
+      st.pendingFills.length = 0;
     }
-    g.restore();
+
+    const paintToAccum = (idx: number) => {
+      if (!st.accumCtx) return;
+      const p = st.paths[idx];
+      const path = st.paths[idx].p2d;
+      if (!path) return;
+      const ag = st.accumCtx;
+      ag.save();
+      ag.translate(-vb.x * scaleX, -vb.y * scaleY);
+      ag.scale(scaleX, scaleY);
+      ag.lineWidth = p.strokeWidth || 2;
+      ag.lineCap = 'round';
+      ag.lineJoin = 'round';
+      ag.strokeStyle = p.stroke || '#111827';
+      if (p.m && p.m.length >= 6) { ag.save(); ag.transform(p.m[0], p.m[1], p.m[2], p.m[3], p.m[4], p.m[5]); }
+      ag.setLineDash([]);
+      ag.stroke(path);
+      if (p.fill && p.fill !== 'none' && p.fill !== 'transparent') {
+        st.pendingFills.push(idx);
+      }
+      if (p.m && p.m.length >= 6) ag.restore();
+      ag.restore();
+    };
+
+    const T = ep * (st.total || 1);
+    let cursorIndex = st.cursorIndex;
+    let cursorStartLen = st.cursorStartLen;
+
+    while (cursorIndex < st.paths.length && T >= cursorStartLen + (st.lens[cursorIndex] || 0)) {
+      if (cursorIndex > st.accumIndex) {
+        if (st.accumIndex === -1 && st.accumCtx && st.accumCanvas) {
+          st.accumCtx.clearRect(0, 0, st.accumCanvas.width, st.accumCanvas.height);
+        }
+        paintToAccum(cursorIndex);
+        st.accumIndex = cursorIndex;
+      }
+      cursorStartLen += st.lens[cursorIndex] || 0;
+      cursorIndex++;
+    }
+    st.cursorIndex = cursorIndex;
+    st.cursorStartLen = cursorStartLen;
+
+    if (st.accumCtx && st.accumIndex < cursorIndex - 1) {
+      if (st.accumIndex === -1 && st.accumCanvas) {
+        st.accumCtx.clearRect(0, 0, st.accumCanvas.width, st.accumCanvas.height);
+        for (let i = 0; i < cursorIndex; i++) paintToAccum(i);
+      } else {
+        for (let i = st.accumIndex + 1; i < cursorIndex; i++) paintToAccum(i);
+      }
+      st.accumIndex = cursorIndex - 1;
+    }
+
+    ctx.clearRect(0, 0, cvs.width, cvs.height);
+    if (st.accumCanvas) ctx.drawImage(st.accumCanvas as any, 0, 0);
+
+    if (cursorIndex < st.paths.length) {
+      const p = st.paths[cursorIndex];
+      const len = st.lens[cursorIndex] || 0;
+      const local = Math.max(0, Math.min(len, T - cursorStartLen));
+      if (local > 0) {
+        const path = st.paths[cursorIndex].p2d;
+        if (path) {
+          ctx.save();
+          ctx.translate(-vb.x * scaleX, -vb.y * scaleY);
+          ctx.scale(scaleX, scaleY);
+          ctx.lineWidth = p.strokeWidth || 2;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.strokeStyle = p.stroke || '#111827';
+          if (p.m && p.m.length >= 6) { ctx.save(); ctx.transform(p.m[0], p.m[1], p.m[2], p.m[3], p.m[4], p.m[5]); }
+          const SAFE_MAX = 4096;
+          const dashLen = Math.min(len, SAFE_MAX);
+          ctx.setLineDash([dashLen, dashLen]);
+          ctx.lineDashOffset = Math.max(0, dashLen - (dashLen * (local / len)));
+          ctx.stroke(path);
+          if (p.m && p.m.length >= 6) ctx.restore();
+          ctx.restore();
+        }
+      }
+    }
+    if (st.pendingFills.length && st.accumCtx) {
+      const ag = st.accumCtx;
+      ag.save();
+      ag.translate(-vb.x * scaleX, -vb.y * scaleY);
+      ag.scale(scaleX, scaleY);
+      for (const fi of st.pendingFills) {
+        const fp = st.paths[fi];
+        const path = fp.p2d;
+        if (!path) continue;
+        if (fp.m && fp.m.length >= 6) { ag.save(); ag.transform(fp.m[0], fp.m[1], fp.m[2], fp.m[3], fp.m[4], fp.m[5]); }
+        ag.fillStyle = fp.fill;
+        ag.fill(path);
+        if (fp.m && fp.m.length >= 6) ag.restore();
+      }
+      ag.restore();
+      st.pendingFills.length = 0;
+      ctx.clearRect(0, 0, cvs.width, cvs.height);
+      if (st.accumCanvas) ctx.drawImage(st.accumCanvas as any, 0, 0);
+    }
+    st.lastEp = ep;
   }, []);
 
-  // Helper to size canvas to its holder and re-render current frame
-  const resizeCanvasToHolder = React.useCallback(() => {
-    const cvs = canvasRef.current; const holder = domSvgHolderRef.current;
-    if (!cvs || !holder) return;
-    const rect = holder.getBoundingClientRect();
-    const dpr = window.devicePixelRatio || 1;
-    const pxW = Math.max(32, Math.round(rect.width * dpr));
-    const pxH = Math.max(32, Math.round(rect.height * dpr));
-    if (cvs.width !== pxW || cvs.height !== pxH) {
-      cvs.width = pxW; cvs.height = pxH;
-    }
-    (cvs.style as any).width = rect.width + 'px';
-    (cvs.style as any).height = rect.height + 'px';
-    // Re-render current frame after resize
-    const st = drawStateRef.current;
-    if (st.vb) {
-      const ep = st.playing ? Math.min(1, (performance.now() - st.startedAt) / Math.max(1, st.durationMs)) : 1;
-      renderCanvasProgress(ep);
-    }
-  }, [renderCanvasProgress]);
+  const resizeRafRef = React.useRef<number>(0);
 
-  const buildCanvasAnimFromSvg = React.useCallback((svgText: string) => {
-    const st = drawStateRef.current; st.paths = []; st.lens = []; st.total = 0; st.vb = null;
+  // Helper to size canvas to its holder and re-render current frame
+  const resizeCanvasToHolder = React.useCallback((immediate = false) => {
+    const run = () => {
+      const cvs = canvasRef.current;
+      const holder = domSvgHolderRef.current;
+      if (!cvs || !holder) return;
+      const st = drawStateRef.current;
+      const ep = st.playing ? Math.min(1, (performance.now() - st.startedAt) / Math.max(1, st.durationMs)) : 1;
+      stopPlaybackOnly();
+      const rect = holder.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const pxW = Math.max(32, Math.round(rect.width * dpr));
+      const pxH = Math.max(32, Math.round(rect.height * dpr));
+      if (cvs.width !== pxW || cvs.height !== pxH) {
+        cvs.width = pxW;
+        cvs.height = pxH;
+      }
+      (cvs.style as any).width = rect.width + 'px';
+      (cvs.style as any).height = rect.height + 'px';
+      if (st.accumCanvas) {
+        st.accumCanvas.width = pxW;
+        st.accumCanvas.height = pxH;
+        st.accumCtx = st.accumCanvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+        st.accumIndex = -1;
+        st.pendingFills.length = 0;
+      }
+      if (st.vb) {
+        renderCanvasProgress(ep);
+      }
+    };
+    if (immediate) {
+      if (resizeRafRef.current) cancelAnimationFrame(resizeRafRef.current);
+      run();
+    } else {
+      if (resizeRafRef.current) cancelAnimationFrame(resizeRafRef.current);
+      resizeRafRef.current = requestAnimationFrame(() => {
+        run();
+        resizeRafRef.current = 0;
+      });
+    }
+  }, [renderCanvasProgress, stopPlaybackOnly]);
+
+  const buildCanvasAnimFromSvg = React.useCallback(async (svgText: string) => {
+    const st = drawStateRef.current;
+    st.paths = [];
+    st.lens = [];
+    st.total = 0;
+    st.vb = null;
+    st.accumIndex = -1;
+    st.cursorIndex = 0;
+    st.cursorStartLen = 0;
+    st.pendingFills.length = 0;
+    cancelMeasurement();
+    const ctrl = new AbortController();
+    st.measureAbort = ctrl;
     try {
       const doc = new DOMParser().parseFromString(svgText, 'image/svg+xml');
-      const svg = doc.querySelector('svg'); if (!svg) return false;
+      const svg = doc.querySelector('svg');
+      if (!svg) return false;
       // viewBox
       let vb = { x: 0, y: 0, w: 800, h: 600 };
       const vba = svg.getAttribute('viewBox');
-      if (vba) { const a = vba.trim().split(/[\s,]+/).map(Number); if (a.length===4 && a.every(n => !isNaN(n))) vb = { x: a[0], y: a[1], w: Math.max(1,a[2]), h: Math.max(1,a[3]) }; }
-      else {
-        const w = Number(svg.getAttribute('width')); const h = Number(svg.getAttribute('height'));
-        if (!isNaN(w) && !isNaN(h)) vb = { x:0, y:0, w:Math.max(1,w), h:Math.max(1,h) };
+      if (vba) {
+        const a = vba.trim().split(/[\s,]+/).map(Number);
+        if (a.length === 4 && a.every(n => !isNaN(n))) vb = { x: a[0], y: a[1], w: Math.max(1, a[2]), h: Math.max(1, a[3]) };
+      } else {
+        const w = Number(svg.getAttribute('width'));
+        const h = Number(svg.getAttribute('height'));
+        if (!isNaN(w) && !isNaN(h)) vb = { x: 0, y: 0, w: Math.max(1, w), h: Math.max(1, h) };
       }
       // transforms helpers
-      type Mat = [number,number,number,number,number,number]; const I: Mat=[1,0,0,1,0,0];
-      const mul=(m1:Mat,m2:Mat):Mat=>[m1[0]*m2[0]+m1[2]*m2[1], m1[1]*m2[0]+m1[3]*m2[1], m1[0]*m2[2]+m1[2]*m2[3], m1[1]*m2[2]+m1[3]*m2[3], m1[0]*m2[4]+m1[2]*m2[5]+m1[4], m1[1]*m2[4]+m1[3]*m2[5]+m1[5]];
-      const translate=(tx:number,ty:number):Mat=>[1,0,0,1,tx,ty];
-      const scale=(sx:number,sy:number):Mat=>[sx,0,0,sy,0,0];
-      const rotate=(deg:number):Mat=>{const r=deg*Math.PI/180,c=Math.cos(r),s=Math.sin(r);return [c,s,-s,c,0,0];};
-      const skewX=(deg:number):Mat=>{const t=Math.tan(deg*Math.PI/180);return [1,0,t,1,0,0];};
-      const skewY=(deg:number):Mat=>{const t=Math.tan(deg*Math.PI/180);return [1,t,0,1,0,0];};
-      const parseT=(str:string|null|undefined):Mat=>{ if(!str) return I; let m=I; const re=/(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)/g; let match:RegExpExecArray|null; while((match=re.exec(str))){ const fn=match[1]; const args=match[2].split(/[\s,]+/).map(Number).filter(n=>!isNaN(n)); let t=I as Mat; switch(fn){ case 'matrix': if(args.length===6) t=[args[0],args[1],args[2],args[3],args[4],args[5]]; break; case 'translate': t=translate(args[0]||0,args[1]||0); break; case 'scale': t=scale(args[0]||1, args.length>1? args[1]:(args[0]||1)); break; case 'rotate': t=args.length>2? mul(mul(translate(args[1],args[2]), rotate(args[0]||0)), translate(-args[1],-args[2])) : rotate(args[0]||0); break; case 'skewX': t=skewX(args[0]||0); break; case 'skewY': t=skewY(args[0]||0); break; } m=mul(m,t);} return m; };
-      const getCtm=(el:Element):Mat=>{ let chain:Element[]=[]; let p:Element|null=el; while(p && p.nodeName.toLowerCase()!=='html'){ chain.unshift(p); p=p.parentElement; } let m=mul(I, translate(-vb.x, -vb.y)); for(const node of chain){ m=mul(m, parseT(node.getAttribute('transform'))); } return m; };
+      type Mat = [number, number, number, number, number, number];
+      const I: Mat = [1, 0, 0, 1, 0, 0];
+      const mul = (m1: Mat, m2: Mat): Mat => [
+        m1[0] * m2[0] + m1[2] * m2[1],
+        m1[1] * m2[0] + m1[3] * m2[1],
+        m1[0] * m2[2] + m1[2] * m2[3],
+        m1[1] * m2[2] + m1[3] * m2[3],
+        m1[0] * m2[4] + m1[2] * m2[5] + m1[4],
+        m1[1] * m2[4] + m1[3] * m2[5] + m1[5],
+      ];
+      const translate = (tx: number, ty: number): Mat => [1, 0, 0, 1, tx, ty];
+      const scale = (sx: number, sy: number): Mat => [sx, 0, 0, sy, 0, 0];
+      const rotate = (deg: number): Mat => {
+        const r = (deg * Math.PI) / 180,
+          c = Math.cos(r),
+          s = Math.sin(r);
+        return [c, s, -s, c, 0, 0];
+      };
+      const skewX = (deg: number): Mat => {
+        const t = Math.tan((deg * Math.PI) / 180);
+        return [1, 0, t, 1, 0, 0];
+      };
+      const skewY = (deg: number): Mat => {
+        const t = Math.tan((deg * Math.PI) / 180);
+        return [1, t, 0, 1, 0, 0];
+      };
+      const parseT = (str: string | null | undefined): Mat => {
+        if (!str) return I;
+        let m = I;
+        const re = /(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)/g;
+        let match: RegExpExecArray | null;
+        while ((match = re.exec(str))) {
+          const fn = match[1];
+          const args = match[2].split(/[\s,]+/).map(Number).filter(n => !isNaN(n));
+          let t = I as Mat;
+          switch (fn) {
+            case 'matrix':
+              if (args.length === 6) t = [args[0], args[1], args[2], args[3], args[4], args[5]];
+              break;
+            case 'translate':
+              t = translate(args[0] || 0, args[1] || 0);
+              break;
+            case 'scale':
+              t = scale(args[0] || 1, args.length > 1 ? args[1] : args[0] || 1);
+              break;
+            case 'rotate':
+              t =
+                args.length > 2
+                  ? mul(mul(translate(args[1], args[2]), rotate(args[0] || 0)), translate(-args[1], -args[2]))
+                  : rotate(args[0] || 0);
+              break;
+            case 'skewX':
+              t = skewX(args[0] || 0);
+              break;
+            case 'skewY':
+              t = skewY(args[0] || 0);
+              break;
+          }
+          m = mul(m, t);
+        }
+        return m;
+      };
+      const getCtm = (el: Element): Mat => {
+        let chain: Element[] = [];
+        let p: Element | null = el;
+        while (p && p.nodeName.toLowerCase() !== 'html') {
+          chain.unshift(p);
+          p = p.parentElement;
+        }
+        let m = mul(I, translate(-vb.x, -vb.y));
+        for (const node of chain) {
+          m = mul(m, parseT(node.getAttribute('transform')));
+        }
+        return m;
+      };
 
-      const out: { d:string; stroke:string; strokeWidth:number; fill:string; m?:Mat }[]=[];
-      const visit=(el:Element)=>{ if(el.nodeName.toLowerCase()==='path'){ const d=el.getAttribute('d')||''; const strokeAttr=el.getAttribute('stroke'); const stroke = !strokeAttr || strokeAttr === 'none' ? 'transparent' : strokeAttr; const sw=Number(el.getAttribute('stroke-width')||'2'); const fillAttr = el.getAttribute('fill'); const fill = !fillAttr || fillAttr === 'none' ? 'transparent' : fillAttr; const m=getCtm(el); out.push({ d, stroke, strokeWidth: isNaN(sw)?2:sw, fill, m }); } Array.from(el.children).forEach(visit); };
-      visit(svg);
-      // Measure lengths on a hidden svg
-      const s = document.createElementNS('http://www.w3.org/2000/svg','svg'); s.setAttribute('width','0'); s.setAttribute('height','0'); s.style.position='absolute'; s.style.left='-99999px'; s.style.top='-99999px'; document.body.appendChild(s);
-      const lens:number[]=[]; let total=0;
-      for(const p of out){ try{ const pathEl=document.createElementNS(s.namespaceURI,'path'); pathEl.setAttribute('d', p.d); if(p.m) pathEl.setAttribute('transform', `matrix(${p.m[0]} ${p.m[1]} ${p.m[2]} ${p.m[3]} ${p.m[4]} ${p.m[5]})`); s.appendChild(pathEl); const L=(pathEl as any).getTotalLength? (pathEl as any).getTotalLength():0; // approximate length via sampling
-        const steps=Math.max(32, Math.min(220, Math.round((L||1)/6))); let prev=(pathEl as any).getPointAtLength? (pathEl as any).getPointAtLength(0) : {x:0,y:0}; let acc=0; for(let i=1;i<=steps;i++){ const pt=(pathEl as any).getPointAtLength? (pathEl as any).getPointAtLength((i/steps)*(L||1)) : prev; acc += Math.hypot(pt.x-prev.x, pt.y-prev.y); prev=pt; } s.removeChild(pathEl); lens.push(acc); total += acc; } catch { lens.push(0); } }
-      document.body.removeChild(s);
-      st.vb = vb; st.paths = out; st.lens = lens; st.total = Math.max(1, total);
-      // Size canvas to holder
-      resizeCanvasToHolder();
+      const out: { d: string; stroke: string; strokeWidth: number; fill: string; m?: Mat, p2d?: Path2D | null }[] = [];
+      let nodeCount = 0;
+      const visit = async (el: Element): Promise<void> => {
+        if (el.nodeName.toLowerCase() === 'path') {
+          const d = el.getAttribute('d') || '';
+          const strokeAttr = el.getAttribute('stroke');
+          const stroke = !strokeAttr || strokeAttr === 'none' ? 'transparent' : strokeAttr;
+          const sw = Number(el.getAttribute('stroke-width') || '2');
+          const fillAttr = el.getAttribute('fill');
+          const fill = !fillAttr || fillAttr === 'none' ? 'transparent' : fillAttr;
+          const m = getCtm(el);
+          let p2d: Path2D | null = null;
+          try { p2d = new Path2D(d); } catch { p2d = null; }
+          out.push({ d, stroke, strokeWidth: isNaN(sw) ? 2 : sw, fill, m, p2d });
+        }
+        nodeCount++;
+        if (nodeCount % 300 === 0) {
+          await new Promise(res => requestAnimationFrame(res));
+          if (ctrl.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+        }
+        for (const child of Array.from(el.children)) {
+          await visit(child);
+        }
+      };
+      await visit(svg);
+
+      const toMeasure = out.map(p => ({ d: p.d, m: p.m as any }));
+      const { lens, total } = await measureSvgLengthsChunked(toMeasure, 10, ctrl.signal);
+
+      st.vb = vb;
+      st.paths = out;
+      st.lens = lens;
+      st.total = Math.max(1, total);
+      st.lastEp = 0;
       return true;
-    } catch { return false; }
-  }, [resizeCanvasToHolder]);
+    } catch (e: any) {
+      if (e?.name === 'AbortError') return false;
+      return false;
+    } finally {
+      if (st.measureAbort === ctrl) st.measureAbort = undefined;
+    }
+  }, [cancelMeasurement]);
 
   // Helper: add current draw snapshot to canvas with configured options
-  const addSnapshotToCanvas = React.useCallback((mode?: 'standard' | 'preview') => {
+  const addSnapshotToCanvas = React.useCallback(async (mode?: 'standard' | 'preview') => {
     if (!drawSvgSnapshot || !currentProject) return;
-    const ok = buildCanvasAnimFromSvg(drawSvgSnapshot);
+    resizeCanvasToHolder(true);
+    const ok = await buildCanvasAnimFromSvg(drawSvgSnapshot);
     if (!ok) { setStatus('Failed to parse SVG'); return; }
     const st = drawStateRef.current;
     const vb = st.vb;
@@ -233,7 +554,7 @@ const SvgImporter: React.FC = () => {
       animationEasing: 'linear',
     });
     setStatus(opts.mode === 'preview' ? '✅ Preview-style draw added to canvas' : opts.mode === 'batched' ? '✅ Batched draw added to canvas' : '✅ Draw added to canvas');
-  }, [addObject, buildCanvasAnimFromSvg, currentProject, drawSvgSnapshot, drawOptions]);
+  }, [addObject, buildCanvasAnimFromSvg, currentProject, drawSvgSnapshot, drawOptions, resizeCanvasToHolder]);
   // Normalized SVG string for responsive preview (compute viewBox if missing; avoid TS deps)
   // ResizeObserver to auto-resize canvas on container or window resize
   React.useEffect(() => {
@@ -305,6 +626,7 @@ const SvgImporter: React.FC = () => {
   React.useEffect(() => {
     if (!showDrawPreview) {
       // Clear snapshot when panel closes, so next open re-captures current value
+      stopCanvasAnim();
       setDrawSvgSnapshot(null);
       return;
     }
@@ -314,7 +636,7 @@ const SvgImporter: React.FC = () => {
         ? 'Verified: Draw preview equals Copy SVG.'
         : 'Warning: Snapshot differs from Copy SVG.');
     }
-  }, [showDrawPreview, lastSvg, drawSvgSnapshot]);
+  }, [showDrawPreview, lastSvg, drawSvgSnapshot, stopCanvasAnim]);
   // Runtime indicators
   const [lastEngine, setLastEngine] = React.useState<null | 'official' | 'npm' | 'local' | 'minimal'>(null);
   // Path Refinement modal state
@@ -998,24 +1320,39 @@ const SvgImporter: React.FC = () => {
                     type="button"
                     className="btn btn-success"
                     disabled={!lastSvg}
-                  onClick={() => {
+                    onClick={() => {
                       if (!lastSvg) return;
                       // Build canvas anim state from current SVG and play
                       setDrawSvgSnapshot(lastSvg);
                       setShowDrawPreview(true);
                       // Wait for the preview panel to mount & lay out before sizing the canvas.
                       // (Without this, the first click may read a 0px rect and mis-scale.)
-                      const startPlayback = () => {
+                      const startPlayback = async () => {
                         // Ensure DOM holder stays empty during playback (avoid double-render)
                         const holder = domSvgHolderRef.current;
                         if (holder) { holder.innerHTML = ''; }
                         // Cancel any in-flight RAF before rebuilding
                         stopCanvasAnim();
                         // Guarantee fresh size before building anim
-                        resizeCanvasToHolder();
-                        const ok = buildCanvasAnimFromSvg(lastSvg);
-                        if (!ok) { setStatus('Failed to prepare canvas animation'); return; }
+                        resizeCanvasToHolder(true);
+                        const cvs = canvasRef.current!;
                         const st = drawStateRef.current;
+                        if ('OffscreenCanvas' in window) {
+                          // @ts-ignore
+                          st.accumCanvas = new OffscreenCanvas(cvs.width, cvs.height);
+                          st.accumCtx = st.accumCanvas.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+                        } else {
+                          const acc = document.createElement('canvas');
+                          acc.width = cvs.width;
+                          acc.height = cvs.height;
+                          st.accumCanvas = acc;
+                          st.accumCtx = acc.getContext('2d') as CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null;
+                        }
+                        st.accumIndex = -1;
+                        st.cursorIndex = 0;
+                        st.cursorStartLen = 0;
+                        const ok = await buildCanvasAnimFromSvg(lastSvg);
+                        if (!ok) { setStatus('Failed to prepare canvas animation'); return; }
                         st.playing = true;
                         st.startedAt = performance.now();
                         st.durationMs = Math.max(1200, Math.min(6000, Math.round(st.total * 3))); // duration proportional to total length
@@ -1028,8 +1365,13 @@ const SvgImporter: React.FC = () => {
                         };
                         st.raf = requestAnimationFrame(tick);
                       };
-                      // Use double rAF to ensure layout (panel visibility + CSS) has settled.
-                      requestAnimationFrame(() => requestAnimationFrame(startPlayback));
+                      // Use double rAF to ensure layout (panel visibility + CSS) has settled,
+                      // then await the async build before starting playback.
+                      requestAnimationFrame(() =>
+                        requestAnimationFrame(async () => {
+                          await startPlayback();
+                        })
+                      );
                     }}
                   >▶ Play Draw</button>
                   <button

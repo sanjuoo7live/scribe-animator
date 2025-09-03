@@ -1,4 +1,38 @@
 /**
+ * Draw a partial polyline up to a given arc-length using CanvasRenderingContext2D.
+ * @param ctx Canvas context
+ * @param samples Array of PathPoint (sampled polyline)
+ * @param visibleLength Arc-length to reveal (in same units as cumulativeLength)
+ * @param transform Optional: function to map (x, y) to world/canvas space
+ */
+export function drawPartialPolyline(
+  ctx: CanvasRenderingContext2D,
+  samples: PathPoint[],
+  visibleLength: number,
+  transform?: (pt: {x:number, y:number}) => {x:number, y:number}
+) : boolean {
+  if (!samples.length || visibleLength <= 0) return false;
+  let i = 0;
+  for (; i < samples.length && samples[i].cumulativeLength <= visibleLength; i++) {}
+  ctx.beginPath();
+  const first = transform ? transform(samples[0]) : samples[0];
+  ctx.moveTo(first.x, first.y);
+  for (let k = 1; k < i; k++) {
+    const pt = transform ? transform(samples[k]) : samples[k];
+    ctx.lineTo(pt.x, pt.y);
+  }
+  // Partial last segment
+  if (i < samples.length && i > 0) {
+    const A = samples[i-1], B = samples[i];
+    const t = (visibleLength - A.cumulativeLength) / Math.max(1e-6, B.cumulativeLength - A.cumulativeLength);
+    const x = A.x + t * (B.x - A.x);
+    const y = A.y + t * (B.y - A.y);
+    const pt = transform ? transform({x, y}) : {x, y};
+    ctx.lineTo(pt.x, pt.y);
+  }
+  return true;
+}
+/**
  * SVG Path Sampling System for Hand Follower
  * 
  * This utility provides functions to sample SVG paths at regular intervals,
@@ -31,7 +65,8 @@ export class PathSampler {
    * @returns Array of PathPoint objects
    */
   static samplePath(pathData: string, sampleDistance: number = 2, matrix?: number[], maxSamples: number = 5000): PathPoint[] {
-    const cacheKey = `${pathData}|${matrix ? matrix.join(',') : 'nomat'}|sd:${sampleDistance}|max:${maxSamples}`;
+    const matKey = (matrix && matrix.length >= 6) ? matrix.join(',') : 'nomat';
+    const cacheKey = `${pathData}|mat:${matKey}|sd:${sampleDistance}|max:${maxSamples}`;
     const cached = this.cache.get(cacheKey);
     if (cached) return cached;
     // Create a temporary SVG path element to measure
@@ -48,7 +83,7 @@ export class PathSampler {
     svg.appendChild(path);
     document.body.appendChild(svg);
 
-    const samples: PathPoint[] = [];
+  const samples: PathPoint[] = [];
     
     try {
       let totalLength = path.getTotalLength();
@@ -58,9 +93,10 @@ export class PathSampler {
       if (totalLength < MIN_LEN) {
         const p0 = path.getPointAtLength(0);
         const p1 = path.getPointAtLength(totalLength);
-        const a = Math.atan2(p1.y - p0.y, p1.x - p0.x);
-        const applied = this.applyMatrix({ x: p0.x, y: p0.y }, matrix);
-        const result = [{ x: applied.x, y: applied.y, cumulativeLength: 0, tangentAngle: a, segmentIndex: 0 }];
+        const P0 = this.applyMatrix({ x: p0.x, y: p0.y }, matrix);
+        const P1 = this.applyMatrix({ x: p1.x, y: p1.y }, matrix);
+        const a = Math.atan2(P1.y - P0.y, P1.x - P0.x);
+        const result = [{ x: P0.x, y: P0.y, cumulativeLength: 0, tangentAngle: a, segmentIndex: 0 }];
         document.body.removeChild(svg);
         this.cache.set(cacheKey, result);
         return result;
@@ -76,21 +112,22 @@ export class PathSampler {
         return samples;
       }
 
-      let currentLength = 0;
+  let currentLength = 0;
       let segmentIndex = 0;
       let previousAngle = 0;
+  // no-op variable retained in case of future smoothing; currently unused
       
   while (currentLength <= totalLength) {
   const svgPoint = path.getPointAtLength(currentLength);
-  const point = this.applyMatrix({ x: svgPoint.x, y: svgPoint.y }, matrix);
+  const appliedPoint = this.applyMatrix({ x: svgPoint.x, y: svgPoint.y }, matrix);
         
-        // Calculate tangent angle by looking ahead slightly
-        const lookAheadDistance = Math.min(1, totalLength - currentLength);
+    // Calculate tangent angle by looking ahead slightly
+    const lookAheadDistance = Math.min(1, totalLength - currentLength);
   const svgNextPoint = path.getPointAtLength(currentLength + lookAheadDistance);
-  const nextPoint = this.applyMatrix({ x: svgNextPoint.x, y: svgNextPoint.y }, matrix);
+  const appliedNextPoint = this.applyMatrix({ x: svgNextPoint.x, y: svgNextPoint.y }, matrix);
 
-  const dx = nextPoint.x - point.x;
-  const dy = nextPoint.y - point.y;
+  const dx = appliedNextPoint.x - appliedPoint.x;
+  const dy = appliedNextPoint.y - appliedPoint.y;
         let tangentAngle = Math.atan2(dy, dx);
         
         // Smooth angle transitions to prevent jumps during semicircular movements
@@ -107,12 +144,13 @@ export class PathSampler {
         previousAngle = tangentAngle;
         
         samples.push({
-          x: point.x,
-          y: point.y,
+          x: appliedPoint.x,
+          y: appliedPoint.y,
           cumulativeLength: currentLength,
           tangentAngle,
           segmentIndex
         });
+  // prevLocal not needed when using path cumulative length
         
   currentLength += minStep;
         
@@ -125,16 +163,15 @@ export class PathSampler {
       // Ensure we have the final point
   if (samples.length === 0 || samples[samples.length - 1].cumulativeLength < totalLength) {
         const svgFinalPoint = path.getPointAtLength(totalLength);
-        const finalPoint = this.applyMatrix({ x: svgFinalPoint.x, y: svgFinalPoint.y }, matrix);
-        const prevPoint = samples.length > 0 ? samples[samples.length - 1] : { x: finalPoint.x, y: finalPoint.y, cumulativeLength: totalLength, tangentAngle: 0, segmentIndex };
+        const appliedFinalPoint = this.applyMatrix({ x: svgFinalPoint.x, y: svgFinalPoint.y }, matrix);
+        const prevPoint = samples.length > 0 ? samples[samples.length - 1] : { x: appliedFinalPoint.x, y: appliedFinalPoint.y, cumulativeLength: 0, tangentAngle: 0, segmentIndex } as PathPoint;
 
-        const dx = finalPoint.x - prevPoint.x;
-        const dy = finalPoint.y - prevPoint.y;
+        const dx = appliedFinalPoint.x - prevPoint.x;
+        const dy = appliedFinalPoint.y - prevPoint.y;
         const tangentAngle = Math.atan2(dy, dx);
-
         samples.push({
-          x: finalPoint.x,
-          y: finalPoint.y,
+          x: appliedFinalPoint.x,
+          y: appliedFinalPoint.y,
           cumulativeLength: totalLength,
           tangentAngle,
           segmentIndex

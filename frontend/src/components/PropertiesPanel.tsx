@@ -3,8 +3,10 @@ import { useAppStore } from '../store/appStore';
 import SvgDrawSettings, { SvgDrawOptions } from './SvgDrawSettings';
 import HandToolSelector from '../components/hands/HandToolSelector';
 import HandToolCalibrator from './hands/HandToolCalibrator';
+import HandFollowerCalibrationModal from './hands/HandFollowerCalibrationModal';
 import { getCalibration } from '../utils/calibrationStore';
 import { HandAsset, ToolAsset } from '../types/handAssets';
+import { HandToolCompositor } from '../utils/handToolCompositor';
 
 const PropertiesPanel: React.FC = () => {
   const { currentProject, selectedObject, updateObject, moveObjectLayer } = useAppStore();
@@ -14,6 +16,7 @@ const PropertiesPanel: React.FC = () => {
   const selectedObj = currentProject?.objects.find(obj => obj.id === selectedObject);
   const [selectorOpen, setSelectorOpen] = React.useState(false);
   const [calOpen, setCalOpen] = React.useState(false);
+  const [calibrationModalOpen, setCalibrationModalOpen] = React.useState(false);
 
   const updateObjectProperty = React.useCallback((property: string, value: any) => {
     if (!selectedObj) return;
@@ -137,6 +140,27 @@ const PropertiesPanel: React.FC = () => {
               className="w-full p-2 bg-gray-700 text-gray-300 rounded text-sm text-xs"
             />
           </div>
+        </div>
+      </div>
+
+      {/* Debug Section */}
+      <div className="mb-6">
+        <h4 className="text-sm font-semibold text-gray-400 mb-2">Debug</h4>
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-xs text-gray-300">
+            <input
+              type="checkbox"
+              checked={!!selectedObj.properties?.debug?.logRenderer}
+              onChange={(e) => {
+                const current = selectedObj.properties?.debug || {};
+                updateProperty('debug', { ...current, logRenderer: e.target.checked });
+              }}
+            />
+            Enable Renderer Logs
+          </label>
+          <p className="text-xs text-gray-500">
+            Shows detailed progress and rendering info in browser console
+          </p>
         </div>
       </div>
 
@@ -666,6 +690,22 @@ const PropertiesPanel: React.FC = () => {
                 </div>
 
                 {/* Phase 2: Movement Smoothing */}
+                {/* Calibration Modal Button */}
+                <div className="bg-gray-700/40 p-3 rounded">
+                  <h5 className="text-xs font-medium text-gray-300 mb-2">Advanced Calibration</h5>
+                  <button
+                    onClick={() => setCalibrationModalOpen(true)}
+                    className="w-full p-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 flex items-center justify-center gap-2"
+                  >
+                    <span>🎯</span>
+                    Open Calibration Tool
+                  </button>
+                  <div className="text-xs text-gray-500 mt-1">
+                    Fine-tune nib position, backtrack, and alignment
+                  </div>
+                </div>
+
+                {/* Phase 2: Movement Smoothing */}
                 <div className="bg-blue-900/20 p-3 rounded">
                   <h5 className="text-xs font-medium text-blue-300 mb-2">🆕 Movement Smoothing</h5>
                   <div className="space-y-2">
@@ -1017,6 +1057,27 @@ const PropertiesPanel: React.FC = () => {
               const next: any = { ...current, mode: 'professional', scale, mirror, showForeground };
               if (hand) next.handAsset = hand; // only override if provided
               if (tool) next.toolAsset = tool; // only override if provided
+              // Set nibAnchor so the tool's tip aligns with the hand's grip using compositor
+              if (hand && tool) {
+                // Apply mirroring to hand if needed before composition calculation
+                const handForComposition = mirror ? HandToolCompositor.mirrorHandAsset(hand) : hand;
+                
+                // Use the composition engine to calculate proper alignment at a reference position
+                const composition = HandToolCompositor.composeHandTool(
+                  handForComposition,
+                  tool,
+                  { x: 0, y: 0 }, // reference position (doesn't matter for alignment calculation)
+                  0, // reference angle (doesn't matter for alignment calculation)
+                  1 // unit scale for accurate pixel calculations
+                );
+                
+                // The nibAnchor should be where the tool tip ends up relative to the hand position
+                // After composition, hand is at composition.handPosition and tool tip is at composition.finalTipPosition
+                next.nibAnchor = {
+                  x: composition.finalTipPosition.x - composition.handPosition.x,
+                  y: composition.finalTipPosition.y - composition.handPosition.y
+                };
+              }
               updateProperty('handFollower', next);
               setSelectorOpen(false);
             } catch (error) {
@@ -1032,6 +1093,33 @@ const PropertiesPanel: React.FC = () => {
           hand={selectedObj.properties.handFollower.handAsset}
           tool={selectedObj.properties.handFollower.toolAsset}
           onClose={()=> setCalOpen(false)}
+        />
+      )}
+      
+      {/* Hand Follower Calibration Modal */}
+      {calibrationModalOpen && selectedObj?.type==='svgPath' && selectedObj.properties?.handFollower?.enabled && selectedObj.properties?.handFollower?.handAsset && selectedObj.properties?.handFollower?.toolAsset && (
+        <HandFollowerCalibrationModal
+          isOpen={calibrationModalOpen}
+          onClose={() => setCalibrationModalOpen(false)}
+          handAsset={selectedObj.properties.handFollower.handAsset}
+          toolAsset={selectedObj.properties.handFollower.toolAsset}
+          pathData={(selectedObj as any).pathData || ''}
+          initialSettings={{
+            tipBacktrackPx: selectedObj.properties.handFollower.tipBacktrackPx,
+            calibrationOffset: selectedObj.properties.handFollower.calibrationOffset,
+            nibAnchor: selectedObj.properties.handFollower.nibAnchor,
+            scale: selectedObj.properties.handFollower.scale,
+            mirror: selectedObj.properties.handFollower.mirror,
+            showForeground: selectedObj.properties.handFollower.showForeground,
+          }}
+          onApply={(settings) => {
+            const currentSettings = selectedObj.properties?.handFollower || {};
+            updateProperty('handFollower', { ...currentSettings, ...settings });
+          }}
+          onLiveChange={(partial) => {
+            const currentSettings = selectedObj.properties?.handFollower || {};
+            updateProperty('handFollower', { ...currentSettings, ...partial });
+          }}
         />
       )}
     </div>

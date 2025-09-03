@@ -3,7 +3,6 @@ import { Group } from 'react-konva';
 import Konva from 'konva';
 import { HandAsset, ToolAsset } from '../../types/handAssets';
 import { ThreeLayerHandRenderer } from '../../utils/threeLayerHandRenderer';
-import { PathSampler } from '../../utils/pathSampler';
 import { HandToolCompositor } from '../../utils/handToolCompositor';
 
 interface Props {
@@ -60,10 +59,68 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
     return norm(smoothed);
   };
 
-  const sampler = useMemo(() => {
-    if (!pathData) return null;
-    // Use step=2px and cap samples to 4000 for perf; still smooth with angle smoothing
-    return PathSampler.createCachedSampler(pathData, 2, pathMatrix, 4000);
+  // Get position and angle using Frenet frame (direct arc-length calculation)
+  const getFrenetFramePosition = React.useCallback((progress: number, backtrackPx: number = 0) => {
+    if (!pathData) return { x: 0, y: 0, tangentAngle: 0 };
+
+    // Create temporary DOM path element for precise arc-length calculation
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('width', '0');
+    svg.setAttribute('height', '0');
+    svg.style.position = 'absolute';
+    svg.style.left = '-99999px';
+    
+    const path = document.createElementNS(svgNS, 'path');
+    path.setAttribute('d', pathData);
+    svg.appendChild(path);
+    document.body.appendChild(svg);
+
+    try {
+      const totalLength = path.getTotalLength();
+      if (!isFinite(totalLength) || totalLength <= 0) {
+        document.body.removeChild(svg);
+        return { x: 0, y: 0, tangentAngle: 0 };
+      }
+
+      // Arc-length positioning: L = progress * totalLength
+      let targetLength = Math.max(0, progress * totalLength - backtrackPx);
+      targetLength = Math.min(targetLength, totalLength);
+
+      // Get position directly from path geometry
+      const point = path.getPointAtLength(targetLength);
+      
+      // Calculate tangent angle using epsilon method for smoothness
+      const epsilon = Math.min(1, totalLength * 0.001); // Small step for tangent
+      const backPoint = path.getPointAtLength(Math.max(0, targetLength - epsilon));
+      const forwardPoint = path.getPointAtLength(Math.min(totalLength, targetLength + epsilon));
+      
+      let tangentAngle = Math.atan2(forwardPoint.y - backPoint.y, forwardPoint.x - backPoint.x);
+
+      // Apply matrix transformation if provided
+      let finalPoint = { x: point.x, y: point.y };
+      if (pathMatrix && pathMatrix.length >= 6) {
+        const [a, b, c, d, e, f] = pathMatrix;
+        finalPoint = {
+          x: a * point.x + c * point.y + e,
+          y: b * point.x + d * point.y + f,
+        };
+        
+        // Transform tangent direction as well
+        const dx = forwardPoint.x - backPoint.x;
+        const dy = forwardPoint.y - backPoint.y;
+        const transformedDx = a * dx + c * dy;
+        const transformedDy = b * dx + d * dy;
+        tangentAngle = Math.atan2(transformedDy, transformedDx);
+      }
+
+      document.body.removeChild(svg);
+      return { ...finalPoint, tangentAngle };
+      
+    } catch (error) {
+      document.body.removeChild(svg);
+      return { x: 0, y: 0, tangentAngle: 0 };
+    }
   }, [pathData, pathMatrix]);
 
   // Normalize visual size: scale tool to a target tip length (pixels)
@@ -77,39 +134,33 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
   }, [toolAsset, scale]);
 
   // Initialize assets and add inner group once
-  // Initialize assets and group once for given assets/sampler; progress updates handled separately.
-  // We intentionally exclude `progress` from deps to avoid reinitialization on every frame.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  // We intentionally don't include `progress` in deps to avoid reinitialization every frame.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // Initialize assets and add inner group once
+  // Only create the group and load assets when pathData, handAsset, or toolAsset changes
   useEffect(() => {
-    if (!mountRef.current || !sampler || !handAsset || !toolAsset || !visible) return;
-
+    if (!mountRef.current || !pathData || !handAsset || !toolAsset || !visible) return;
     let cancelled = false;
     const setup = async () => {
-      // Reset compositor debug state for fresh run
-  HandToolCompositor.resetDebugState();
-  HandToolCompositor.setDebugEnabled(!!debug);
+      HandToolCompositor.resetDebugState();
       const renderer = new ThreeLayerHandRenderer();
       rendererRef.current = renderer;
       await renderer.loadAssets(handAsset, toolAsset);
-
-      // Avoid exactly 0 to prevent degenerate tangents
+      // Initial position
       const initProg = progress <= 0 ? 0.0001 : progress;
-      let p = sampler.getPointAtProgress(initProg) || { x: 0, y: 0, tangentAngle: 0 } as any;
-      if (tipBacktrackPx > 0) {
-        const total = sampler.getTotalLength();
-        const targetLen = Math.max(0, Math.min(total, initProg * total - tipBacktrackPx));
-        const backProg = total > 0 ? targetLen / total : initProg;
-        const bp = sampler.getPointAtProgress(backProg);
-        if (bp) p = bp;
-      }
+      const p = getFrenetFramePosition(initProg, tipBacktrackPx);
       const angle = smoothAngle(prevAngleRef.current, p.tangentAngle);
       prevAngleRef.current = angle;
+      let posX = p.x, posY = p.y;
+      if (extraOffset && (extraOffset.x || extraOffset.y)) {
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const dx = (extraOffset.x || 0) * cos - (extraOffset.y || 0) * sin;
+        const dy = (extraOffset.x || 0) * sin + (extraOffset.y || 0) * cos;
+        posX += dx; posY += dy;
+      }
       const group = renderer.createThreeLayerGroup({
         handAsset,
         toolAsset,
-        pathPosition: { x: p.x, y: p.y },
+        pathPosition: { x: posX, y: posY },
         pathAngle: angle,
         scale: displayScale,
         opacity: 1,
@@ -122,20 +173,8 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
       innerGroupRef.current = group;
       mountRef.current!.add(group);
       mountRef.current!.getLayer()?.batchDraw();
-
-      // Optional initial drift log
-      if (debug) {
-        const tip = renderer.getTipPosition();
-        if (tip) {
-          const err = Math.hypot(tip.x - p.x, tip.y - p.y);
-          if (err > 0.75) {
-            console.log(`[HandFollower] Tip drift ${err.toFixed(2)}px at init (${p.x.toFixed(1)}, ${p.y.toFixed(1)})`);
-          }
-        }
-      }
     };
     setup();
-
     return () => {
       cancelled = true;
       if (innerGroupRef.current) {
@@ -144,40 +183,34 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
       }
       rendererRef.current?.dispose();
       rendererRef.current = null;
-  prevAngleRef.current = undefined;
+      prevAngleRef.current = undefined;
     };
-  }, [sampler, handAsset, toolAsset, displayScale, visible, debug]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Update position on progress changes
+  }, [getFrenetFramePosition, handAsset, toolAsset, displayScale, visible, mirror, showForeground, pathData]);
+  // Only update position on progress changes
   useEffect(() => {
-    if (!rendererRef.current || !innerGroupRef.current || !sampler || !visible) return;
-    // Simple throttle: cap at ~60fps
-    const now = performance.now();
-    if (now - lastUpdateTsRef.current < 16) return;
-    lastUpdateTsRef.current = now;
-    // Avoid exactly 0 to prevent degenerate tangents on some paths
+    if (!rendererRef.current || !innerGroupRef.current || !pathData || !visible) return;
     const currentProgress = progress <= 0 ? 0.0001 : progress;
-    let p = sampler.getPointAtProgress(currentProgress);
+    const p = getFrenetFramePosition(currentProgress, tipBacktrackPx);
     if (!p) return;
-    if (tipBacktrackPx > 0) {
-      const total = sampler.getTotalLength();
-      const targetLen = Math.max(0, Math.min(total, currentProgress * total - tipBacktrackPx));
-      const backProg = total > 0 ? targetLen / total : currentProgress;
-      const bp = sampler.getPointAtProgress(backProg);
-      if (bp) p = bp;
-    }
-    // Reset smoothing if progress resets or jumps backwards (new segment)
     if (currentProgress < lastProgressRef.current) {
       prevAngleRef.current = undefined;
     }
     lastProgressRef.current = currentProgress;
     const angle = smoothAngle(prevAngleRef.current, p.tangentAngle);
     prevAngleRef.current = angle;
+    let posX = p.x, posY = p.y;
+    if (extraOffset && (extraOffset.x || extraOffset.y)) {
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      const dx = (extraOffset.x || 0) * cos - (extraOffset.y || 0) * sin;
+      const dy = (extraOffset.x || 0) * sin + (extraOffset.y || 0) * cos;
+      posX += dx; posY += dy;
+    }
     rendererRef.current.updatePosition(innerGroupRef.current, {
       handAsset,
       toolAsset,
-      pathPosition: { x: p.x, y: p.y },
-  pathAngle: angle,
+      pathPosition: { x: posX, y: posY },
+      pathAngle: angle,
       scale: displayScale,
       opacity: 1,
       debug,
@@ -185,19 +218,8 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
       showForeground,
       extraOffset,
     });
-    // Frame drift measurement
-    if (debug) {
-      const tip = rendererRef.current.getTipPosition();
-      if (tip) {
-        const err = Math.hypot(tip.x - p.x, tip.y - p.y);
-        if (err > 0.75) {
-          console.log(`[HandFollower] Tip drift ${err.toFixed(2)}px at (${p.x.toFixed(1)}, ${p.y.toFixed(1)})`);
-        }
-      }
-    }
-  // Avoid excessive batchDraw calls; rely on Konva’s internal batching
-  mountRef.current?.getLayer()?.batchDraw();
-  }, [progress, sampler, handAsset, toolAsset, displayScale, visible, debug, mirror, showForeground, extraOffset, tipBacktrackPx]);
+    mountRef.current?.getLayer()?.batchDraw();
+  }, [progress, tipBacktrackPx, handAsset, toolAsset, displayScale, visible, mirror, showForeground, extraOffset, pathData]);
 
   if (!visible) return null;
   return <Group ref={mountRef} />;

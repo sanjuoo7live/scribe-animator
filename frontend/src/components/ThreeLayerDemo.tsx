@@ -66,7 +66,16 @@ const ThreeLayerDemo: React.FC = () => {
         // Create renderer and load assets
         const handRenderer = new ThreeLayerHandRenderer();
         const handAsset = HAND_ASSETS[0]; // Right hand pen grip
-        const toolAsset = TOOL_ASSETS[1]; // Blue ballpoint pen
+        const toolAsset = TOOL_ASSETS[0]; // Demo tool pen
+        
+        console.log('Loading assets:', {
+          handAsset: { id: handAsset?.id, imageBg: handAsset?.imageBg, imageFg: handAsset?.imageFg },
+          toolAsset: { id: toolAsset?.id, image: toolAsset?.image }
+        });
+
+        if (!handAsset || !toolAsset) {
+          throw new Error('Hand or tool asset not found');
+        }
 
         await handRenderer.loadAssets(handAsset, toolAsset);
         

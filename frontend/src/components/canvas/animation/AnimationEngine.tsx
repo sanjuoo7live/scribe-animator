@@ -2,7 +2,7 @@
 export class AnimationEngine {
   private isRunning = false;
   private animationId: number | null = null;
-  private rafPingId: number | null = null;
+  private rafId: number | null = null;
   private subscribers: Set<(time: number) => void> = new Set();
   private startTime = 0; // kept for reference, not relied upon for deltas
   private currentTime = 0;
@@ -48,20 +48,19 @@ export class AnimationEngine {
           console.error('Animation subscriber error:', error);
         }
       });
-
-      // Schedule next tick ~60fps using timers to work with Jest fake timers
-      this.animationId = (setTimeout as unknown as (handler: () => void, timeout: number) => number)(tick, 16);
-    };
-    // Kick off first tick
-    this.animationId = (setTimeout as unknown as (handler: () => void, timeout: number) => number)(tick, 16);
-
-    // Trigger a single rAF call if available (for compatibility/diagnostics)
-  if (typeof requestAnimationFrame === 'function') {
-      try {
-    this.rafPingId = requestAnimationFrame(() => {});
-      } catch {
-        // ignore if environment doesn't support it
+      // Schedule next tick with requestAnimationFrame for drift-free timing
+      if (typeof requestAnimationFrame === 'function') {
+        this.rafId = requestAnimationFrame(tick);
+      } else {
+        // Fallback to timers if rAF not available
+        this.animationId = (setTimeout as unknown as (handler: () => void, timeout: number) => number)(tick, 16);
       }
+    };
+    // Kick off first tick using rAF when possible
+    if (typeof requestAnimationFrame === 'function') {
+      this.rafId = requestAnimationFrame(tick);
+    } else {
+      this.animationId = (setTimeout as unknown as (handler: () => void, timeout: number) => number)(tick, 16);
     }
   }
 
@@ -74,16 +73,16 @@ export class AnimationEngine {
       clearTimeout(this.animationId as unknown as number);
       this.animationId = null;
     }
-  // Pause ticking; keep accumulatedTime to preserve continuity
-  this.lastTickTime = null;
+    // Pause ticking; keep accumulatedTime to preserve continuity
+    this.lastTickTime = null;
 
-    if (this.rafPingId !== null && typeof cancelAnimationFrame === 'function') {
+    if (this.rafId !== null && typeof cancelAnimationFrame === 'function') {
       try {
-        cancelAnimationFrame(this.rafPingId);
+        cancelAnimationFrame(this.rafId);
       } catch {
         // ignore
       }
-      this.rafPingId = null;
+      this.rafId = null;
     }
   }
 

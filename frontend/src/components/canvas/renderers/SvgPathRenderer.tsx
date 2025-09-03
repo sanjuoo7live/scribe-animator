@@ -1,8 +1,11 @@
 import React from 'react';
-import { Group, Shape, Rect } from 'react-konva';
+import { Group, Rect, Shape } from 'react-konva';
 import { BaseRendererProps } from '../renderers/RendererRegistry';
 import { calculateAnimationProgress } from '../utils/animationUtils';
 import ThreeLayerHandFollower from '../../hands/ThreeLayerHandFollower';
+import { PathSampler } from '../../../utils/pathSampler';
+
+// Note: splitSubpaths no longer used in this renderer
 
 // SVG Path Renderer component
 export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
@@ -34,30 +37,285 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
   }, [obj.properties?.paths]);
   
   // Check if we need to apply calibration offset to path drawing
-  const handFollowerSettings = obj.properties?.handFollower;
-  const hasActiveHandFollower = handFollowerSettings?.enabled && obj.animationType === 'drawIn' && progress < 1;
-  const calibrationOffset = hasActiveHandFollower ? (handFollowerSettings.calibrationOffset || handFollowerSettings.offset) : null;
   
-  const totalLen = obj.properties?.totalLen || 0;
+  // Compute precise total length and drawable path information
+  const { totalLen, drawablePaths } = React.useMemo(() => {
+    const arr = Array.isArray(obj.properties?.paths) ? obj.properties.paths : [];
+    
+    // Use provided totalLen if available and valid
+    if (typeof obj.properties?.totalLen === 'number' && obj.properties.totalLen > 0) {
+      // Still need to compute individual path lengths for synchronization
+      const drawablePathsTemp: any[] = [];
+      
+      arr.forEach((p: any, index: number) => {
+        const d = p?.d as string | undefined;
+        if (!d) return;
+        
+        if (!(p as any)._samples) {
+          try {
+            (p as any)._samples = PathSampler.samplePath(d, 1.25, (p?.m as number[] | undefined));
+          } catch (error) {
+            (p as any)._samples = [];
+          }
+        }
+        const samples = (p as any)._samples as ReturnType<typeof PathSampler.samplePath>;
+        const len = samples.length ? samples[samples.length - 1].cumulativeLength : 0;
+        (p as any).len = len;
+        
+        if (len > 0) {
+          drawablePathsTemp.push({ ...p, index, len });
+        }
+      });
+      
+      return {
+        totalLen: obj.properties.totalLen,
+        drawablePaths: drawablePathsTemp
+      };
+    }
+    
+    // Compute from scratch
+    const drawablePathsTemp: any[] = [];
+    let sum = 0;
+    
+    arr.forEach((p: any, index: number) => {
+      const d = p?.d as string | undefined;
+      if (!d) {
+        if (obj.properties?.debug?.logRenderer) {
+          console.warn('[SvgPathRenderer] Path missing d attribute:', p);
+        }
+        return;
+      }
+      
+      // Validate SVG path data
+      if (!d.trim().match(/^[MmLlHhVvCcSsQqTtAaZz0-9\s,.-]+$/)) {
+        console.error('[SvgPathRenderer] Invalid SVG path data:', d);
+        return;
+      }
+      
+      // Compute path length using PathSampler
+      if (!(p as any)._samples) {
+        try {
+          (p as any)._samples = PathSampler.samplePath(d, 1.25, (p?.m as number[] | undefined));
+        } catch (error) {
+          console.error('[SvgPathRenderer] PathSampler failed for path:', d, error);
+          (p as any)._samples = [];
+        }
+      }
+      const samples = (p as any)._samples as ReturnType<typeof PathSampler.samplePath>;
+      const len = samples.length ? samples[samples.length - 1].cumulativeLength : 0;
+      (p as any).len = len;
+      
+      if (len > 0) {
+        drawablePathsTemp.push({ ...p, index, len });
+        sum += len;
+      } else if (obj.properties?.debug?.logRenderer) {
+        console.warn('[SvgPathRenderer] Path has zero length:', { d, samples: samples.length, index });
+      }
+    });
+    
+    return {
+      totalLen: sum,
+      drawablePaths: drawablePathsTemp
+    };
+  }, [obj.properties?.paths, obj.properties?.totalLen, obj.properties?.debug?.logRenderer]);
   const draw = obj.animationType === 'drawIn';
-  const previewMode = !!obj.properties?.previewDraw;
+  // const previewMode = !!obj.properties?.previewDraw;
   const drawOptions = obj.properties?.drawOptions || null;
-  const fillKind: 'afterAll' | 'perPath' | 'batched' = drawOptions?.fillStrategy?.kind
-    || (previewMode ? 'perPath' : 'afterAll');
-  const batchesN = Math.max(2, Number(drawOptions?.fillStrategy?.batchesN || 4));
-  const previewStrokeColor = drawOptions?.previewStroke?.color || '#3b82f6';
+  // const fillKind: 'afterAll' | 'perPath' | 'batched' = drawOptions?.fillStrategy?.kind
+  //   || (previewMode ? 'perPath' : 'afterAll');
+  // const batchesN = Math.max(2, Number(drawOptions?.fillStrategy?.batchesN || 4));
+  // const previewStrokeColor = drawOptions?.previewStroke?.color || '#3b82f6';
   const previewWidthBoost = typeof drawOptions?.previewStroke?.widthBoost === 'number' ? drawOptions.previewStroke.widthBoost : 1;
 
   // Reveal length is tied to object's duration so timeline edits directly influence drawing speed
   const targetLen = draw ? progress * totalLen : totalLen;
   // Batched fill threshold (ensure last batch fills when complete)
-  const fraction = totalLen > 0 ? targetLen / totalLen : 1;
-  const clampedFraction = Math.max(0, Math.min(1, fraction));
-  const filledBatches = totalLen > 0 ? Math.floor(clampedFraction * batchesN + 1e-9) : 0; // 0..batchesN
-  const batchThreshold = (fillKind === 'batched' && totalLen > 0)
-    ? (Math.min(filledBatches, batchesN) / batchesN) * totalLen
-    : totalLen;
-  let consumed = 0;
+  // const fraction = totalLen > 0 ? targetLen / totalLen : 1;
+  // const clampedFraction = Math.max(0, Math.min(1, fraction));
+  // const filledBatches = totalLen > 0 ? Math.floor(clampedFraction * batchesN + 1e-9) : 0; // 0..batchesN
+  // const batchThreshold = (fillKind === 'batched' && totalLen > 0)
+  //   ? (Math.min(filledBatches, batchesN) / batchesN) * totalLen
+  //   : totalLen;
+  // let consumed = 0;
+
+  // Compute hand follower node once per relevant changes
+  const handNode = React.useMemo(() => {
+    const handFollowerSettings = obj.properties?.handFollower;
+    if (!handFollowerSettings?.enabled) return null;
+
+    // 🔧 SYNCHRONIZATION FIX: Use only drawable paths for hand follower calculation
+    // This ensures hand animation and stroke rendering use the same path length basis
+    
+    let activePath: any | null = null;
+    let localProgress = 0;
+    let pathIndex = -1;
+    
+    if (drawablePaths.length > 0) {
+      let used = 0;
+      for (const drawablePath of drawablePaths) {
+        const len = drawablePath.len;
+        const start = used;
+        const end = used + len;
+        
+        if (targetLen <= start) { 
+          activePath = drawablePath; 
+          localProgress = 0; 
+          pathIndex = drawablePath.index;
+          break; 
+        }
+        if (targetLen < end) {
+          const localReveal = Math.max(0, targetLen - start);
+          localProgress = len > 0 ? localReveal / len : 0;
+          activePath = drawablePath; 
+          pathIndex = drawablePath.index;
+          break;
+        }
+        used = end;
+      }
+      
+      // If no active path found, use the first drawable path
+      if (!activePath && drawablePaths.length > 0) {
+        activePath = drawablePaths[0];
+        localProgress = 0;
+        pathIndex = activePath.index;
+      }
+    }
+    
+    if (!activePath?.d) return null;
+
+    // Simple debug logging to avoid interference
+    if (obj.properties?.debug?.logRenderer && activePath) {
+      const now = Date.now();
+      const lastLogKey = `hand-debug-${obj.id}`;
+      const lastLogTime = (window as any)[lastLogKey] || 0;
+      
+      if (now - lastLogTime > 1000) { // Rate limit to once per second
+        (window as any)[lastLogKey] = now;
+        console.log('🤚 [HAND DEBUG] Hand Follower', {
+          pathIndex,
+          localProgress: `${(localProgress * 100).toFixed(1)}%`,
+          targetLen: `${targetLen.toFixed(1)} units`
+        });
+      }
+    }
+
+    if (handFollowerSettings.mode === 'professional' && handFollowerSettings.handAsset && handFollowerSettings.toolAsset) {
+      const userBacktrack = typeof handFollowerSettings.tipBacktrackPx === 'number' ? handFollowerSettings.tipBacktrackPx : null;
+      const cap = (activePath.strokeLinecap || activePath.lineCap || 'round') as 'round'|'butt'|'square';
+      const logicalW = (activePath.strokeWidth ?? 3);
+      const previewScale = 1 + ((previewWidthBoost || 0) / Math.max(1, logicalW));
+      const capExt = (cap === 'round' || cap === 'square') ? 0.5 * logicalW : 0;
+      const autoBacktrack = (capExt * previewScale) + 0.4 * logicalW;
+      let tipBacktrackPx = draw ? Math.max(1, (userBacktrack ?? autoBacktrack)) : 0;
+
+      try {
+        if (draw && activePath?.d && activePath.len > 0) {
+          const sampler = PathSampler.createCachedSampler(activePath.d as string, 2, activePath.m as number[] | undefined, 4000);
+          const p = Math.max(0, Math.min(1, localProgress));
+          const tLen = sampler.getTotalLength();
+          if (tLen > 0) {
+            const arc = Math.max(1.5, Math.min(8, logicalW * 0.8));
+            const back = Math.max(0, (p * tLen - arc) / tLen);
+            const fwd = Math.min(1, (p * tLen + arc) / tLen);
+            const ang0 = sampler.getTangentAtProgress(back);
+            const ang1 = sampler.getTangentAtProgress(p);
+            const ang2 = sampler.getTangentAtProgress(fwd);
+            const norm = (a:number)=>{while(a>Math.PI)a-=2*Math.PI;while(a<-Math.PI)a+=2*Math.PI;return a;};
+            const d1 = norm(ang1 - ang0);
+            const d2 = norm(ang2 - ang1);
+            const totalAngleChange = Math.abs(d1) + Math.abs(d2);
+            const kappa = totalAngleChange / Math.max(1e-3, (2*arc));
+            const damping = Math.max(0.3, Math.min(1, 1 - 6 * kappa));
+            tipBacktrackPx *= damping;
+            
+            // 🔍 Add curvature analysis logging
+            if (obj.properties?.debug?.logRenderer) {
+              // eslint-disable-next-line no-console
+              console.log('🎯 [HAND DEBUG] Curvature Analysis', {
+                id: obj.id,
+                p: `${(p * 100).toFixed(1)}%`,
+                tLen,
+                arc,
+                angles: { ang0, ang1, ang2 },
+                angleChanges: { d1, d2, totalAngleChange },
+                kappa,
+                damping,
+                tipBacktrackPx
+              });
+            }
+          }
+        }
+      } catch (error) {
+        if (obj.properties?.debug?.logRenderer) {
+          console.error('🤚 [HAND DEBUG] Curvature calculation error:', error);
+        }
+      }
+
+      return (
+        <ThreeLayerHandFollower
+          key="hand-follower"
+          pathData={activePath.d}
+          pathMatrix={activePath.m as number[] | undefined}
+          progress={localProgress}
+          tipBacktrackPx={tipBacktrackPx}
+          handAsset={handFollowerSettings.handAsset}
+          toolAsset={handFollowerSettings.toolAsset}
+          scale={handFollowerSettings.scale || 1}
+          visible={handFollowerSettings.visible !== false}
+          debug={!!handFollowerSettings.debug}
+          mirror={!!handFollowerSettings.mirror}
+          showForeground={handFollowerSettings.showForeground !== false}
+          extraOffset={handFollowerSettings.calibrationOffset || handFollowerSettings.offset || { x: 0, y: 0 }}
+        />
+      );
+    }
+    return null;
+  }, [obj.properties?.handFollower, drawablePaths, targetLen, draw, previewWidthBoost, obj.id, obj.properties?.debug?.logRenderer]);
+
+  // 📊 Simplified Debug Logs
+  React.useEffect(() => {
+    if (!obj.properties?.debug?.logRenderer) return;
+    
+    const now = Date.now();
+    const logKey = `general-debug-${obj.id}`;
+    const lastLogTime = (window as any)[logKey] || 0;
+    
+    // Rate limit: Log only every 2 seconds to avoid interference
+    if (now - lastLogTime < 2000) return;
+    
+    (window as any)[logKey] = now;
+
+    // Simple progress update
+    console.log('📊 [SvgPathRenderer] Progress', {
+      id: obj.id,
+      progress: `${(progress * 100).toFixed(1)}%`,
+      drawablePaths: drawablePaths.length,
+      handFollowerEnabled: !!obj.properties?.handFollower?.enabled
+    });
+  }, [progress, drawablePaths, obj.id, obj.properties?.debug, obj.properties?.handFollower?.enabled]);
+
+  // 🔍 Simplified Synchronization Debug
+  React.useEffect(() => {
+    if (!obj.properties?.debug?.logRenderer || !obj.properties?.handFollower?.enabled) return;
+
+    const now = Date.now();
+    const logKey = `sync-debug-${obj.id}`;
+    const lastLogTime = (window as any)[logKey] || 0;
+    
+    // Only log every 2 seconds to avoid interference
+    if (now - lastLogTime < 2000) return;
+    
+    (window as any)[logKey] = now;
+
+    // Simple sync status
+    console.log('🔍 [SYNC DEBUG] Animation Status', {
+      progress: `${(progress * 100).toFixed(1)}%`,
+      targetLen: `${targetLen.toFixed(1)} units`,
+      totalLen: `${totalLen.toFixed(1)} units`,
+      drawablePaths: drawablePaths.length,
+      handFollowerEnabled: true
+    });
+  }, [progress, targetLen, totalLen, drawablePaths, obj.properties?.debug, obj.properties?.handFollower, obj.id]);
 
   return (
     <Group
@@ -121,199 +379,124 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
           }
           onClick(e);
         }}
-      />
-  {paths.map((p: any, idx: number) => {
-        const d = p.d as string;
-        const len = p.len || 0;
-        const wantFill = !!(p.fill && p.fill !== 'none' && p.fill !== 'transparent');
-        let dash: number[] | undefined;
-        let dashOffset = 0;
-        let fillColor: string | undefined = wantFill ? 'transparent' : undefined;
-        // Prefer selection color; otherwise prefer path stroke; during drawIn, optionally use a visible preview color
-        const baseStroke = (p.stroke && p.stroke !== 'none') ? p.stroke : '#111827';
-        let strokeColor: string = isSelected ? '#4f46e5' : baseStroke;
-        if (draw && progress < 1 && !previewMode) {
-          strokeColor = previewStrokeColor; // Preview color during drawIn (suppressed in preview mode)
-        }
-
-  if (draw && len > 0 && totalLen > 0) {
-          const start = consumed;
-          const end = consumed + len;
-          if (targetLen <= start) {
-            // Not started: ensure nothing is visible for this path yet
-            dash = undefined;
-            dashOffset = 0;
-            strokeColor = 'transparent';
-          } else if (targetLen >= end) {
-            // This path fully revealed
-            dash = undefined;
-            dashOffset = 0;
-            // Fill policy
-            if (wantFill) {
-              if (fillKind === 'perPath') {
-                fillColor = p.fill as string;
-              } else if (fillKind === 'batched') {
-                // Only fill if the path end lies within the current batch threshold
-                const endPos = end;
-                const EPS = 1e-6;
-                fillColor = endPos <= (batchThreshold + EPS) ? (p.fill as string) : 'transparent';
-              } else {
-                // afterAll
-                fillColor = progress >= 1 ? (p.fill as string) : 'transparent';
-              }
-            } else {
-              fillColor = undefined;
-            }
-          } else {
-            // in progress
-            const localReveal = Math.max(0, Math.min(len, targetLen - start));
-            // Draw only the first localReveal portion visibly
-            dash = [Math.max(0.001, localReveal), len];
-            dashOffset = 0;
-            // If original path had no stroke, use a visible fallback during drawing
-            const hadStroke = !!(p.stroke && p.stroke !== 'none' && p.stroke !== 'transparent');
-            if (!hadStroke) {
-              strokeColor = previewStrokeColor;
-            }
-          }
-        } else {
-          // no animation: show full with fill
-          dash = undefined;
-          dashOffset = 0;
-          fillColor = wantFill ? (p.fill as string) : undefined;
-        }
-        consumed += len;
-
-        const matrix = p.m as number[] | undefined;
-        // Cache Path2D per path index to reduce allocations
-        const cachedPathKey = `__path2d_${idx}`;
-        if (!(p as any)[cachedPathKey]) {
-          try { (p as any)[cachedPathKey] = new Path2D(d); } catch { /* ignore */ }
-        }
-        const cachedPath2D: Path2D | undefined = (p as any)[cachedPathKey];
-
-        return (
-          <Shape
-            key={`${obj.id}-p-${idx}-${progress}-${isSelected}`}
-            sceneFunc={(ctx, shape) => {
-              ctx.save();
-              
-              if (matrix) ctx.transform(matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5]);
-              
-              // Apply calibration offset to drawing context if hand follower is active
-              if (calibrationOffset && hasActiveHandFollower) {
-                ctx.translate(calibrationOffset.x || 0, calibrationOffset.y || 0);
-              }
-              
-              const path = cachedPath2D || new Path2D(d);
-              
-              // Slightly thicken during draw to improve visibility; configurable via previewWidthBoost
-              ctx.lineWidth = (p.strokeWidth ?? 3) + (isSelected ? 0.5 : 0) + (draw ? (previewWidthBoost || 0) : 0);
-              ctx.lineCap = 'round';
-              ctx.lineJoin = 'round';
-              ctx.strokeStyle = strokeColor;
-              if (dash) ctx.setLineDash(dash);
-              ctx.lineDashOffset = dashOffset;
-              ctx.stroke(path);
-              if (fillColor) {
-                ctx.fillStyle = fillColor;
-                if (p.fillRule) ctx.fill(path, p.fillRule);
-                else ctx.fill(path);
-              }
-              ctx.restore();
-            }}
-            // Bind custom attrs directly to force updates when these values change
-            __progress={progress}
-            __targetLen={targetLen}
-            __dashOffset={dashOffset}
-            listening={false}
-            perfectDrawEnabled={false}
-          />
-        );
-      })}
-      
-      {/* Hand Follower Integration */}
-      {React.useMemo(() => {
-        const handFollowerSettings = obj.properties?.handFollower;
-        
-        // Only show hand follower during drawIn animation and when enabled
-        if (obj.animationType !== 'drawIn' || progress >= 1) {
-          return null;
-        }
-        
-        if (!handFollowerSettings?.enabled) {
-          return null;
-        }
-        
-        // Determine which path segment is currently being revealed and local progress within it
-        let activePath: any | null = null;
-        let localProgress = 0;
-        if (Array.isArray(paths) && paths.length > 0) {
+  />
+      {/* Stroke reveal renderer */}
+      <Shape
+        listening={false}
+        __progress={progress}
+        __targetLen={targetLen}
+        sceneFunc={(ctx, shape) => {
           let used = 0;
           for (let i = 0; i < paths.length; i++) {
-            const pth = paths[i];
-            const len = Math.max(0, Number(pth.len || 0));
+            const p: any = paths[i];
+            const len = Math.max(0, Number(p.len || 0));
             const start = used;
             const end = used + len;
-            // Skip zero-length paths for follower purposes
+            used = end;
+
             if (len <= 0) {
-              used = end;
+              if (obj.properties?.debug?.logRenderer) {
+                console.warn(`[SvgPathRenderer] [sceneFunc] Skipping path[${i}] - zero length`, { d: p.d, len });
+              }
               continue;
             }
-            if (targetLen <= start) {
-              // Before this non-empty path starts
-              activePath = pth;
-              localProgress = 0;
-              break;
-            }
-            if (targetLen < end) {
-              // Currently revealing this non-empty path
-              const localReveal = Math.max(0, targetLen - start);
-              localProgress = len > 0 ? localReveal / len : 0;
-              activePath = pth;
-              break;
-            }
-            used = end;
-          }
-          if (!activePath) {
-            // If nothing matched (e.g., only zero-length paths so far), find first non-empty path as fallback
-            activePath = paths.find((p: any) => Number(p.len || 0) > 0) || null;
-            localProgress = 0;
-          }
-        }
-  if (!activePath?.d) {
-          return null;
-        }
-        
-  // Two-bone arm mode removed
 
-        // Professional three-layer mode
-  if (handFollowerSettings.mode === 'professional' && handFollowerSettings.handAsset && handFollowerSettings.toolAsset) {
-      // Compute an approximate backtrack so tip aligns with the rendered stroke end (round caps extend by ~0.5*lineWidth)
-      const effectiveLineWidth = (activePath.strokeWidth ?? 3) + (isSelected ? 0.5 : 0) + (draw ? (previewWidthBoost || 0) : 0);
-      const tipBacktrackPx = draw ? Math.max(0, effectiveLineWidth * 0.5) : 0;
-          return (
-            <ThreeLayerHandFollower
-              key="hand-follower" // Add key for better React reconciliation
-        pathData={activePath.d}
-        pathMatrix={activePath.m as number[] | undefined}
-        progress={localProgress}
-        tipBacktrackPx={tipBacktrackPx}
-              handAsset={handFollowerSettings.handAsset}
-              toolAsset={handFollowerSettings.toolAsset}
-              scale={handFollowerSettings.scale || 1}
-              visible={handFollowerSettings.visible !== false}
-              debug={!!handFollowerSettings.debug}
-              mirror={!!handFollowerSettings.mirror}
-              showForeground={handFollowerSettings.showForeground !== false}
-              extraOffset={handFollowerSettings.calibrationOffset || handFollowerSettings.offset}
-            />
-          );
-        }
+            const stroke = (p.stroke && p.stroke !== 'none' && p.stroke !== 'transparent') 
+              ? p.stroke 
+              : (obj.properties?.drawOptions?.previewStroke?.color || '#3b82f6');
+            const width = (p.strokeWidth ?? 3) + (draw ? (typeof obj.properties?.drawOptions?.previewStroke?.widthBoost === 'number' ? obj.properties.drawOptions.previewStroke.widthBoost : 0) : 0);
 
-  // Legacy single-image mode (disabled when professional mode is configured)
-  return null;
-  }, [obj.animationType, obj.properties?.handFollower, progress, paths, targetLen, draw, isSelected, previewWidthBoost])}
+            const visible = Math.max(0, Math.min(len, targetLen - start));
+            if (visible <= 0) continue;
+            
+            const dStr = String(p.d || '');
+            if (!dStr) {
+              console.error(`[SvgPathRenderer] [sceneFunc] Path[${i}] has no d attribute`);
+              continue;
+            }
+            
+            let samples;
+            try {
+              samples = PathSampler.samplePath(dStr, 1.25, undefined);
+            } catch (error) {
+              console.error(`[SvgPathRenderer] [sceneFunc] PathSampler failed for path[${i}]:`, dStr, error);
+              continue;
+            }
+            
+            if (!samples.length) {
+              console.warn(`[SvgPathRenderer] [sceneFunc] Path[${i}] generated no samples:`, dStr);
+              continue;
+            }
+
+            if (obj.properties?.debug?.logRenderer) {
+              // eslint-disable-next-line no-console
+              console.log(`📏 [STROKE DEBUG] path[${i}] rendering`, {
+                id: obj.id,
+                pathIndex: i,
+                d: p.d?.substring(0, 50) + '...',
+                len: p.len,
+                stroke,
+                width,
+                visible,
+                progress,
+                targetLen,
+                start,
+                end,
+                samples: samples.length,
+                firstSample: samples[0],
+                lastSample: samples[samples.length - 1],
+                
+                // Stroke drawing details
+                strokeProgress: len > 0 ? visible / len : 0,
+                strokeProgressPercentage: len > 0 ? `${((visible / len) * 100).toFixed(1)}%` : '0%',
+                isComplete: visible >= len,
+                willFill: visible >= len && p.fill && p.fill !== 'none'
+              });
+            }
+
+            ctx.save();
+            const m = p?.m as number[] | undefined;
+            if (m && m.length >= 6) ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+            ctx.lineWidth = width;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.strokeStyle = stroke;
+            ctx.beginPath();
+
+            let i0 = 0;
+            ctx.moveTo(samples[0].x, samples[0].y);
+            for (; i0 < samples.length && samples[i0].cumulativeLength <= visible; i0++) {
+              if (i0 > 0) ctx.lineTo(samples[i0].x, samples[i0].y);
+            }
+            if (i0 < samples.length && i0 > 0) {
+              const A = samples[i0 - 1], B = samples[i0];
+              const t = (visible - A.cumulativeLength) / Math.max(1e-6, B.cumulativeLength - A.cumulativeLength);
+              const x = A.x + t * (B.x - A.x);
+              const y = A.y + t * (B.y - A.y);
+              ctx.lineTo(x, y);
+            }
+            ctx.stroke();
+            ctx.restore();
+
+            if (visible >= len && p.fill && p.fill !== 'none') {
+              try {
+                ctx.save();
+                const m = p?.m as number[] | undefined;
+                if (m && m.length >= 6) ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+                const path2d = new Path2D(String(p.d || ''));
+                ctx.fillStyle = p.fill;
+                if (p.fillRule) ctx.fill(path2d, p.fillRule);
+                else ctx.fill(path2d);
+              } catch (fillError) {
+                console.error(`[SvgPathRenderer] [sceneFunc] Fill failed for path[${i}]:`, fillError);
+              }
+              ctx.restore();
+            }
+          }
+          shape.fillEnabled(false);
+        }}
+      />
+  {handNode}
     </Group>
   );
 };

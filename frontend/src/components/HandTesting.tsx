@@ -1,16 +1,11 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../store/appStore';
 import { HAND_ASSETS, TOOL_ASSETS, HAND_TOOL_COMPATIBILITY, HandAsset as ProHandAsset, ToolAsset as ProToolAsset, Size2D } from '../types/handAssets';
 import { HandToolCompositor } from '../utils/handToolCompositor';
 import ThreeLayerDemo from './ThreeLayerDemo';
 
 const HandTesting: React.FC = () => {
-  const [testingMode, setTestingMode] = useState<'simple' | 'professional' | 'demo'>('simple');
-  
-  // Simple mode (current implementation)
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [tipPosition, setTipPosition] = useState({ x: 75, y: 87 });
+  const [testingMode, setTestingMode] = useState<'simple' | 'professional' | 'demo'>('demo');
   
   // Professional mode (three-layer system)
   const [selectedHand, setSelectedHand] = useState<string>('hand_right_pen_grip');
@@ -32,10 +27,60 @@ const HandTesting: React.FC = () => {
   const [customHandAsset, setCustomHandAsset] = useState<ProHandAsset | null>(null);
   const [customToolAsset, setCustomToolAsset] = useState<ProToolAsset | null>(null);
   const [savingAssets, setSavingAssets] = useState(false);
-  // Two-bone system removed; keeping UI focused on three-layer mode
   
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const { currentProject, addObject, currentTime } = useAppStore();
+
+  // Save uploaded assets to backend as hand_bg.png, hand_fg.png, tool.png
+  const saveAssetsToBackend = async () => {
+    setSavingAssets(true);
+    try {
+      const saveAsset = async (file: File, assetType: string) => {
+        const formData = new FormData();
+        formData.append('asset', file);
+        formData.append('assetType', assetType);
+
+        const response = await fetch(`${apiBase}/api/upload-hand-asset`, {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to save ${assetType}: ${response.statusText}`);
+        }
+
+        return response.json();
+      };
+
+      const saved: string[] = [];
+
+      // Save what's available; allow partial saves so the button is useful earlier
+      if (handBgFile) {
+        await saveAsset(handBgFile, 'hand_bg');
+        saved.push('hand_bg.png');
+      }
+      if (toolFile) {
+        await saveAsset(toolFile, 'tool');
+        saved.push('tool.png');
+      }
+      // Save hand foreground (uploaded file)
+      if (handFgFile) {
+        await saveAsset(handFgFile, 'hand_fg');
+        saved.push('hand_fg.png');
+      }
+
+      if (saved.length === 0) {
+        alert('Please upload at least one asset before saving (hand background, tool, or hand foreground).');
+      } else {
+        alert(`✅ Saved: ${saved.join(', ')}\nLocation: /api/assets/`);
+      }
+      
+    } catch (error) {
+      console.error('Error saving assets:', error);
+      alert('❌ Failed to save assets: ' + (error as Error).message);
+    } finally {
+      setSavingAssets(false);
+    }
+  };
 
   // Preset demo asset URLs served by backend (backend/server.js /api/assets)
   // Resolve API base robustly: prefer env, fall back to localhost in dev, else relative for prod
@@ -125,202 +170,7 @@ const HandTesting: React.FC = () => {
     setCustomToolAsset(tool);
   }, [useUploadedSet, handBgUrl, handFgUrl, toolUrl, handSize, toolSize]);
 
-  const handleFileUpload = (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      alert('Please select an image file (PNG, JPG, GIF, or SVG)');
-      return;
-    }
-
-    setSelectedFile(file);
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
-      handleFileUpload(files[0]);
-    }
-  };
-
-  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (files && files.length > 0) {
-      handleFileUpload(files[0]);
-    }
-  };
-
-  // Save uploaded assets to backend as hand_bg.png, hand_fg.png, tool.png
-  const saveAssetsToBackend = async () => {
-    setSavingAssets(true);
-    try {
-      const saveAsset = async (file: File, assetType: string) => {
-        const formData = new FormData();
-        formData.append('asset', file);
-        formData.append('assetType', assetType);
-
-        const response = await fetch(`${apiBase}/api/upload-hand-asset`, {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!response.ok) {
-          throw new Error(`Failed to save ${assetType}: ${response.statusText}`);
-        }
-
-        return response.json();
-      };
-
-      const saved: string[] = [];
-
-      // Save what's available; allow partial saves so the button is useful earlier
-      if (handBgFile) {
-        await saveAsset(handBgFile, 'hand_bg');
-        saved.push('hand_bg.png');
-      }
-      if (toolFile) {
-        await saveAsset(toolFile, 'tool');
-        saved.push('tool.png');
-      }
-      // Save hand foreground (uploaded file)
-      if (handFgFile) {
-        await saveAsset(handFgFile, 'hand_fg');
-        saved.push('hand_fg.png');
-      }
-
-      if (saved.length === 0) {
-        alert('Please upload at least one asset before saving (hand background, tool, or hand foreground).');
-      } else {
-        alert(`✅ Saved: ${saved.join(', ')}\nLocation: /api/assets/`);
-      }
-      
-    } catch (error) {
-      console.error('Error saving assets:', error);
-      alert('❌ Failed to save assets: ' + (error as Error).message);
-    } finally {
-      setSavingAssets(false);
-    }
-  };
-
-  const createTestPath = () => {
-    if (!currentProject) {
-      alert('Please create a project first');
-      return;
-    }
-
-    if (testingMode === 'simple') {
-      createSimpleTestPath();
-    } else {
-      createProfessionalTestPath();
-    }
-  };
-
-  const createSimpleTestPath = () => {
-    // Create a simple test path for hand following (original implementation)
-    const testPath = {
-      id: `path-${Date.now()}`,
-      type: 'drawPath' as const,
-      x: 50,
-      y: 50,
-      width: 400,
-      height: 300,
-      properties: {
-        points: [
-          { x: 50, y: 150 },
-          { x: 100, y: 100 },
-          { x: 200, y: 120 },
-          { x: 300, y: 80 },
-          { x: 400, y: 100 },
-          { x: 450, y: 150 }
-        ],
-        stroke: '#2563eb',
-        strokeWidth: 3,
-        handFollower: {
-          enabled: true,
-          handImageUrl: previewUrl || '',
-          tipAnchor: tipPosition,
-          smoothing: {
-            enabled: true,
-            strength: 0.7,
-            lookahead: 3
-          },
-          cornerLift: {
-            enabled: true,
-            sensitivity: 25,
-            liftHeight: 20,
-            liftDuration: 0.3
-          }
-        }
-      },
-      animationStart: currentTime,
-      animationDuration: 5,
-      animationType: 'drawIn' as const,
-      animationEasing: 'easeOut' as const
-    };
-
-    addObject(testPath);
-    alert('✅ Simple test path created with hand follower!');
-  };
-
-  const createProfessionalTestPath = () => {
-    // Create a professional three-layer test path
-  const handAsset = useUploadedSet && customHandAsset ? customHandAsset : HAND_ASSETS.find(h => h.id === selectedHand);
-  const toolAsset = useUploadedSet && customToolAsset ? customToolAsset : TOOL_ASSETS.find(t => t.id === selectedTool);
-    
-    if (!handAsset || !toolAsset) {
-      alert('Please select both hand and tool assets');
-      return;
-    }
-
-    const testPath = {
-      id: `path-${Date.now()}`,
-      type: 'svgPath' as const,  // Changed from 'drawPath' to match SvgPathRenderer
-      x: 50,
-      y: 50,
-      width: 400,
-      height: 300,
-      properties: {
-        paths: [
-          {
-            d: `M 50 150 L 100 100 L 200 120 L 300 80 L 400 100 L 450 150`,
-            stroke: '#2563eb',
-            strokeWidth: 3,
-            fill: 'none',
-            len: 400  // approximate length
-          }
-        ],
-        totalLen: 400,
-        handFollower: {
-          enabled: true,
-          mode: 'professional',
-          handAsset: handAsset,
-          toolAsset: toolAsset,
-          scale: handScale,
-          smoothing: {
-            enabled: true,
-            strength: 0.7,
-            lookahead: 3
-          },
-          cornerLift: {
-            enabled: true,
-            sensitivity: 25,
-            liftHeight: 20,
-            liftDuration: 0.3
-          }
-        }
-      },
-      animationStart: currentTime,
-      animationDuration: 5,
-      animationType: 'drawIn' as const,
-      animationEasing: 'easeOut' as const
-    };
-
-  addObject(testPath);
-  alert(`✅ Professional test path created!\nHand: ${handAsset.name}\nTool: ${toolAsset.name}`);
-  };
-
-  // Direct demo using provided preset images
+  // Keep only essential functions for professional mode and demo
   const createDirectDemo = async () => {
     if (!currentProject) {
       alert('Please create a project first');
@@ -457,13 +307,6 @@ http://localhost:3001/api/assets/tool.png`);
     return HAND_TOOL_COMPATIBILITY[selectedHand] || [];
   };
 
-  const presets = [
-    { name: 'Pen Tip', x: 75, y: 87, description: 'Standard pen tip position' },
-    { name: 'Finger Tip', x: 80, y: 90, description: 'Index finger tip' },
-    { name: 'Brush Tip', x: 70, y: 85, description: 'Paintbrush tip position' },
-    { name: 'Center', x: 50, y: 50, description: 'Center of hand' }
-  ];
-
   return (
     <div className="space-y-6 p-4 text-white">
       <div className="text-center">
@@ -528,77 +371,17 @@ http://localhost:3001/api/assets/tool.png`);
 
   {/* Two-bone testing UI removed */}
 
-      {/* Simple Mode Interface */}
+      {/* Simple Mode Interface - Cleaned up */}
       {testingMode === 'simple' && (
-        <>
-          {/* File Upload Area */}
-          <div className="space-y-4">
-            <div className="text-sm font-semibold text-gray-300">1. Upload Hand Image</div>
-            <div
-              className="border-2 border-dashed border-gray-600 rounded-lg p-6 text-center hover:border-blue-500 transition-colors cursor-pointer"
-              onDrop={handleDrop}
-              onDragOver={(e) => e.preventDefault()}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                onChange={handleFileInput}
-                className="hidden"
-              />
-              
-              {previewUrl ? (
-                <div className="space-y-3">
-                  <img
-                    src={previewUrl}
-                    alt="Hand preview"
-                    className="w-full max-w-24 max-h-16 mx-auto rounded-lg border border-gray-600 object-contain"
-                  />
-                  <div className="text-green-400 font-semibold">✅ {selectedFile?.name}</div>
-                  <div className="text-xs text-gray-400">Click to change image</div>
-                </div>
-              ) : (
-                <div className="space-y-2">
-                  <div className="text-4xl">📁</div>
-                  <div className="text-gray-300">
-                    Drop hand image here or click to browse
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    PNG, JPG, GIF, or SVG
-                  </div>
-                </div>
-              )}
+        <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-600">
+          <div className="text-center text-gray-400">
+            <div className="text-4xl mb-2">🧹</div>
+            <div className="text-lg font-semibold mb-2">Simple Mode - Cleaned Up</div>
+            <div className="text-sm">
+              Testing interface has been simplified. Use Demo mode or Professional mode for advanced features.
             </div>
           </div>
-
-          {/* Tip Position Calibration */}
-          <div className="space-y-4">
-            <div className="text-sm font-semibold text-gray-300">2. Set Pen Tip Position</div>
-            
-            {/* Preset Buttons */}
-            <div className="grid grid-cols-2 gap-2">
-              {presets.map((preset) => (
-                <button
-                  key={preset.name}
-                  onClick={() => setTipPosition({ x: preset.x, y: preset.y })}
-                  className="p-2 bg-gray-700 hover:bg-gray-600 rounded text-xs transition-colors border border-gray-600"
-                >
-                  <div className="font-semibold">{preset.name}</div>
-                  <div className="text-gray-400">{preset.description}</div>
-                </button>
-              ))}
-            </div>
-
-            {/* Position Display */}
-            <div className="bg-gray-800 p-3 rounded border border-gray-600">
-              <div className="text-xs text-gray-400 mb-1">Current Tip Position:</div>
-              <div className="font-mono text-sm">
-                X: {tipPosition.x}% | Y: {tipPosition.y}%
-              </div>
-            </div>
-          </div>
-        </>
+        </div>
       )}
 
       {/* Professional Mode Interface */}
@@ -787,91 +570,6 @@ http://localhost:3001/api/assets/tool.png`);
       {/* Three-Layer Demo Mode */}
       {testingMode === 'demo' && (
         <ThreeLayerDemo />
-      )}
-
-      {/* Test Controls - Only show for simple and professional modes */}
-      {testingMode !== 'demo' && (
-      <div className="space-y-4">
-        <div className="text-sm font-semibold text-gray-300">
-          {testingMode === 'simple' ? '3. Create Test Animation' : '5. Create Test Animation'}
-        </div>
-        
-        <button
-          onClick={createTestPath}
-          disabled={!currentProject || (testingMode === 'simple' && !previewUrl) || (testingMode === 'professional' && useUploadedSet && !(customHandAsset && customToolAsset))}
-          className="w-full p-4 bg-gradient-to-r from-orange-600 to-red-600 hover:from-orange-500 hover:to-red-500 disabled:from-gray-600 disabled:to-gray-700 rounded-lg font-semibold transition-all transform hover:scale-105 disabled:transform-none disabled:cursor-not-allowed"
-        >
-          {currentProject ? (
-            <div>
-              <div className="text-lg">🚀 Create {testingMode === 'professional' ? 'Professional' : 'Simple'} Test</div>
-              <div className="text-sm opacity-80">
-                {testingMode === 'professional' 
-                  ? 'Three-layer hand + tool composition'
-                  : 'Single hand image following'
-                }
-              </div>
-            </div>
-          ) : (
-            <div>
-              <div className="text-lg">📝 Create Project First</div>
-              <div className="text-sm opacity-80">
-                You need an active project to test
-              </div>
-            </div>
-          )}
-        </button>
-
-        {/* Feature Info */}
-        <div className="grid grid-cols-1 gap-3 text-xs">
-          <div className="p-3 bg-gray-800 rounded border border-gray-600">
-            <div className="text-orange-400 font-semibold mb-2">
-              ✨ {testingMode === 'professional' ? 'Professional Features' : 'Phase 2 Features'} Active
-            </div>
-            <div className="space-y-1 text-gray-300">
-              {testingMode === 'professional' ? (
-                <>
-                  <div>• Three-layer rendering (tool/hand-bg/hand-fg)</div>
-                  <div>• Precise hand-tool alignment</div>
-                  <div>• Asset-based composition system</div>
-                  <div>• Professional drawing tools</div>
-                </>
-              ) : (
-                <>
-                  <div>• Natural movement smoothing</div>
-                  <div>• Automatic corner lifting</div>
-                  <div>• Human-like jitter and spring motion</div>
-                  <div>• Configurable tip anchor positioning</div>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-      )}
-
-      {/* Usage Instructions - Only show for simple and professional modes */}
-      {testingMode !== 'demo' && (
-      <div className="bg-blue-900/20 border border-blue-700 rounded-lg p-4">
-        <div className="text-blue-400 font-semibold mb-2">💡 How to Test</div>
-        <div className="text-sm space-y-1 text-gray-300">
-          {testingMode === 'simple' ? (
-            <>
-              <div>1. Upload your hand image above</div>
-              <div>2. Set the pen tip position using presets</div>
-              <div>3. Click "Create Simple Test" to generate animation</div>
-              <div>4. Use the timeline to play and see the hand follow the path</div>
-            </>
-          ) : (
-            <>
-              <div>1. Choose your drawing style (or use auto-suggest)</div>
-              <div>2. Select hand asset from predefined options</div>
-              <div>3. Pick compatible tool (pen, brush, marker, etc.)</div>
-              <div>4. Adjust hand scale to match your canvas</div>
-              <div>5. Create professional three-layer animation</div>
-            </>
-          )}
-        </div>
-      </div>
       )}
     </div>
   );

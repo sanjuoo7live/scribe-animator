@@ -67,8 +67,9 @@ export interface HandToolComposition {
 
 // Helper function to build backend asset URLs dynamically
 const getBackendAssetUrl = (filename: string) => {
-  // This will be resolved at runtime by the component
-  return `BACKEND_BASE/api/assets/${filename}`;
+  // Resolve API base robustly: prefer env, fall back to localhost in dev, else relative for prod
+  const apiBase = process.env.REACT_APP_API_BASE || (process.env.NODE_ENV === 'development' ? 'http://localhost:3001' : '');
+  return `${apiBase}/api/assets/${filename}`;
 };
 
 // Predefined hand assets using real backend images

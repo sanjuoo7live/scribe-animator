@@ -24,9 +24,9 @@ export class ThreeLayerHandRenderer {
   private dbg = {
     handRect: null as Konva.Rect | null,
     toolRect: null as Konva.Rect | null,
-  tipCircle: null as Konva.Circle | null,
-  targetCircle: null as Konva.Circle | null,
-  errorLine: null as Konva.Line | null,
+    tipCircle: null as Konva.Circle | null,
+    targetCircle: null as Konva.Circle | null,
+    errorLine: null as Konva.Line | null,
   };
 
   /**
@@ -83,13 +83,13 @@ export class ThreeLayerHandRenderer {
       config.scale
     );
 
-  // Use the composition positions directly (no additional offset needed)
+    // Use the composition positions directly (no additional offset needed)
     const handPos = this.composition.handPosition;
     const toolPos = this.composition.toolPosition;
-  const handRotDeg = (this.composition.handRotation * 180) / Math.PI;
-  const toolRotDeg = (this.composition.toolRotation * 180) / Math.PI;
+    const handRotDeg = (this.composition.handRotation * 180) / Math.PI;
+    const toolRotDeg = (this.composition.toolRotation * 180) / Math.PI;
 
-  // Create the main group
+    // Create the main group
     const handGroup = new Konva.Group({
       x: 0,
       y: 0,
@@ -101,7 +101,7 @@ export class ThreeLayerHandRenderer {
       image: this.handBgImage,
       x: handPos.x,
       y: handPos.y,
-  rotation: handRotDeg,
+      rotation: handRotDeg,
       scaleX: (config.mirror ? -1 : 1) * this.composition.handScale,
       scaleY: this.composition.handScale,
       // Set offset to ensure rotation around pen tip instead of image origin
@@ -114,7 +114,7 @@ export class ThreeLayerHandRenderer {
       image: this.toolImage,
       x: toolPos.x,
       y: toolPos.y,
-  rotation: toolRotDeg,
+      rotation: toolRotDeg,
       scaleX: this.composition.toolScale,
       scaleY: this.composition.toolScale,
       // Set offset to ensure rotation around pen tip
@@ -127,7 +127,7 @@ export class ThreeLayerHandRenderer {
       image: this.handFgImage,
       x: handPos.x,
       y: handPos.y,
-  rotation: handRotDeg,
+      rotation: handRotDeg,
       scaleX: (config.mirror ? -1 : 1) * this.composition.handScale,
       scaleY: this.composition.handScale,
       // Set offset to ensure rotation around pen tip instead of image origin
@@ -138,10 +138,10 @@ export class ThreeLayerHandRenderer {
       handFgNode.visible(false);
     }
 
-  // Add layers in correct Z-order; avoid per-frame zIndex churn
-  handGroup.add(handBgNode);  // Bottom layer
-  handGroup.add(toolNode);    // Middle layer
-  handGroup.add(handFgNode);  // Top layer
+    // Add layers in correct Z-order; avoid per-frame zIndex churn
+    handGroup.add(handBgNode);  // Bottom layer
+    handGroup.add(toolNode);    // Middle layer
+    handGroup.add(handFgNode);  // Top layer
 
     // Optional debug overlay
     this.debugEnabled = !!config.debug;
@@ -190,8 +190,9 @@ export class ThreeLayerHandRenderer {
       config.pathAngle,
       config.scale
     );
-  // Always pick the first three children as the image layers (bg, tool, fg)
-  const [handBgNode, toolNode, handFg] = handGroup.children.slice(0, 3) as Konva.Image[];
+
+    // Always pick the first three children as the image layers (bg, tool, fg)
+    const [handBgNode, toolNode, handFg] = handGroup.children.slice(0, 3) as Konva.Image[];
 
     // Update hand background and foreground (they move together) - no additional offset needed
     const handTransform = {
@@ -202,14 +203,14 @@ export class ThreeLayerHandRenderer {
       scaleY: this.composition.handScale,
     };
 
-  handBgNode.setAttrs(handTransform);
-  handFg.setAttrs(handTransform);
+    handBgNode.setAttrs(handTransform);
+    handFg.setAttrs(handTransform);
 
     // Update tool independently - no additional offset needed
     toolNode.setAttrs({
       x: this.composition.toolPosition.x,
       y: this.composition.toolPosition.y,
-  rotation: (this.composition.toolRotation * 180) / Math.PI,
+      rotation: (this.composition.toolRotation * 180) / Math.PI,
       scaleX: this.composition.toolScale,
       scaleY: this.composition.toolScale
     });
@@ -299,7 +300,9 @@ export class ThreeLayerHandRenderer {
       stroke: 'yellow',
       strokeWidth: 1,
       opacity: 0.5
-    });    debugGroup.add(handGripCircle);
+    });
+
+    debugGroup.add(handGripCircle);
     debugGroup.add(toolSocketCircle);
     debugGroup.add(tipCircle);
     debugGroup.add(gripLine);

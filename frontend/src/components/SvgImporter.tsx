@@ -3,76 +3,10 @@ import { useAppStore } from '../store/appStore';
 import { traceImageDataToPaths } from '../vtrace/simpleTrace';
 import SvgDrawSettings, { SvgDrawOptions, defaultSvgDrawOptions } from './SvgDrawSettings';
 // MediaPipe segmentation removed per UI simplification
+import { measureSvgLengthsInWorker } from '../workers/measureWorkerClient';
+import { MeasureItem } from '../workers/measureTypes';
 
 type ParsedPath = { d: string; stroke?: string; strokeWidth?: number; fill?: string; fillRule?: 'nonzero'|'evenodd' };
-
-// TODO: move this work into a dedicated Worker for heavy SVGs
-async function measureSvgLengthsChunked(
-  items: { d: string; m?: [number, number, number, number, number, number] }[],
-  budgetMs = 12,
-  signal?: AbortSignal
-): Promise<{ lens: number[]; total: number }> {
-  const svgNS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(svgNS, 'svg');
-  svg.setAttribute('width', '0');
-  svg.setAttribute('height', '0');
-  svg.style.position = 'absolute';
-  svg.style.left = '-99999px';
-  svg.style.top = '-99999px';
-  document.body.appendChild(svg);
-
-  const pathEl = document.createElementNS(svgNS, 'path');
-  svg.appendChild(pathEl);
-
-  const lens: number[] = [];
-  let total = 0;
-  let last = performance.now();
-  try {
-    for (let i = 0; i < items.length; i++) {
-      if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-      const it = items[i];
-      try {
-        pathEl.setAttribute('d', it.d);
-        if (it.m && it.m.length >= 6) {
-          pathEl.setAttribute('transform', `matrix(${it.m[0]} ${it.m[1]} ${it.m[2]} ${it.m[3]} ${it.m[4]} ${it.m[5]})`);
-        } else {
-          pathEl.removeAttribute('transform');
-        }
-        const L = (pathEl as any).getTotalLength ? (pathEl as any).getTotalLength() : 0;
-        const steps = Math.max(32, Math.min(220, Math.round((L || 1) / 6)));
-        let prev = (pathEl as any).getPointAtLength ? (pathEl as any).getPointAtLength(0) : { x: 0, y: 0 };
-        let acc = 0;
-        for (let j = 1; j <= steps; j++) {
-          if ((j & 63) === 0) {
-            const now = performance.now();
-            if (now - last >= budgetMs) {
-              await new Promise(res => requestAnimationFrame(() => res(null)));
-              last = performance.now();
-              if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-            }
-          }
-          const pt = (pathEl as any).getPointAtLength
-            ? (pathEl as any).getPointAtLength((j / steps) * (L || 1))
-            : prev;
-          acc += Math.hypot(pt.x - prev.x, pt.y - prev.y);
-          prev = pt;
-        }
-        lens.push(acc);
-        total += acc;
-      } catch {
-        lens.push(0);
-      }
-      const now = performance.now();
-      if (now - last >= budgetMs) {
-        await new Promise(res => requestAnimationFrame(() => res(null)));
-        last = performance.now();
-      }
-    }
-  } finally {
-    document.body.removeChild(svg);
-  }
-  return { lens, total };
-}
 
 // Lightweight item used in Path Refinement UI
 // type RefineItem = {
@@ -490,8 +424,27 @@ const SvgImporter: React.FC = () => {
       };
       await visit(svg);
 
-      const toMeasure = out.map(p => ({ d: p.d, m: p.m as any }));
-      const { lens, total } = await measureSvgLengthsChunked(toMeasure, 10, ctrl.signal);
+      const toMeasure: MeasureItem[] = out.map(p => ({ d: p.d, m: p.m as Mat | undefined }));
+      const report = (p: number) => {
+        const now = performance.now();
+        if (now - (report as any)._last > 250) {
+          (report as any)._last = now;
+          setStatus(`Measuring ${Math.round(p * 100)}%`);
+        }
+      };
+      (report as any)._last = 0;
+      const { lens, total, errors } = await measureSvgLengthsInWorker(
+        toMeasure,
+        10,
+        ctrl.signal,
+        report
+      );
+      if (errors.length) {
+        console.warn('measure errors', errors);
+        setStatus(`Measured with ${errors.length} path errors (see console).`);
+      } else {
+        setStatus('');
+      }
 
       st.vb = vb;
       st.paths = out;

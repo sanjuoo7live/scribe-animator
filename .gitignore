@@ -39,3 +39,6 @@ backend/data/videos/*
 backend/data/projects/*
 !backend/data/videos/.gitkeep
 !backend/data/projects/.gitkeep
+
+# Hand animation backup (temporary)
+HAND_ANIMATION_BACKUP/

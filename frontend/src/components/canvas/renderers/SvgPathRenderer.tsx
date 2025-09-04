@@ -5,6 +5,13 @@ import { calculateAnimationProgress } from '../utils/animationUtils';
 import ThreeLayerHandFollower from '../../hands/ThreeLayerHandFollower';
 import { PathSampler } from '../../../utils/pathSampler';
 import { getPath2D, getHandLUT, HandLUT } from '../../../utils/pathCache';
+import type { ParsedPath } from '../../../types/parsedPath';
+
+// PHASE0: internal extension with cached fields
+interface CachedParsedPath extends ParsedPath {
+  _samples?: any; // PathPoint[] | Float32Array
+  _lut?: HandLUT | null;
+}
 
 // Note: splitSubpaths no longer used in this renderer
 
@@ -83,28 +90,35 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
       const drawablePathsTemp: any[] = [];
       let sum = 0;
       
-      arr.forEach((p: any, index: number) => {
+      arr.forEach((p: ParsedPath, index: number) => {
         const d = p?.d as string | undefined;
         if (!d) return;
-        
-        if (!(p as any)._samples) {
+
+        const cp = p as CachedParsedPath;
+        // PHASE0: reuse provided samples/lengths when available
+        if (p.samples && !cp._samples) cp._samples = p.samples;
+        if (p.lut && !cp._lut) cp._lut = p.lut;
+        if (!cp._samples) {
           try {
-            (p as any)._samples = PathSampler.samplePath(d, 1.25, undefined);
+            cp._samples = PathSampler.samplePath(d, 1.25, undefined);
           } catch (error) {
-            (p as any)._samples = [];
+            cp._samples = [];
           }
         }
-        const _s = (p as any)._samples as ReturnType<typeof PathSampler.samplePath>;
-        const len = _s && _s.length ? _s[_s.length - 1].cumulativeLength : 0;
-        (p as any).len = len;
-        if (!(p as any)._lut) {
+        let len = typeof p.len === 'number' ? p.len : 0;
+        if (len <= 0) {
+          const _s = cp._samples;
+          len = _s && _s.length ? _s[_s.length - 1].cumulativeLength : 0;
+        }
+        cp.len = len;
+        if (!cp._lut) {
           try {
-            (p as any)._lut = getHandLUT(d, 2);
+            cp._lut = getHandLUT(d, 2);
           } catch {
-            (p as any)._lut = null;
+            cp._lut = null;
           }
         }
-        
+
         if (len > 0) {
           drawablePathsTemp.push({ ...p, index, len });
           sum += len;
@@ -121,47 +135,53 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
     const drawablePathsTemp: any[] = [];
     let sum = 0;
     
-    arr.forEach((p: any, index: number) => {
-      const d = p?.d as string | undefined;
-      if (!d) {
+      arr.forEach((p: ParsedPath, index: number) => {
+        const d = p?.d as string | undefined;
+        if (!d) {
         if (debug) {
           console.warn('[SvgPathRenderer] Path missing d attribute:', p);
         }
         return;
       }
-      
+
       // Validate SVG path data
       if (!d.trim().match(/^[MmLlHhVvCcSsQqTtAaZz0-9\s,.-]+$/)) {
         debugLog('error', '[SvgPathRenderer] Invalid SVG path data:', d);
         return;
       }
-      
-      // Compute path length using PathSampler
-      if (!(p as any)._samples) {
+
+      // PHASE0: reuse provided sampler results
+      const cp = p as CachedParsedPath;
+      if (p.samples && !cp._samples) cp._samples = p.samples;
+      if (p.lut && !cp._lut) cp._lut = p.lut;
+      if (!cp._samples) {
         try {
-          (p as any)._samples = PathSampler.samplePath(d, 1.25, undefined);
+          cp._samples = PathSampler.samplePath(d, 1.25, undefined);
         } catch (error) {
           debugLog('error', '[SvgPathRenderer] PathSampler failed for path:', d, error);
-          (p as any)._samples = [];
+          cp._samples = [];
         }
       }
-      // Use cached samples to compute transform-aware length
-      const _s = (p as any)._samples as ReturnType<typeof PathSampler.samplePath>;
-      const len = _s && _s.length ? _s[_s.length - 1].cumulativeLength : 0;
-      (p as any).len = len;
-      if (!(p as any)._lut) {
+      let len = typeof p.len === 'number' ? p.len : 0;
+      if (len <= 0) {
+        // Use cached samples to compute transform-aware length
+        const _s = cp._samples;
+        len = _s && _s.length ? _s[_s.length - 1].cumulativeLength : 0;
+      }
+      cp.len = len;
+      if (!cp._lut) {
         try {
-          (p as any)._lut = getHandLUT(d, 2);
+          cp._lut = getHandLUT(d, 2);
         } catch {
-          (p as any)._lut = null;
+          cp._lut = null;
         }
       }
-      
+
       if (len > 0) {
         drawablePathsTemp.push({ ...p, index, len });
         sum += len;
       } else if (debug) {
-        const debugSamples = (p as any)._samples as ReturnType<typeof PathSampler.samplePath> | undefined;
+        const debugSamples = cp._samples;
         console.warn('[SvgPathRenderer] Path has zero length:', { d, samples: debugSamples?.length ?? 0, index });
       }
     });

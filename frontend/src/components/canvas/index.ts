@@ -1,5 +1,5 @@
 // Canvas module exports
-export { CanvasContext, useCanvasContext } from './CanvasContext';
+export { CanvasContext, useCanvasContext, useCanvasContextOptional } from './CanvasContext';
 export { rendererRegistry } from './renderers/RendererRegistry';
 export { animationEngine, AnimationEngine } from './animation/AnimationEngine';
 export { useObjectController } from './controllers/useObjectController';

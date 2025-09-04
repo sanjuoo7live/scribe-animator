@@ -12,6 +12,9 @@ export interface CanvasContextType {
     start: () => void;
     stop: () => void;
   };
+  // PHASE0: refs for static and animated layers
+  staticLayerRef?: React.RefObject<Konva.Layer | null>;
+  animatedLayerRef?: React.RefObject<Konva.Layer | null>;
 }
 
 export const CanvasContext = React.createContext<CanvasContextType | null>(null);
@@ -23,3 +26,6 @@ export const useCanvasContext = (): CanvasContextType => {
   }
   return context;
 };
+
+// PHASE0: optional hook that returns null outside provider
+export const useCanvasContextOptional = (): CanvasContextType | null => React.useContext(CanvasContext);

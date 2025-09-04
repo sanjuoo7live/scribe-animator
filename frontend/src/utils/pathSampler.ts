@@ -1,3 +1,5 @@
+import { flags } from '../flags';
+
 /**
  * Draw a partial polyline up to a given arc-length using CanvasRenderingContext2D.
  * @param ctx Canvas context
@@ -287,4 +289,75 @@ export class PathSampler {
       getTotalLength: () => samples.length > 0 ? samples[samples.length - 1].cumulativeLength : 0
     };
   }
+}
+
+// PHASE1: adaptive curvature-aware sampling
+/**
+ * Sample an SVG path with curvature-aware step sizing.
+ * Mapping: step ≈ k1 / (k2 + |Δθ|) clamped to mode min/max.
+ * @param d SVG path data
+ * @param mode 'preview' | 'export'
+ * @param m Optional transform matrix [a,b,c,d,e,f]
+ */
+export function adaptiveSamplePath(
+  d: string,
+  mode: 'preview' | 'export',
+  m?: number[]
+): PathPoint[] {
+  const conf = flags.sampler[mode];
+  const scratch = (() => {
+    const ns = 'http://www.w3.org/2000/svg';
+    if (!(adaptiveSamplePath as any)._path) {
+      const p = document.createElementNS(ns, 'path');
+      (adaptiveSamplePath as any)._path = p;
+    }
+    return (adaptiveSamplePath as any)._path as SVGPathElement;
+  })();
+  scratch.setAttribute('d', d);
+  const L = scratch.getTotalLength();
+  if (!isFinite(L) || L <= 0) return [];
+  const delta = 2.5;
+  const pts: PathPoint[] = [];
+
+  const angleAt = (sv: number) => {
+    const a = Math.max(0, sv - delta);
+    const b = Math.min(L, sv + delta);
+    const p0 = scratch.getPointAtLength(a);
+    const p1 = scratch.getPointAtLength(b);
+    return Math.atan2(p1.y - p0.y, p1.x - p0.x);
+  };
+
+  let s = 0;
+  let lastAngle = angleAt(0);
+  while (s <= L) {
+    const p = scratch.getPointAtLength(s);
+    let x = p.x, y = p.y;
+    if (m && m.length >= 6) {
+      const nx = m[0] * x + m[2] * y + m[4];
+      const ny = m[1] * x + m[3] * y + m[5];
+      x = nx; y = ny;
+    }
+    pts.push({ x, y, cumulativeLength: s, tangentAngle: lastAngle, segmentIndex: 0 });
+
+    const nextAngle = angleAt(Math.min(L, s + delta));
+    const raw = Math.abs(((nextAngle - lastAngle + Math.PI) % (2 * Math.PI)) - Math.PI);
+    const k1 = 6.0, k2 = 0.05;
+    let step = k1 / (k2 + raw);
+    step = Math.max(conf.minStep, Math.min(conf.maxStep, step));
+    lastAngle = nextAngle;
+    s += step;
+  }
+
+  if (pts.length && pts[pts.length - 1].cumulativeLength < L) {
+    const pe = scratch.getPointAtLength(L);
+    let x = pe.x, y = pe.y;
+    if (m && m.length >= 6) {
+      const nx = m[0] * x + m[2] * y + m[4];
+      const ny = m[1] * x + m[3] * y + m[5];
+      x = nx; y = ny;
+    }
+    pts.push({ x, y, cumulativeLength: L, tangentAngle: lastAngle, segmentIndex: 0 });
+  }
+
+  return pts;
 }

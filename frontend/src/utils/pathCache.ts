@@ -93,6 +93,27 @@ export function getHandLUT(d: string, samplePx = 2): HandLUT {
   }
 }
 
+/**
+ * Build a hand lookup table directly from existing path samples.
+ * Falls back to null if samples are missing or invalid.
+ */
+export function samplesToLut(samples?: {x:number; y:number; cumulativeLength:number}[]): HandLUT | null {
+  if (!samples || samples.length < 2) return null;
+  try {
+    const pts: LutPoint[] = new Array(samples.length);
+    for (let i = 0; i < samples.length; i++) {
+      const a = samples[Math.max(0, i - 1)];
+      const b = samples[Math.min(samples.length - 1, i + 1)];
+      const theta = Math.atan2(b.y - a.y, b.x - a.x);
+      const s = samples[i].cumulativeLength;
+      pts[i] = { s, x: samples[i].x, y: samples[i].y, theta };
+    }
+    return { len: samples[samples.length - 1].cumulativeLength, points: pts };
+  } catch {
+    return null;
+  }
+}
+
 function tangentAngle(path: SVGPathElement, s: number, total: number): number {
   const eps = 0.5;
   const a = Math.max(0, s - eps);

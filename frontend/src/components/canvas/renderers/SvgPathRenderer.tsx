@@ -4,7 +4,7 @@ import { BaseRendererProps } from '../renderers/RendererRegistry';
 import { calculateAnimationProgress } from '../utils/animationUtils';
 import ThreeLayerHandFollower from '../../hands/ThreeLayerHandFollower';
 import { PathSampler } from '../../../utils/pathSampler';
-import { getPath2D, getHandLUT, HandLUT } from '../../../utils/pathCache';
+import { getPath2D, getHandLUT, HandLUT, samplesToLut } from '../../../utils/pathCache';
 import type { ParsedPath } from '../../../types/parsedPath';
 // PHASE1: import hand follower flag for lazy LUT
 import { handFollower } from '../../SvgImporter';
@@ -74,11 +74,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
   }, [debug]);
   const tryGetPath2D = React.useCallback((d: string): Path2D | null => { try { return getPath2D(d); } catch { return null; } }, []);
 
-  // Memoize paths to prevent hand follower from recalculating on every render
-  const paths = React.useMemo(() => {
-    const arr = Array.isArray(obj.properties?.paths) ? obj.properties.paths : [];
-    return arr.map((p: any) => (p && p.m && !p.transform ? { ...p, transform: p.m } : p));
-  }, [obj.properties?.paths]);
+  // (Removed unused 'paths' variable to fix ESLint error)
   
   // Check if we need to apply calibration offset to path drawing
   
@@ -97,9 +93,15 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
         if (!d) return;
 
         const cp = p as CachedParsedPath;
+        if (!obj.properties?.handFollower?.enabled) {
+          cp._lut = undefined;
+          console.log('[SvgPathRenderer] Hand follower disabled - skipping LUT generation for path');
+        } else if (p.lut && !cp._lut) {
+          cp._lut = p.lut;
+          console.log('[SvgPathRenderer] Hand follower enabled - using provided LUT');
+        }
         // PHASE0: reuse provided samples/lengths when available
         if (p.samples && !cp._samples) cp._samples = p.samples;
-        if (p.lut && !cp._lut) cp._lut = p.lut;
         if (!cp._samples) {
           try {
             cp._samples = PathSampler.samplePath(d, 1.25, undefined);
@@ -113,14 +115,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
           len = _s && _s.length ? _s[_s.length - 1].cumulativeLength : 0;
         }
         cp.len = len;
-        if (!cp._lut) {
-          try {
-            cp._lut = getHandLUT(d, 2);
-          } catch {
-            cp._lut = null;
-          }
-        }
-
+        
         if (len > 0) {
           drawablePathsTemp.push({ ...p, index, len });
           sum += len;
@@ -172,16 +167,34 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
       }
       cp.len = len;
       
-      // PHASE1: lazy LUT building - only build when hand follower is enabled
-      const handFollowerEnabled = obj.properties?.handFollower?.enabled;
-      if (!cp._lut && handFollowerEnabled && handFollower.lazyLUT) {
-        try {
-          cp._lut = getHandLUT(d, 2);
-          if (debug) {
-            console.log(`[Phase1] Lazy LUT built for path: ${d.substring(0, 30)}...`);
+    
+      // PHASE1: lazy LUT building - only build when hand follower is enabled and LUT is missing
+      // Safe default: only if handFollower flag is ON and follower is enabled
+      if (obj.properties?.handFollower?.enabled) {
+        if (!cp._lut) {
+          // Only build if lazyLUT flag is ON
+          if (typeof handFollower === 'object' && handFollower.lazyLUT) {
+            try {
+              cp._lut = getHandLUT(d, 2);
+              if (debug) {
+                console.log(`[PHASE1] Lazy LUT built for path: ${d.substring(0, 30)}...`);
+              }
+            } catch {
+              cp._lut = null;
+            }
+          } else if (p.lut) {
+            // Legacy: use provided LUT if present
+            cp._lut = p.lut;
+            if (debug) {
+              console.log('[SvgPathRenderer] Hand follower enabled - using provided LUT');
+            }
           }
-        } catch {
-          cp._lut = null;
+        }
+      } else {
+        // If follower is disabled, ensure no LUT is attached
+        cp._lut = undefined;
+        if (debug) {
+          console.log('[SvgPathRenderer] Hand follower disabled - skipping LUT generation for path');
         }
       }
 
@@ -219,41 +232,44 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
   //   : totalLen;
   // let consumed = 0;
 
+  // Track LUT builds to trigger rerenders
+  // (Removed unused 'lutVersion' state variable to fix ESLint error)
+
   // Compute hand follower node once per relevant changes
-  const handNode = React.useMemo(() => {
+  const handFollowerMemo = React.useMemo(() => {
     const handFollowerSettings = obj.properties?.handFollower;
-    if (!handFollowerSettings?.enabled) return null;
+    if (!handFollowerSettings?.enabled) return { node: null, activePath: null };
 
     // 🔧 SYNCHRONIZATION FIX: Use only drawable paths for hand follower calculation
     // This ensures hand animation and stroke rendering use the same path length basis
-    
+
     let activePath: any | null = null;
     let localProgress = 0;
     let pathIndex = -1;
-    
+
     if (drawablePaths.length > 0) {
       let used = 0;
       for (const drawablePath of drawablePaths) {
         const len = drawablePath.len;
         const start = used;
         const end = used + len;
-        
-        if (targetLen <= start) { 
-          activePath = drawablePath; 
-          localProgress = 0; 
+
+        if (targetLen <= start) {
+          activePath = drawablePath;
+          localProgress = 0;
           pathIndex = drawablePath.index;
-          break; 
+          break;
         }
         if (targetLen < end) {
           const localReveal = Math.max(0, targetLen - start);
           localProgress = len > 0 ? localReveal / len : 0;
-          activePath = drawablePath; 
+          activePath = drawablePath;
           pathIndex = drawablePath.index;
           break;
         }
         used = end;
       }
-      
+
       // If no active path found, use the first drawable path
       if (!activePath && drawablePaths.length > 0) {
         activePath = drawablePaths[0];
@@ -261,15 +277,21 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
         pathIndex = activePath.index;
       }
     }
-    
-    if (!activePath?.d) return null;
+
+    if (!activePath?.d) return { node: null, activePath: null };
+
+    const cpActive = activePath as CachedParsedPath;
+    if (!cpActive._lut) {
+      // Build LUT asynchronously and hide follower until ready
+      return { node: null, activePath: cpActive };
+    }
 
     // Simple debug logging to avoid interference
     if (debug && activePath) {
       const now = Date.now();
       const lastLogKey = `hand-debug-${obj.id}`;
       const lastLogTime = (window as any)[lastLogKey] || 0;
-      
+
       if (now - lastLogTime > 1000) { // Rate limit to once per second
         (window as any)[lastLogKey] = now;
         console.log('🤚 [HAND DEBUG] Hand Follower', {
@@ -333,26 +355,49 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
         }
       }
 
-      return (
-        <ThreeLayerHandFollower
-          key="hand-follower"
-          pathData={activePath.d}
-          pathMatrix={(activePath as any).transform as number[] | undefined}
-          progress={localProgress}
-          tipBacktrackPx={tipBacktrackPx}
-          handAsset={handFollowerSettings.handAsset}
-          toolAsset={handFollowerSettings.toolAsset}
-          scale={handFollowerSettings.scale || 1}
-          visible={handFollowerSettings.visible !== false}
-          debug={!!handFollowerSettings.debug}
-          mirror={!!handFollowerSettings.mirror}
-          showForeground={handFollowerSettings.showForeground !== false}
-          extraOffset={handFollowerSettings.calibrationOffset || handFollowerSettings.offset || { x: 0, y: 0 }}
-        />
-      );
+      return {
+        node: (
+          <ThreeLayerHandFollower
+            key="hand-follower"
+            pathData={activePath.d}
+            pathMatrix={(activePath as any).transform as number[] | undefined}
+            progress={localProgress}
+            tipBacktrackPx={tipBacktrackPx}
+            handAsset={handFollowerSettings.handAsset}
+            toolAsset={handFollowerSettings.toolAsset}
+            scale={handFollowerSettings.scale || 1}
+            visible={handFollowerSettings.visible !== false}
+            debug={!!handFollowerSettings.debug}
+            mirror={!!handFollowerSettings.mirror}
+            showForeground={handFollowerSettings.showForeground !== false}
+            extraOffset={handFollowerSettings.calibrationOffset || handFollowerSettings.offset || { x: 0, y: 0 }}
+          />
+        ),
+        activePath: cpActive
+      };
     }
-    return null;
+
+    return { node: null, activePath: cpActive };
   }, [obj.properties?.handFollower, drawablePaths, targetLen, draw, previewWidthBoost, obj.id, debug]);
+
+  const handNode = handFollowerMemo.node;
+  const activeLutPath = handFollowerMemo.activePath;
+
+  // Build LUT lazily outside render to avoid blocking
+  React.useEffect(() => {
+    if (!obj.properties?.handFollower?.enabled) return;
+    if (!activeLutPath || activeLutPath._lut) return;
+    const build = () => {
+      activeLutPath._lut = samplesToLut(activeLutPath._samples) ?? getHandLUT(activeLutPath.d as string, 2);
+  // (Removed setLutVersion call; lutVersion state no longer used)
+    };
+    const ric = (window as any).requestIdleCallback as ((cb: () => void) => number) | undefined;
+    if (ric) {
+      ric(build);
+    } else {
+      setTimeout(build, 0);
+    }
+  }, [obj.properties?.handFollower?.enabled, activeLutPath]);
 
   // 📊 Simplified Debug Logs
   React.useEffect(() => {

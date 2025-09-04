@@ -67,6 +67,7 @@ export function getPathTotalLength(d: string): number {
 
 /** Build (or get) an arc-length LUT for O(1) hand pose sampling */
 export function getHandLUT(d: string, samplePx = 2): HandLUT {
+  console.log('[pathCache] getHandLUT called - building LUT for path (this should be skipped if hand follower is disabled)');
   try {
     const key = samplePx === 2 ? d : `${d}#${samplePx}`;
     let lut = lutCache.get(key);

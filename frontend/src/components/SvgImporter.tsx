@@ -574,14 +574,16 @@ const SvgImporter: React.FC = () => {
       }
 
       const beforeN = out.length;
-      const minLen = drawOptions.filter?.minLen ?? defaultSvgDrawOptions.filter!.minLen;
+      const baseMinLen = drawOptions.filter?.minLen ?? defaultSvgDrawOptions.filter!.minLen;
+      // B&W tends to produce many tiny splinters; aggressively raise the threshold there.
+      const effectiveMinLen = (clusterMode === 'bw') ? Math.max(baseMinLen, 25) : baseMinLen;
       const maxKeep = drawOptions.filter?.maxKeep ?? defaultSvgDrawOptions.filter!.maxKeep;
       const filtered = out
         .map((p, i) => ({ ...p, len: lens[i] || 0 }))
-        .filter(p => p.len >= Math.max(minLen, (p.strokeWidth || 0) * 0.5))
+        .filter(p => p.len >= Math.max(effectiveMinLen, (p.strokeWidth || 0) * 0.5))
         .sort((a, b) => b.len - a.len)
         .slice(0, maxKeep);
-      setStatus(`Filtered ${beforeN}→${filtered.length} paths (minLen=${minLen}, maxKeep=${maxKeep})`);
+      setStatus(`Filtered ${beforeN}→${filtered.length} paths (minLen=${effectiveMinLen}, maxKeep=${maxKeep})`);
 
       st.vb = vb;
       st.paths = filtered.map(({ len, ...rest }) => rest);
@@ -595,11 +597,15 @@ const SvgImporter: React.FC = () => {
     } finally {
       if (st.measureAbort === ctrl) st.measureAbort = undefined;
     }
-  }, [cancelMeasurement, drawOptions]);
+  }, [cancelMeasurement, drawOptions, clusterMode]);
 
   // Helper: add current draw snapshot to canvas with configured options
   const addSnapshotToCanvas = React.useCallback(async (mode?: 'standard' | 'preview') => {
     if (!drawSvgSnapshot || !currentProject) return;
+    
+    // Log that object is being added to canvas - hand follower will be configured in properties panel
+    console.log('[SvgImporter] Add to Canvas clicked - Adding SVG object to canvas');
+    
     resizeCanvasToHolder(true);
 
     const snapshotHash = computeSnapshotKey(drawSvgSnapshot);
@@ -643,11 +649,12 @@ const SvgImporter: React.FC = () => {
       ? { ...drawOptions, mode, fillStrategy: mode === 'preview' ? { kind: 'perPath' } : mode === 'standard' ? { kind: 'afterAll' } : drawOptions.fillStrategy }
       : drawOptions;
 
-    const minLen = finalOpts.filter?.minLen ?? defaultSvgDrawOptions.filter!.minLen;
+    const baseMinLen2 = finalOpts.filter?.minLen ?? defaultSvgDrawOptions.filter!.minLen;
+    const effectiveMinLen2 = (clusterMode === 'bw') ? Math.max(baseMinLen2, 25) : baseMinLen2;
     const maxKeep = finalOpts.filter?.maxKeep ?? defaultSvgDrawOptions.filter!.maxKeep;
 
     const filtered = combined
-      .filter(p => p.len >= Math.max(minLen, (p.strokeWidth || 0) * 0.5))
+      .filter(p => p.len >= Math.max(effectiveMinLen2, (p.strokeWidth || 0) * 0.5))
       .sort((a, b) => b.len - a.len)
       .slice(0, maxKeep);
 
@@ -694,7 +701,8 @@ const SvgImporter: React.FC = () => {
     // PHASE0: tiny-path early skip
     let tinyMeta = { tinyDropped: 0, kept: capped.length, total: capped.length };
     if (importer.dropTinyPaths.enabled) {
-      const res = dropTinyPaths(capped, importer.dropTinyPaths.minLenPx);
+      const tinyMin = (clusterMode === 'bw') ? Math.max(importer.dropTinyPaths.minLenPx, 25) : importer.dropTinyPaths.minLenPx;
+      const res = dropTinyPaths(capped, tinyMin);
       tinyMeta = { tinyDropped: res.tinyDropped, kept: res.kept.length, total: res.total };
       capped = res.kept;
       totalLen = Math.max(1, capped.reduce((s, p) => s + (p.len || 0), 0));
@@ -787,7 +795,7 @@ const SvgImporter: React.FC = () => {
         incrementalLengths: { totalMissing: missingCount, ms: Math.round(measureMs) },
       });
     }
-  }, [addObject, buildCanvasAnimFromSvg, currentProject, drawSvgSnapshot, drawOptions, resizeCanvasToHolder, computeSnapshotKey]);
+  }, [addObject, buildCanvasAnimFromSvg, currentProject, drawSvgSnapshot, drawOptions, resizeCanvasToHolder, computeSnapshotKey, clusterMode, animatedLayerRef]);
   // Normalized SVG string for responsive preview (compute viewBox if missing; avoid TS deps)
   // ResizeObserver to auto-resize canvas on container or window resize
   React.useEffect(() => {

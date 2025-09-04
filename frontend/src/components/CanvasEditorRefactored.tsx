@@ -5,6 +5,8 @@ import { useAppStore } from '../store/appStore';
 import CanvasSettings from './CanvasSettings';
 import CameraControls from './CameraControls';
 import TextPropertiesModal from './TextPropertiesModal';
+// PHASE1: import preview flag for DPR cap
+import { preview } from './SvgImporter';
 
 // Import our new modular components
 import {
@@ -49,7 +51,16 @@ const CanvasProvider: React.FC<{
     clock: animationEngine,
     staticLayerRef,
     animatedLayerRef,
-  }), [stageRef.current, staticLayerRef.current, animatedLayerRef.current, overlayRootRef.current]);
+    // PHASE1: DPR cap for preview performance
+    getEffectiveDpr: () => {
+      const deviceDpr = window.devicePixelRatio || 1;
+      const cappedDpr = Math.min(deviceDpr, preview.dprCap);
+      if (deviceDpr > preview.dprCap) {
+        console.log(`[Phase1] DPR capped: ${deviceDpr} → ${cappedDpr} (cap: ${preview.dprCap})`);
+      }
+      return cappedDpr;
+    },
+  }), [stageRef, staticLayerRef, animatedLayerRef, overlayRootRef]);
 
   return (
     <CanvasContext.Provider value={contextValue}>

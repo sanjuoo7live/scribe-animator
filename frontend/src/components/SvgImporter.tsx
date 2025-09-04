@@ -6,7 +6,8 @@ import SvgDrawSettings, { SvgDrawOptions, defaultSvgDrawOptions } from './SvgDra
 import { getPath2D } from '../utils/pathCache';
 import { measureSvgLengthsInWorker } from '../workers/measureWorkerClient';
 import { MeasureItem } from '../workers/measureTypes';
-// PHASE0: expose canvas context for layer-local redraws
+// PHASE1: import adaptive sampling function
+import { adaptiveSamplePath } from '../utils/pathSampler';
 import { useCanvasContextOptional } from './canvas';
 import type { ParsedPath } from '../types/parsedPath';
 
@@ -15,6 +16,17 @@ export const addToCanvas = { batched: true, batchSize: 50 } as const;
 export const lengths = { measureIncrementally: true, chunk: 64 } as const;
 export const importer = { dropTinyPaths: { enabled: true, minLenPx: 1.0 } } as const;
 export const debug = { perf: false } as const;
+
+// PHASE1: adaptive sampling and performance flags (safe defaults)
+export const sampler = {
+  adaptive: true,          // default ON for preview, OFF for export
+  preview: { minStep: 2.75, maxStep: 7.0 },
+  export:  { minStep: 1.25, maxStep: 4.0 }
+} as const;
+
+export const handFollower = { lazyLUT: true } as const;   // default ON
+
+export const preview = { dprCap: 1.5 } as const;  // default 1.5, configurable
 
 // PHASE0: cooperative batched creator to keep UI responsive
 export async function createCanvasObjectBatched(
@@ -1179,7 +1191,22 @@ const SvgImporter: React.FC = () => {
         const fillAttr = el.getAttribute('fill');
         const fill = (fillAttr ? fillAttr : '#000').toLowerCase() === 'none' ? 'transparent' : (fillAttr || '#000');
         const fillRule = (el.getAttribute('fill-rule') as any) || undefined;
-        out.push({ d, stroke, strokeWidth: isNaN(sw) ? 3 : sw, fill, fillRule });
+
+        // PHASE1: add adaptive sampling for preview mode
+        let samples: any = undefined;
+        if (sampler.adaptive) {
+          try {
+            // Use preview mode for initial parsing (coarser sampling)
+            samples = adaptiveSamplePath(d, 'preview');
+            if (debug.perf) {
+              console.log(`[Phase1] Adaptive sampling: ${d.substring(0, 50)}... → ${samples?.length || 0} points`);
+            }
+          } catch (error) {
+            console.warn('[Phase1] Adaptive sampling failed, falling back to none:', error);
+          }
+        }
+
+        out.push({ d, stroke, strokeWidth: isNaN(sw) ? 3 : sw, fill, fillRule, samples });
       };
 
       const visit = (node: Element) => {

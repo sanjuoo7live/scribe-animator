@@ -1,5 +1,7 @@
 import React from 'react';
 import Konva from 'konva';
+// PHASE1: import preview flag for DPR cap
+import { preview } from '../SvgImporter';
 
 // Canvas Context provides access to core canvas elements and services
 export interface CanvasContextType {
@@ -15,6 +17,8 @@ export interface CanvasContextType {
   // PHASE0: refs for static and animated layers
   staticLayerRef?: React.RefObject<Konva.Layer | null>;
   animatedLayerRef?: React.RefObject<Konva.Layer | null>;
+  // PHASE1: DPR cap for preview performance
+  getEffectiveDpr: () => number;
 }
 
 export const CanvasContext = React.createContext<CanvasContextType | null>(null);

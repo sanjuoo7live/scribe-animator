@@ -6,6 +6,8 @@ import ThreeLayerHandFollower from '../../hands/ThreeLayerHandFollower';
 import { PathSampler } from '../../../utils/pathSampler';
 import { getPath2D, getHandLUT, HandLUT } from '../../../utils/pathCache';
 import type { ParsedPath } from '../../../types/parsedPath';
+// PHASE1: import hand follower flag for lazy LUT
+import { handFollower } from '../../SvgImporter';
 
 // PHASE0: internal extension with cached fields
 interface CachedParsedPath extends ParsedPath {
@@ -169,9 +171,15 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
         len = _s && _s.length ? _s[_s.length - 1].cumulativeLength : 0;
       }
       cp.len = len;
-      if (!cp._lut) {
+      
+      // PHASE1: lazy LUT building - only build when hand follower is enabled
+      const handFollowerEnabled = obj.properties?.handFollower?.enabled;
+      if (!cp._lut && handFollowerEnabled && handFollower.lazyLUT) {
         try {
           cp._lut = getHandLUT(d, 2);
+          if (debug) {
+            console.log(`[Phase1] Lazy LUT built for path: ${d.substring(0, 30)}...`);
+          }
         } catch {
           cp._lut = null;
         }
@@ -190,7 +198,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
       totalLen: sum,
       drawablePaths: drawablePathsTemp
     };
-  }, [obj.properties?.paths, obj.properties?.totalLen, debug, debugLog]);
+  }, [obj.properties?.paths, obj.properties?.totalLen, debug, debugLog, obj.properties?.handFollower?.enabled]);
   const draw = obj.animationType === 'drawIn';
   // const previewMode = !!obj.properties?.previewDraw;
   const drawOptions = obj.properties?.drawOptions || null;

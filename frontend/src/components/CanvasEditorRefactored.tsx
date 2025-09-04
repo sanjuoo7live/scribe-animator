@@ -36,10 +36,10 @@ rendererRegistry.register('pathFollower', PathFollowerRenderer);
 // PHASE0: accept refs so stage and layers are shared with consumers
 const CanvasProvider: React.FC<{
   children: React.ReactNode;
-  stageRef: React.RefObject<Konva.Stage>;
-  staticLayerRef: React.RefObject<Konva.Layer>;
-  animatedLayerRef: React.RefObject<Konva.Layer>;
-  overlayRootRef: React.RefObject<HTMLDivElement>;
+  stageRef: React.RefObject<Konva.Stage | null>;
+  staticLayerRef: React.RefObject<Konva.Layer | null>;
+  animatedLayerRef: React.RefObject<Konva.Layer | null>;
+  overlayRootRef: React.RefObject<HTMLDivElement | null>;
 }> = ({ children, stageRef, staticLayerRef, animatedLayerRef, overlayRootRef }) => {
   const contextValue = React.useMemo(() => ({
     stage: stageRef.current,
@@ -49,7 +49,7 @@ const CanvasProvider: React.FC<{
     clock: animationEngine,
     staticLayerRef,
     animatedLayerRef,
-  }), [stageRef, animatedLayerRef, overlayRootRef, staticLayerRef]);
+  }), [stageRef.current, staticLayerRef.current, animatedLayerRef.current, overlayRootRef.current]);
 
   return (
     <CanvasContext.Provider value={contextValue}>

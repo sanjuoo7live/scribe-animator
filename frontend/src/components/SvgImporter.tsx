@@ -7,22 +7,8 @@ import { getPath2D } from '../utils/pathCache';
 import { measureSvgLengthsInWorker } from '../workers/measureWorkerClient';
 import { MeasureItem } from '../workers/measureTypes';
 // PHASE0: expose canvas context for layer-local redraws
-import { useCanvasContext } from './canvas';
-
-// PHASE0: include optional perf-related fields on ParsedPath
-export type ParsedPath = {
-  d: string;
-  stroke?: string;
-  strokeWidth?: number;
-  fill?: string;
-  fillRule?: 'nonzero' | 'evenodd';
-  transform?: [number, number, number, number, number, number];
-  // Optional precomputed samples/lengths from importer
-  samples?: { x: number; y: number; cumulativeLength: number }[] | Float32Array;
-  len?: number;
-  // Optional lookup table for hand follower
-  lut?: { len: number; points: { s: number; x: number; y: number; theta: number }[] };
-};
+import { useCanvasContextOptional } from './canvas';
+import type { ParsedPath } from '../types/parsedPath';
 
 // PHASE0: feature flags (safe defaults)
 export const addToCanvas = { batched: true, batchSize: 50 } as const;
@@ -43,7 +29,7 @@ export async function createCanvasObjectBatched(
     opts.onProgress?.(Math.min(i + slice.length, total), total);
     // Yield to main thread
     // eslint-disable-next-line no-await-in-loop
-    await new Promise(requestAnimationFrame);
+    await new Promise(resolve => requestAnimationFrame(resolve));
   }
   return result;
 }
@@ -56,18 +42,18 @@ export async function measureMissingLengthsIncrementally(
 ): Promise<number> {
   const svgNS = 'http://www.w3.org/2000/svg';
   const scratch = document.createElementNS(svgNS, 'path');
-  const missing = paths.filter(p => !(p as any).len && p.d);
+  const missing = paths.filter(p => typeof p.len !== 'number' && p.d);
   const total = missing.length;
   for (let i = 0; i < total; i += chunk) {
     const end = Math.min(i + chunk, total);
     for (let j = i; j < end; j++) {
       const p = missing[j];
       scratch.setAttribute('d', p.d);
-      (p as any).len = scratch.getTotalLength();
+      p.len = scratch.getTotalLength();
     }
     onProgress?.(end, total);
     // eslint-disable-next-line no-await-in-loop
-    await new Promise(requestAnimationFrame);
+    await new Promise(resolve => requestAnimationFrame(resolve));
   }
   return total;
 }
@@ -77,7 +63,7 @@ export function dropTinyPaths(paths: ParsedPath[], minLenPx: number) {
   const kept: ParsedPath[] = [];
   let tinyCount = 0;
   for (const p of paths) {
-    const L = (p as any).len ?? null;
+    const L = p.len ?? null;
     if (L != null && L < minLenPx) {
       tinyCount++;
       continue;
@@ -105,7 +91,8 @@ const SvgImporter: React.FC = () => {
   const addObject = useAppStore(s => s.addObject);
   const currentProject = useAppStore(s => s.currentProject);
   // PHASE0: layer reference for incremental drawing updates
-  const { animatedLayerRef } = useCanvasContext();
+  const canvasCtx = useCanvasContextOptional();
+  const animatedLayerRef = canvasCtx?.animatedLayerRef;
 
   const [status, setStatus] = React.useState<string>('');
   const [traceThreshold, setTraceThreshold] = React.useState<number>(128);
@@ -662,23 +649,24 @@ const SvgImporter: React.FC = () => {
     }
 
     // Apply hard caps to prevent extreme SVGs from locking the UI
-    let capped = filtered.slice(0, Math.min(filtered.length, HARD_MAX_KEEP));
-    let totalLen = Math.max(1, capped.reduce((sum, p) => sum + p.len, 0));
+    let capped: ParsedPath[] = filtered.slice(0, Math.min(filtered.length, HARD_MAX_KEEP));
+    let totalLen = Math.max(1, capped.reduce((sum, p) => sum + (p.len || 0), 0));
     if (totalLen > HARD_MAX_TOTAL_LEN) {
       const limited: typeof capped = [];
       let acc = 0;
-      for (const p of capped) {
-        if (acc + p.len > HARD_MAX_TOTAL_LEN) break;
-        limited.push(p);
-        acc += p.len;
-      }
+        for (const p of capped) {
+          const L = p.len || 0;
+          if (acc + L > HARD_MAX_TOTAL_LEN) break;
+          limited.push(p);
+          acc += L;
+        }
       if (limited.length >= 50) {
         capped = limited;
         totalLen = acc;
       } else {
         const floor = Math.max(50, Math.floor(HARD_MAX_KEEP / 4));
         capped = capped.slice(0, Math.min(capped.length, floor));
-        totalLen = Math.max(1, capped.reduce((s, p) => s + p.len, 0));
+          totalLen = Math.max(1, capped.reduce((s, p) => s + (p.len || 0), 0));
       }
     }
 
@@ -694,7 +682,7 @@ const SvgImporter: React.FC = () => {
     // PHASE0: tiny-path early skip
     let tinyMeta = { tinyDropped: 0, kept: capped.length, total: capped.length };
     if (importer.dropTinyPaths.enabled) {
-      const res = dropTinyPaths(capped as ParsedPath[], importer.dropTinyPaths.minLenPx);
+      const res = dropTinyPaths(capped, importer.dropTinyPaths.minLenPx);
       tinyMeta = { tinyDropped: res.tinyDropped, kept: res.kept.length, total: res.total };
       capped = res.kept;
       totalLen = Math.max(1, capped.reduce((s, p) => s + (p.len || 0), 0));
@@ -704,8 +692,8 @@ const SvgImporter: React.FC = () => {
     let maxBatchMs = 0;
     const addStart = performance.now();
     let last = addStart;
-    const pathObjs = addToCanvas.batched
-      ? await createCanvasObjectBatched(capped as ParsedPath[], {
+    const pathObjs: ParsedPath[] = addToCanvas.batched
+      ? await createCanvasObjectBatched(capped, {
           batchSize: addToCanvas.batchSize,
           onProgress: () => {
             const now = performance.now();

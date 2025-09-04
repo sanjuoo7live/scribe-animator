@@ -7,6 +7,7 @@ export interface SvgDrawOptions {
   speed: { kind: 'duration' | 'pps'; durationSec?: number; pps?: number };
   previewStroke?: { color: string; widthBoost: number };
   fillStrategy?: { kind: 'afterAll' | 'perPath' | 'batched'; batchesN?: number };
+  filter?: { minLen: number; maxKeep: number };
 }
 
 export const defaultSvgDrawOptions: SvgDrawOptions = {
@@ -14,6 +15,7 @@ export const defaultSvgDrawOptions: SvgDrawOptions = {
   speed: { kind: 'duration', durationSec: 3 },
   previewStroke: { color: '#3b82f6', widthBoost: 1 },
   fillStrategy: { kind: 'afterAll', batchesN: 4 },
+  filter: { minLen: 3, maxKeep: 400 },
 };
 
 type Props = {
@@ -52,6 +54,10 @@ export const SvgDrawSettings: React.FC<Props> = ({ value, onChange, totalLen, cu
 
   const updateFill = (patch: Partial<NonNullable<SvgDrawOptions['fillStrategy']>>) => {
     onChange({ ...v, fillStrategy: { ...(v.fillStrategy || defaultSvgDrawOptions.fillStrategy!), ...patch } } as SvgDrawOptions);
+  };
+
+  const updateFilter = (patch: Partial<NonNullable<SvgDrawOptions['filter']>>) => {
+    onChange({ ...v, filter: { ...(v.filter || defaultSvgDrawOptions.filter!), ...patch } } as SvgDrawOptions);
   };
 
   const effectiveDuration = v.speed.kind === 'duration'
@@ -112,7 +118,7 @@ export const SvgDrawSettings: React.FC<Props> = ({ value, onChange, totalLen, cu
             />
           )}
           <span className="text-gray-400 flex-shrink-0">
-            (~{effectiveDuration.toFixed(1)}s)
+            (~{effectiveDuration.toFixed(1)}s{typeof totalLen === 'number' ? `, len ${Math.round(totalLen)}` : ''})
           </span>
         </div>
 
@@ -144,7 +150,7 @@ export const SvgDrawSettings: React.FC<Props> = ({ value, onChange, totalLen, cu
 
         {/* Row 4: Batches */}
         {v.mode === 'batched' && (
-          <div className="flex items-center" style={{ gap: 12, marginBottom: 0 }}>
+          <div className="flex items-center" style={{ gap: 12, marginBottom: 12 }}>
             <span className="text-gray-300 flex-shrink-0" style={{ width: 84 }}>Batches</span>
             <input
               type="number"
@@ -157,6 +163,39 @@ export const SvgDrawSettings: React.FC<Props> = ({ value, onChange, totalLen, cu
             />
           </div>
         )}
+
+        {/* Row 5: Filter */}
+        <div className="flex items-center flex-wrap" style={{ gap: 12, marginBottom: 0 }}>
+          <span className="text-gray-300 flex-shrink-0" style={{ width: 84 }}>Filter</span>
+          <div className="flex items-center" style={{ gap: 6 }}>
+            <span className="text-gray-400 text-xs">Min</span>
+            <input
+              type="number"
+              min={0}
+              value={v.filter?.minLen ?? defaultSvgDrawOptions.filter!.minLen}
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                updateFilter({ minLen: isNaN(val) ? defaultSvgDrawOptions.filter!.minLen : val });
+              }}
+              className="bg-gray-700 text-gray-100 rounded px-2 py-1"
+              style={{ width: 60 }}
+            />
+          </div>
+          <div className="flex items-center" style={{ gap: 6 }}>
+            <span className="text-gray-400 text-xs">Max</span>
+            <input
+              type="number"
+              min={0}
+              value={v.filter?.maxKeep ?? defaultSvgDrawOptions.filter!.maxKeep}
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                updateFilter({ maxKeep: isNaN(val) ? defaultSvgDrawOptions.filter!.maxKeep : val });
+              }}
+              className="bg-gray-700 text-gray-100 rounded px-2 py-1"
+              style={{ width: 70 }}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );

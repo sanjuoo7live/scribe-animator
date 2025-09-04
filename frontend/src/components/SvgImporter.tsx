@@ -3,6 +3,7 @@ import { useAppStore } from '../store/appStore';
 import { traceImageDataToPaths } from '../vtrace/simpleTrace';
 import SvgDrawSettings, { SvgDrawOptions, defaultSvgDrawOptions } from './SvgDrawSettings';
 // MediaPipe segmentation removed per UI simplification
+import { getPath2D } from '../utils/pathCache';
 import { measureSvgLengthsInWorker } from '../workers/measureWorkerClient';
 import { MeasureItem } from '../workers/measureTypes';
 
@@ -68,9 +69,10 @@ const SvgImporter: React.FC = () => {
   const [showDrawSettings, setShowDrawSettings] = React.useState<boolean>(false);
   const drawStateRef = React.useRef<{
     vb: { x: number; y: number; w: number; h: number } | null;
-    paths: { d: string; stroke: string; strokeWidth: number; fill: string; m?: [number,number,number,number,number,number], p2d?: Path2D | null }[];
+    paths: { d: string; stroke: string; strokeWidth: number; fill: string; transform?: [number,number,number,number,number,number] }[];
     lens: number[];
     total: number;
+    snapshotId?: string | null;
     raf: number | null;
     playing: boolean;
     durationMs: number;
@@ -88,6 +90,7 @@ const SvgImporter: React.FC = () => {
     paths: [],
     lens: [],
     total: 0,
+    snapshotId: null,
     raf: null,
     playing: false,
     durationMs: 3000,
@@ -101,6 +104,56 @@ const SvgImporter: React.FC = () => {
     lastEp: 0,
     pendingFills: [],
   });
+
+  const unmountedRef = React.useRef(false);
+  React.useEffect(() => {
+    unmountedRef.current = false;
+    return () => { unmountedRef.current = true; };
+  }, []);
+
+  const computeSnapshotKey = React.useCallback((svg: string): string => {
+    let hash = 2166136261;
+    for (let i = 0; i < svg.length; i++) {
+      hash ^= svg.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return `${(hash >>> 0).toString(16)}-${svg.length}`;
+  }, []);
+
+  const safeGetPath2D = React.useCallback((d: string): Path2D | null => {
+    try {
+      return getPath2D(d);
+    } catch {
+      return null;
+    }
+  }, []);
+
+  const path2dCacheRef = React.useRef<Map<string, Path2D>>(new Map());
+  const getCachedPath = React.useCallback((d: string): Path2D | null => {
+    const cache = path2dCacheRef.current;
+    let path: Path2D | null = cache.get(d) || null;
+    if (!path) {
+      path = safeGetPath2D(d);
+      if (path) cache.set(d, path);
+    }
+    return path || null;
+  }, [safeGetPath2D]);
+
+  const applyTransformContext = React.useCallback((ctx: CanvasRenderingContext2D, m: number[] | undefined, fn: () => void) => {
+    ctx.save();
+    if (m && m.length >= 6) ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+    fn();
+    ctx.restore();
+  }, []);
+
+  const withPath = React.useCallback(
+    (ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D, p: { d: string; transform?: number[] }, fn: (path: Path2D) => void) => {
+      const path = getCachedPath(p.d);
+      if (!path) return;
+      applyTransformContext(ctx as CanvasRenderingContext2D, p.transform, () => fn(path));
+    },
+    [applyTransformContext, getCachedPath]
+  );
 
   const cancelMeasurement = React.useCallback(() => {
     const st = drawStateRef.current;
@@ -151,23 +204,21 @@ const SvgImporter: React.FC = () => {
     const paintToAccum = (idx: number) => {
       if (!st.accumCtx) return;
       const p = st.paths[idx];
-      const path = st.paths[idx].p2d;
-      if (!path) return;
       const ag = st.accumCtx;
       ag.save();
       ag.translate(-vb.x * scaleX, -vb.y * scaleY);
       ag.scale(scaleX, scaleY);
-      ag.lineWidth = p.strokeWidth || 2;
-      ag.lineCap = 'round';
-      ag.lineJoin = 'round';
-      ag.strokeStyle = p.stroke || '#111827';
-      if (p.m && p.m.length >= 6) { ag.save(); ag.transform(p.m[0], p.m[1], p.m[2], p.m[3], p.m[4], p.m[5]); }
-      ag.setLineDash([]);
-      ag.stroke(path);
-      if (p.fill && p.fill !== 'none' && p.fill !== 'transparent') {
-        st.pendingFills.push(idx);
-      }
-      if (p.m && p.m.length >= 6) ag.restore();
+      withPath(ag, p, (path) => {
+        ag.lineWidth = p.strokeWidth || 2;
+        ag.lineCap = 'round';
+        ag.lineJoin = 'round';
+        ag.strokeStyle = p.stroke || '#111827';
+        ag.setLineDash([]);
+        ag.stroke(path);
+        if (p.fill && p.fill !== 'none' && p.fill !== 'transparent') {
+          st.pendingFills.push(idx);
+        }
+      });
       ag.restore();
     };
 
@@ -207,24 +258,21 @@ const SvgImporter: React.FC = () => {
       const len = st.lens[cursorIndex] || 0;
       const local = Math.max(0, Math.min(len, T - cursorStartLen));
       if (local > 0) {
-        const path = st.paths[cursorIndex].p2d;
-        if (path) {
-          ctx.save();
-          ctx.translate(-vb.x * scaleX, -vb.y * scaleY);
-          ctx.scale(scaleX, scaleY);
+        ctx.save();
+        ctx.translate(-vb.x * scaleX, -vb.y * scaleY);
+        ctx.scale(scaleX, scaleY);
+        withPath(ctx, p, (path) => {
           ctx.lineWidth = p.strokeWidth || 2;
           ctx.lineCap = 'round';
           ctx.lineJoin = 'round';
           ctx.strokeStyle = p.stroke || '#111827';
-          if (p.m && p.m.length >= 6) { ctx.save(); ctx.transform(p.m[0], p.m[1], p.m[2], p.m[3], p.m[4], p.m[5]); }
           const SAFE_MAX = 4096;
           const dashLen = Math.min(len, SAFE_MAX);
           ctx.setLineDash([dashLen, dashLen]);
           ctx.lineDashOffset = Math.max(0, dashLen - (dashLen * (local / len)));
           ctx.stroke(path);
-          if (p.m && p.m.length >= 6) ctx.restore();
-          ctx.restore();
-        }
+        });
+        ctx.restore();
       }
     }
     if (st.pendingFills.length && st.accumCtx) {
@@ -234,12 +282,10 @@ const SvgImporter: React.FC = () => {
       ag.scale(scaleX, scaleY);
       for (const fi of st.pendingFills) {
         const fp = st.paths[fi];
-        const path = fp.p2d;
-        if (!path) continue;
-        if (fp.m && fp.m.length >= 6) { ag.save(); ag.transform(fp.m[0], fp.m[1], fp.m[2], fp.m[3], fp.m[4], fp.m[5]); }
-        ag.fillStyle = fp.fill;
-        ag.fill(path);
-        if (fp.m && fp.m.length >= 6) ag.restore();
+        withPath(ag, fp, (path) => {
+          ag.fillStyle = fp.fill;
+          ag.fill(path);
+        });
       }
       ag.restore();
       st.pendingFills.length = 0;
@@ -247,7 +293,7 @@ const SvgImporter: React.FC = () => {
       if (st.accumCanvas) ctx.drawImage(st.accumCanvas as any, 0, 0);
     }
     st.lastEp = ep;
-  }, []);
+  }, [withPath]);
 
   const resizeRafRef = React.useRef<number>(0);
 
@@ -398,7 +444,7 @@ const SvgImporter: React.FC = () => {
         return m;
       };
 
-      const out: { d: string; stroke: string; strokeWidth: number; fill: string; m?: Mat, p2d?: Path2D | null }[] = [];
+      const out: { d: string; stroke: string; strokeWidth: number; fill: string; transform?: Mat }[] = [];
       let nodeCount = 0;
       const visit = async (el: Element): Promise<void> => {
         if (el.nodeName.toLowerCase() === 'path') {
@@ -409,9 +455,7 @@ const SvgImporter: React.FC = () => {
           const fillAttr = el.getAttribute('fill');
           const fill = !fillAttr || fillAttr === 'none' ? 'transparent' : fillAttr;
           const m = getCtm(el);
-          let p2d: Path2D | null = null;
-          try { p2d = new Path2D(d); } catch { p2d = null; }
-          out.push({ d, stroke, strokeWidth: isNaN(sw) ? 2 : sw, fill, m, p2d });
+          out.push({ d, stroke, strokeWidth: isNaN(sw) ? 2 : sw, fill, transform: m });
         }
         nodeCount++;
         if (nodeCount % 300 === 0) {
@@ -424,7 +468,7 @@ const SvgImporter: React.FC = () => {
       };
       await visit(svg);
 
-      const toMeasure: MeasureItem[] = out.map(p => ({ d: p.d, m: p.m as Mat | undefined }));
+      const toMeasure: MeasureItem[] = out.map(p => ({ d: p.d, m: p.transform as Mat | undefined }));
       const report = (p: number) => {
         const now = performance.now();
         if (now - (report as any)._last > 250) {
@@ -440,16 +484,26 @@ const SvgImporter: React.FC = () => {
         report
       );
       if (errors.length) {
-        console.warn('measure errors', errors);
+        console.warn(`measure errors (${errors.length})`, errors.slice(0, 5));
         setStatus(`Measured with ${errors.length} path errors (see console).`);
       } else {
         setStatus('');
       }
 
+      const beforeN = out.length;
+      const minLen = drawOptions.filter?.minLen ?? defaultSvgDrawOptions.filter!.minLen;
+      const maxKeep = drawOptions.filter?.maxKeep ?? defaultSvgDrawOptions.filter!.maxKeep;
+      const filtered = out
+        .map((p, i) => ({ ...p, len: lens[i] || 0 }))
+        .filter(p => p.len >= Math.max(minLen, (p.strokeWidth || 0) * 0.5))
+        .sort((a, b) => b.len - a.len)
+        .slice(0, maxKeep);
+      setStatus(`Filtered ${beforeN}→${filtered.length} paths (minLen=${minLen}, maxKeep=${maxKeep})`);
+
       st.vb = vb;
-      st.paths = out;
-      st.lens = lens;
-      st.total = Math.max(1, total);
+      st.paths = filtered.map(({ len, ...rest }) => rest);
+      st.lens = filtered.map(p => p.len);
+      st.total = Math.max(1, filtered.reduce((sum, p) => sum + p.len, 0));
       st.lastEp = 0;
       return true;
     } catch (e: any) {
@@ -458,35 +512,88 @@ const SvgImporter: React.FC = () => {
     } finally {
       if (st.measureAbort === ctrl) st.measureAbort = undefined;
     }
-  }, [cancelMeasurement]);
+  }, [cancelMeasurement, drawOptions]);
 
   // Helper: add current draw snapshot to canvas with configured options
   const addSnapshotToCanvas = React.useCallback(async (mode?: 'standard' | 'preview') => {
     if (!drawSvgSnapshot || !currentProject) return;
     resizeCanvasToHolder(true);
-    const ok = await buildCanvasAnimFromSvg(drawSvgSnapshot);
-    if (!ok) { setStatus('Failed to parse SVG'); return; }
-    const st = drawStateRef.current;
+
+    const snapshotHash = computeSnapshotKey(drawSvgSnapshot);
+    let st = drawStateRef.current;
+    const needsBuild =
+      !st.paths.length ||
+      st.lens.length !== st.paths.length ||
+      st.total <= 0 ||
+      st.snapshotId !== snapshotHash;
+    if (needsBuild) {
+      const ok = await buildCanvasAnimFromSvg(drawSvgSnapshot);
+      if (!ok) {
+        st.snapshotId = null;
+        st.paths = [];
+        st.lens = [];
+        st.total = 0;
+        st.accumIndex = -1;
+        st.accumCanvas = null;
+        st.accumCtx = null;
+        setStatus('Failed to parse SVG');
+        return;
+      }
+      if (unmountedRef.current) return;
+      st = drawStateRef.current;
+      st.snapshotId = snapshotHash;
+    }
+    if (unmountedRef.current) return;
+
     const vb = st.vb;
     let w = 400, h = 300;
-    if (vb) { w = Math.max(64, Math.round(vb.w)); h = Math.max(64, Math.round(vb.h)); }
+    if (vb) {
+      w = Math.max(64, Math.round(vb.w));
+      h = Math.max(64, Math.round(vb.h));
+    }
     const baseId = Date.now();
-    const pathObjs = st.paths.map((p, i) => ({
-      d: p.d,
-      stroke: p.stroke || 'transparent',
-      strokeWidth: p.strokeWidth || 2,
-      fill: p.fill || 'transparent',
-      m: p.m,
-      len: st.lens[i] || 0,
-    }));
+
+    const combined = st.paths.map((p, i) => ({ ...p, len: st.lens[i] || 0 }));
+
     // Determine options: prefer provided mode for legacy button, else use configured drawOptions
-    const opts: SvgDrawOptions = mode
+    const finalOpts: SvgDrawOptions = mode
       ? { ...drawOptions, mode, fillStrategy: mode === 'preview' ? { kind: 'perPath' } : mode === 'standard' ? { kind: 'afterAll' } : drawOptions.fillStrategy }
       : drawOptions;
-    // Compute duration from options
-    const durationSec = opts.speed.kind === 'duration'
-      ? Math.max(0.1, opts.speed.durationSec || 3)
-      : Math.max(0.5, st.total / Math.max(1, (opts.speed.pps || 300)));
+
+    const minLen = finalOpts.filter?.minLen ?? defaultSvgDrawOptions.filter!.minLen;
+    const maxKeep = finalOpts.filter?.maxKeep ?? defaultSvgDrawOptions.filter!.maxKeep;
+
+    const filtered = combined
+      .filter(p => p.len >= Math.max(minLen, (p.strokeWidth || 0) * 0.5))
+      .sort((a, b) => b.len - a.len)
+      .slice(0, maxKeep);
+    const totalLen = Math.max(1, filtered.reduce((sum, p) => sum + p.len, 0));
+
+    const pathObjs: { d: string; stroke: string; strokeWidth: number; fill: string; transform?: number[]; len: number }[] = [];
+    const BATCH = 2000;
+    for (let i = 0; i < filtered.length; i += BATCH) {
+      const slice = filtered.slice(i, i + BATCH);
+      for (let j = 0; j < slice.length; j++) {
+        const p = slice[j];
+        pathObjs.push({
+          d: p.d,
+          stroke: p.stroke || 'transparent',
+          strokeWidth: p.strokeWidth || 2,
+          fill: p.fill || 'transparent',
+          // TODO: remove legacy m fallback on next cleanup pass
+          transform: (p as any).transform ?? (p as any).m,
+          len: p.len,
+        });
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise(requestAnimationFrame);
+      if (unmountedRef.current) return;
+    }
+
+    const durationSec = finalOpts.speed.kind === 'duration'
+      ? Math.max(0.1, finalOpts.speed.durationSec || 3)
+      : Math.max(0.5, totalLen / Math.max(1, (finalOpts.speed.pps || 300)));
+
     addObject({
       id: `draw-${mode}-${baseId}`,
       type: 'svgPath',
@@ -497,17 +604,23 @@ const SvgImporter: React.FC = () => {
       rotation: 0,
       properties: {
         paths: pathObjs,
-        totalLen: st.total,
-        previewDraw: (opts.mode === 'preview'), // legacy flag for backward compatibility
-        drawOptions: opts,
+        totalLen,
+        previewDraw: finalOpts.mode === 'preview',
+        drawOptions: finalOpts,
       },
       animationType: 'drawIn',
       animationStart: 0,
       animationDuration: durationSec,
       animationEasing: 'linear',
     });
-    setStatus(opts.mode === 'preview' ? '✅ Preview-style draw added to canvas' : opts.mode === 'batched' ? '✅ Batched draw added to canvas' : '✅ Draw added to canvas');
-  }, [addObject, buildCanvasAnimFromSvg, currentProject, drawSvgSnapshot, drawOptions, resizeCanvasToHolder]);
+    setStatus(
+      finalOpts.mode === 'preview'
+        ? '✅ Preview-style draw added to canvas'
+        : finalOpts.mode === 'batched'
+          ? '✅ Batched draw added to canvas'
+          : '✅ Draw added to canvas',
+    );
+  }, [addObject, buildCanvasAnimFromSvg, currentProject, drawSvgSnapshot, drawOptions, resizeCanvasToHolder, computeSnapshotKey]);
   // Normalized SVG string for responsive preview (compute viewBox if missing; avoid TS deps)
   // ResizeObserver to auto-resize canvas on container or window resize
   React.useEffect(() => {
@@ -581,6 +694,7 @@ const SvgImporter: React.FC = () => {
       // Clear snapshot when panel closes, so next open re-captures current value
       stopCanvasAnim();
       setDrawSvgSnapshot(null);
+      drawStateRef.current.snapshotId = null;
       return;
     }
     // When opened, verify snapshot equals the Copy SVG value (lastSvg)
@@ -590,6 +704,10 @@ const SvgImporter: React.FC = () => {
         : 'Warning: Snapshot differs from Copy SVG.');
     }
   }, [showDrawPreview, lastSvg, drawSvgSnapshot, stopCanvasAnim]);
+
+  React.useEffect(() => {
+    drawStateRef.current.snapshotId = null;
+  }, [lastSvg]);
   // Runtime indicators
   const [lastEngine, setLastEngine] = React.useState<null | 'official' | 'npm' | 'local' | 'minimal'>(null);
   // Path Refinement modal state

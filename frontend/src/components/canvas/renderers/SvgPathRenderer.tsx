@@ -4,7 +4,7 @@ import { BaseRendererProps } from '../renderers/RendererRegistry';
 import { calculateAnimationProgress } from '../utils/animationUtils';
 import ThreeLayerHandFollower from '../../hands/ThreeLayerHandFollower';
 import { PathSampler } from '../../../utils/pathSampler';
-import { getPath2D, getPathTotalLength, getHandLUT, HandLUT } from '../../../utils/pathCache';
+import { getPath2D, getHandLUT, HandLUT } from '../../../utils/pathCache';
 
 // Note: splitSubpaths no longer used in this renderer
 
@@ -23,6 +23,17 @@ function samplePoseByS(lut: HandLUT | null, s: number) {
     theta: a.theta + t * (b.theta - a.theta),
   };
 }
+
+const applyTransformContext = (
+  ctx: any,
+  m: number[] | undefined,
+  fn: () => void
+) => {
+  ctx.save();
+  if (m && m.length >= 6) ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
+  fn();
+  ctx.restore();
+};
 
 // SVG Path Renderer component
 export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
@@ -47,10 +58,17 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
 
   const groupX = animatedProps.x ?? obj.x;
   const groupY = animatedProps.y ?? obj.y;
-  
+
+  const debug = !!obj.properties?.debug?.logRenderer;
+  const debugLog = React.useCallback((level: 'log' | 'warn' | 'error', ...args: any[]) => {
+    if (debug) (console as any)[level](...args);
+  }, [debug]);
+  const tryGetPath2D = React.useCallback((d: string): Path2D | null => { try { return getPath2D(d); } catch { return null; } }, []);
+
   // Memoize paths to prevent hand follower from recalculating on every render
   const paths = React.useMemo(() => {
-    return Array.isArray(obj.properties?.paths) ? obj.properties.paths : [];
+    const arr = Array.isArray(obj.properties?.paths) ? obj.properties.paths : [];
+    return arr.map((p: any) => (p && p.m && !p.transform ? { ...p, transform: p.m } : p));
   }, [obj.properties?.paths]);
   
   // Check if we need to apply calibration offset to path drawing
@@ -106,7 +124,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
     arr.forEach((p: any, index: number) => {
       const d = p?.d as string | undefined;
       if (!d) {
-        if (obj.properties?.debug?.logRenderer) {
+        if (debug) {
           console.warn('[SvgPathRenderer] Path missing d attribute:', p);
         }
         return;
@@ -114,7 +132,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
       
       // Validate SVG path data
       if (!d.trim().match(/^[MmLlHhVvCcSsQqTtAaZz0-9\s,.-]+$/)) {
-        console.error('[SvgPathRenderer] Invalid SVG path data:', d);
+        debugLog('error', '[SvgPathRenderer] Invalid SVG path data:', d);
         return;
       }
       
@@ -123,7 +141,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
         try {
           (p as any)._samples = PathSampler.samplePath(d, 1.25, undefined);
         } catch (error) {
-          console.error('[SvgPathRenderer] PathSampler failed for path:', d, error);
+          debugLog('error', '[SvgPathRenderer] PathSampler failed for path:', d, error);
           (p as any)._samples = [];
         }
       }
@@ -142,7 +160,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
       if (len > 0) {
         drawablePathsTemp.push({ ...p, index, len });
         sum += len;
-      } else if (obj.properties?.debug?.logRenderer) {
+      } else if (debug) {
         const debugSamples = (p as any)._samples as ReturnType<typeof PathSampler.samplePath> | undefined;
         console.warn('[SvgPathRenderer] Path has zero length:', { d, samples: debugSamples?.length ?? 0, index });
       }
@@ -152,7 +170,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
       totalLen: sum,
       drawablePaths: drawablePathsTemp
     };
-  }, [obj.properties?.paths, obj.properties?.totalLen, obj.properties?.debug?.logRenderer]);
+  }, [obj.properties?.paths, obj.properties?.totalLen, debug, debugLog]);
   const draw = obj.animationType === 'drawIn';
   // const previewMode = !!obj.properties?.previewDraw;
   const drawOptions = obj.properties?.drawOptions || null;
@@ -219,7 +237,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
     if (!activePath?.d) return null;
 
     // Simple debug logging to avoid interference
-    if (obj.properties?.debug?.logRenderer && activePath) {
+    if (debug && activePath) {
       const now = Date.now();
       const lastLogKey = `hand-debug-${obj.id}`;
       const lastLogTime = (window as any)[lastLogKey] || 0;
@@ -265,7 +283,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
             tipBacktrackPx *= damping;
 
             // 🔍 Add curvature analysis logging
-            if (obj.properties?.debug?.logRenderer) {
+            if (debug) {
               // eslint-disable-next-line no-console
               console.log('🎯 [HAND DEBUG] Curvature Analysis', {
                 id: obj.id,
@@ -282,7 +300,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
           }
         }
       } catch (error) {
-        if (obj.properties?.debug?.logRenderer) {
+        if (debug) {
           console.error('🤚 [HAND DEBUG] Curvature calculation error:', error);
         }
       }
@@ -291,7 +309,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
         <ThreeLayerHandFollower
           key="hand-follower"
           pathData={activePath.d}
-          pathMatrix={activePath.m as number[] | undefined}
+          pathMatrix={(activePath as any).transform as number[] | undefined}
           progress={localProgress}
           tipBacktrackPx={tipBacktrackPx}
           handAsset={handFollowerSettings.handAsset}
@@ -306,11 +324,11 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
       );
     }
     return null;
-  }, [obj.properties?.handFollower, drawablePaths, targetLen, draw, previewWidthBoost, obj.id, obj.properties?.debug?.logRenderer]);
+  }, [obj.properties?.handFollower, drawablePaths, targetLen, draw, previewWidthBoost, obj.id, debug]);
 
   // 📊 Simplified Debug Logs
   React.useEffect(() => {
-    if (!obj.properties?.debug?.logRenderer) return;
+    if (!debug) return;
     
     const now = Date.now();
     const logKey = `general-debug-${obj.id}`;
@@ -328,11 +346,11 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
       drawablePaths: drawablePaths.length,
       handFollowerEnabled: !!obj.properties?.handFollower?.enabled
     });
-  }, [progress, drawablePaths, obj.id, obj.properties?.debug, obj.properties?.handFollower?.enabled]);
+  }, [progress, drawablePaths, obj.id, obj.properties?.debug, obj.properties?.handFollower?.enabled, debug]);
 
   // 🔍 Simplified Synchronization Debug
   React.useEffect(() => {
-    if (!obj.properties?.debug?.logRenderer || !obj.properties?.handFollower?.enabled) return;
+    if (!debug || !obj.properties?.handFollower?.enabled) return;
 
     const now = Date.now();
     const logKey = `sync-debug-${obj.id}`;
@@ -351,7 +369,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
       drawablePaths: drawablePaths.length,
       handFollowerEnabled: true
     });
-  }, [progress, targetLen, totalLen, drawablePaths, obj.properties?.debug, obj.properties?.handFollower, obj.id]);
+  }, [progress, targetLen, totalLen, drawablePaths, obj.properties?.handFollower, obj.id, debug]);
 
   return (
     <Group
@@ -433,7 +451,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
             used = end;
 
             if (len <= 0) {
-              if (obj.properties?.debug?.logRenderer) {
+              if (debug) {
                 console.warn(`[SvgPathRenderer] [sceneFunc] Skipping path[${i}] - zero length`, { d: p.d, len });
               }
               continue;
@@ -454,14 +472,14 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
             
             const dStr = String(p.d || '');
             if (!dStr) {
-              console.error(`[SvgPathRenderer] [sceneFunc] Path[${i}] has no d attribute`);
+              debugLog('error', `[SvgPathRenderer] [sceneFunc] Path[${i}] has no d attribute`);
               continue;
             }
             
             // Use cached samples rather than re-sampling per frame
             const samples = (p as any)._samples as ReturnType<typeof PathSampler.samplePath> || [];
             if (!samples.length) {
-              if (obj.properties?.debug?.logRenderer) {
+              if (debug) {
                 console.warn(`[SvgPathRenderer] [sceneFunc] Path[${i}] generated no samples:`, dStr);
               }
               continue;
@@ -519,7 +537,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
               }
             }
 
-            if (obj.properties?.debug?.logRenderer) {
+            if (debug) {
               // eslint-disable-next-line no-console
               console.log(`📏 [STROKE DEBUG] path[${i}] rendering`, {
                 id: obj.id,
@@ -546,65 +564,64 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
             }
 
             if (shouldStroke) {
-              ctx.save();
-              const m = p?.m as number[] | undefined;
-              if (m && m.length >= 6) ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
-              ctx.lineWidth = width;
-              ctx.lineCap = 'round';
-              ctx.lineJoin = 'round';
-              ctx.strokeStyle = stroke;
-              ctx.beginPath();
+              const m = (p as any).transform;
+              applyTransformContext(ctx, m, () => {
+                ctx.lineWidth = width;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.strokeStyle = stroke;
+                ctx.beginPath();
 
-              // GAP-AWARE STROKING: start new subpath when there's a big jump between samples
-              const gapPx = Math.max(2, 1.5 * width);
-              const gap2  = gapPx * gapPx;
+                // GAP-AWARE STROKING: start new subpath when there's a big jump between samples
+                const gapPx = Math.max(2, 1.5 * width);
+                const gap2  = gapPx * gapPx;
 
-              // Start drawing from the beginning so the already-drawn portion stays visible
-              let j = 0;
+                // Start drawing from the beginning so the already-drawn portion stays visible
+                let j = 0;
 
-              if (samples.length) {
-                // Start path at the beginning so the already-drawn portion stays visible
-                ctx.moveTo(samples[0].x, samples[0].y);
+                if (samples.length) {
+                  // Start path at the beginning so the already-drawn portion stays visible
+                  ctx.moveTo(samples[0].x, samples[0].y);
 
-                // Draw fully-visible segments
-                for (j = 1; j < samples.length && samples[j].cumulativeLength <= visible; j++) {
-                  const A = samples[j - 1], B = samples[j];
-                  const dx = B.x - A.x, dy = B.y - A.y;
-                  if ((dx * dx + dy * dy) > gap2) ctx.moveTo(B.x, B.y);
-                  else ctx.lineTo(B.x, B.y);
+                  // Draw fully-visible segments
+                  for (j = 1; j < samples.length && samples[j].cumulativeLength <= visible; j++) {
+                    const A = samples[j - 1], B = samples[j];
+                    const dx = B.x - A.x, dy = B.y - A.y;
+                    if ((dx * dx + dy * dy) > gap2) ctx.moveTo(B.x, B.y);
+                    else ctx.lineTo(B.x, B.y);
+                  }
+
+                  // Interpolate partially visible last segment
+                  if (j < samples.length && j > 0) {
+                    const A = samples[j - 1], B = samples[j];
+                    const t = (visible - A.cumulativeLength) / Math.max(1e-6, B.cumulativeLength - A.cumulativeLength);
+                    const x = A.x + t * (B.x - A.x);
+                    const y = A.y + t * (B.y - A.y);
+                    const dx = x - A.x, dy = y - A.y;
+                    if ((dx * dx + dy * dy) > gap2) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                  }
                 }
 
-                // Interpolate partially visible last segment
-                if (j < samples.length && j > 0) {
-                  const A = samples[j - 1], B = samples[j];
-                  const t = (visible - A.cumulativeLength) / Math.max(1e-6, B.cumulativeLength - A.cumulativeLength);
-                  const x = A.x + t * (B.x - A.x);
-                  const y = A.y + t * (B.y - A.y);
-                  const dx = x - A.x, dy = y - A.y;
-                  if ((dx * dx + dy * dy) > gap2) ctx.moveTo(x, y);
-                  else ctx.lineTo(x, y);
-                }
-              }
-
-              ctx.stroke();
-              ctx.restore();
+                ctx.stroke();
+              });
             }
 
             if (visible >= len && p.fill && p.fill !== 'none') {
               try {
-                ctx.save();
-                const m = p?.m as number[] | undefined;
-                if (m && m.length >= 6) ctx.transform(m[0], m[1], m[2], m[3], m[4], m[5]);
-                const path2d = getPath2D(String(p.d || ''));
-                ctx.fillStyle = p.fill;
-                if (p.fillRule) ctx.fill(path2d, p.fillRule);
-                else ctx.fill(path2d);
+                const m = (p as any).transform;
+                applyTransformContext(ctx, m, () => {
+                  const path2d = tryGetPath2D(String(p.d || ''));
+                  if (!path2d) return;
+                  ctx.fillStyle = p.fill;
+                  if (p.fillRule) ctx.fill(path2d, p.fillRule);
+                  else ctx.fill(path2d);
+                });
               } catch (fillError) {
-                if (obj.properties?.debug?.logRenderer) {
+                if (debug) {
                   console.error(`[SvgPathRenderer] [sceneFunc] Fill failed for path[${i}]:`, fillError);
                 }
               }
-              ctx.restore();
             }
           }
           shape.fillEnabled(false);

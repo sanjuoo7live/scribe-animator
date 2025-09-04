@@ -8,6 +8,7 @@ const svgNS = 'http://www.w3.org/2000/svg';
 let _scratchPath: SVGPathElement | null = null;
 
 const path2DCache = new Map<string, Path2D>();
+const MAX_PATH2D_CACHE = 2000;
 const lengthCache = new Map<string, number>();
 const lutCache = new Map<string, HandLUT>();
 
@@ -22,9 +23,16 @@ function getScratchPath(): SVGPathElement {
 export function getPath2D(d: string): Path2D {
   try {
     let p = path2DCache.get(d);
-    if (!p) {
+    if (p) {
+      path2DCache.delete(d);
+      path2DCache.set(d, p);
+    } else {
       p = new Path2D(d);
       path2DCache.set(d, p);
+      if (path2DCache.size > MAX_PATH2D_CACHE) {
+        const k = path2DCache.keys().next().value;
+        if (k) path2DCache.delete(k);
+      }
     }
     return p;
   } catch {

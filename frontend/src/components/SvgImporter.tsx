@@ -9,6 +9,11 @@ import { MeasureItem } from '../workers/measureTypes';
 
 type ParsedPath = { d: string; stroke?: string; strokeWidth?: number; fill?: string; fillRule?: 'nonzero'|'evenodd' };
 
+// Hard caps to keep Add-to-Canvas responsive for extremely large SVGs
+const HARD_MAX_KEEP = 400; // absolute max number of paths in a single add
+const HARD_MAX_TOTAL_LEN = 1_500_000; // absolute cap on cumulative path length
+const PATHOBJ_BATCH = 500; // batch size when building path objects
+
 // Lightweight item used in Path Refinement UI
 // type RefineItem = {
 //   id: string;
@@ -567,12 +572,49 @@ const SvgImporter: React.FC = () => {
       .filter(p => p.len >= Math.max(minLen, (p.strokeWidth || 0) * 0.5))
       .sort((a, b) => b.len - a.len)
       .slice(0, maxKeep);
-    const totalLen = Math.max(1, filtered.reduce((sum, p) => sum + p.len, 0));
+
+    if (!filtered.length) {
+      if (process.env.NODE_ENV !== 'production') {
+        // eslint-disable-next-line no-console
+        console.debug({ rawCount: combined.length, filteredCount: 0, addedCount: 0, totalLenRounded: 0 });
+      }
+      setStatus('No qualifying paths after filters.');
+      return;
+    }
+
+    // Apply hard caps to prevent extreme SVGs from locking the UI
+    let capped = filtered.slice(0, Math.min(filtered.length, HARD_MAX_KEEP));
+    let totalLen = Math.max(1, capped.reduce((sum, p) => sum + p.len, 0));
+    if (totalLen > HARD_MAX_TOTAL_LEN) {
+      const limited: typeof capped = [];
+      let acc = 0;
+      for (const p of capped) {
+        if (acc + p.len > HARD_MAX_TOTAL_LEN) break;
+        limited.push(p);
+        acc += p.len;
+      }
+      if (limited.length >= 50) {
+        capped = limited;
+        totalLen = acc;
+      } else {
+        const floor = Math.max(50, Math.floor(HARD_MAX_KEEP / 4));
+        capped = capped.slice(0, Math.min(capped.length, floor));
+        totalLen = Math.max(1, capped.reduce((s, p) => s + p.len, 0));
+      }
+    }
+
+    if (capped.length < filtered.length) {
+      setStatus(`⚠️ Capped ${filtered.length}→${capped.length} paths (cap ${HARD_MAX_KEEP} paths / length≈${(HARD_MAX_TOTAL_LEN / 1_000_000).toFixed(1)}M, added≈${Math.round(totalLen)}).`);
+    }
+
+    if (process.env.NODE_ENV !== 'production') {
+      // eslint-disable-next-line no-console
+      console.debug({ rawCount: combined.length, filteredCount: filtered.length, addedCount: capped.length, totalLenRounded: Math.round(totalLen) });
+    }
 
     const pathObjs: { d: string; stroke: string; strokeWidth: number; fill: string; transform?: number[]; len: number }[] = [];
-    const BATCH = 2000;
-    for (let i = 0; i < filtered.length; i += BATCH) {
-      const slice = filtered.slice(i, i + BATCH);
+    for (let i = 0; i < capped.length; i += PATHOBJ_BATCH) {
+      const slice = capped.slice(i, i + PATHOBJ_BATCH);
       for (let j = 0; j < slice.length; j++) {
         const p = slice[j];
         pathObjs.push({

@@ -33,17 +33,23 @@ rendererRegistry.register('svgPath', SvgPathRenderer);
 rendererRegistry.register('pathFollower', PathFollowerRenderer);
 
 // Canvas Provider component
-const CanvasProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const stageRef = useRef<Konva.Stage>(null);
-  const layerRef = useRef<Konva.Layer>(null);
-  const overlayRootRef = useRef<HTMLDivElement>(null);
-
-  const contextValue = {
+// PHASE0: accept refs so stage and layers are shared with consumers
+const CanvasProvider: React.FC<{
+  children: React.ReactNode;
+  stageRef: React.RefObject<Konva.Stage>;
+  staticLayerRef: React.RefObject<Konva.Layer>;
+  animatedLayerRef: React.RefObject<Konva.Layer>;
+  overlayRootRef: React.RefObject<HTMLDivElement>;
+}> = ({ children, stageRef, staticLayerRef, animatedLayerRef, overlayRootRef }) => {
+  const contextValue = React.useMemo(() => ({
     stage: stageRef.current,
-    layer: layerRef.current,
+    // Backward compat: expose animated layer as default layer
+    layer: animatedLayerRef.current,
     overlayRoot: overlayRootRef.current,
     clock: animationEngine,
-  };
+    staticLayerRef,
+    animatedLayerRef,
+  }), [stageRef, animatedLayerRef, overlayRootRef, staticLayerRef]);
 
   return (
     <CanvasContext.Provider value={contextValue}>
@@ -60,7 +66,10 @@ const CanvasEditorRefactored: React.FC = () => {
   const transformerRef = useRef<Konva.Transformer>(null);
   const canvasContainerRef = useRef<HTMLDivElement>(null);
   const stageWrapperRef = useRef<HTMLDivElement>(null);
-  const layerRef = useRef<Konva.Layer>(null);
+  // PHASE0: separate static vs animated layers
+  const staticLayerRef = useRef<Konva.Layer>(null);
+  const animatedLayerRef = useRef<Konva.Layer>(null);
+  const overlayRootRef = useRef<HTMLDivElement>(null);
 
   const {
     currentProject,
@@ -554,7 +563,12 @@ const CanvasEditorRefactored: React.FC = () => {
   if (!hasMounted) return null;
 
   return (
-    <CanvasProvider>
+    <CanvasProvider
+      stageRef={stageRef}
+      staticLayerRef={staticLayerRef}
+      animatedLayerRef={animatedLayerRef}
+      overlayRootRef={overlayRootRef}
+    >
       <div className="h-full flex flex-col">
         {/* Toolbar */}
         <div className="bg-gray-800 border-b border-gray-600 p-2 flex justify-between items-center">
@@ -707,7 +721,8 @@ const CanvasEditorRefactored: React.FC = () => {
               x={currentProject?.cameraPosition?.x || 0}
               y={currentProject?.cameraPosition?.y || 0}
             >
-              <Layer ref={layerRef}>
+              {/* PHASE0: split static/animated layers */}
+              <Layer ref={staticLayerRef}>
                 {/* Background */}
                 <Rect
                   id="canvas-bg"
@@ -725,7 +740,9 @@ const CanvasEditorRefactored: React.FC = () => {
                     }
                   }}
                 />
+              </Layer>
 
+              <Layer ref={animatedLayerRef}>
                 {/* Temporary drawing lines - simple approach from original */}
                 {isDrawing && currentPath.length > 1 && (
                   <Line

@@ -6,13 +6,90 @@ import SvgDrawSettings, { SvgDrawOptions, defaultSvgDrawOptions } from './SvgDra
 import { getPath2D } from '../utils/pathCache';
 import { measureSvgLengthsInWorker } from '../workers/measureWorkerClient';
 import { MeasureItem } from '../workers/measureTypes';
+// PHASE0: expose canvas context for layer-local redraws
+import { useCanvasContext } from './canvas';
 
-type ParsedPath = { d: string; stroke?: string; strokeWidth?: number; fill?: string; fillRule?: 'nonzero'|'evenodd' };
+// PHASE0: include optional perf-related fields on ParsedPath
+export type ParsedPath = {
+  d: string;
+  stroke?: string;
+  strokeWidth?: number;
+  fill?: string;
+  fillRule?: 'nonzero' | 'evenodd';
+  transform?: [number, number, number, number, number, number];
+  // Optional precomputed samples/lengths from importer
+  samples?: { x: number; y: number; cumulativeLength: number }[] | Float32Array;
+  len?: number;
+  // Optional lookup table for hand follower
+  lut?: { len: number; points: { s: number; x: number; y: number; theta: number }[] };
+};
+
+// PHASE0: feature flags (safe defaults)
+export const addToCanvas = { batched: true, batchSize: 50 } as const;
+export const lengths = { measureIncrementally: true, chunk: 64 } as const;
+export const importer = { dropTinyPaths: { enabled: true, minLenPx: 1.0 } } as const;
+export const debug = { perf: false } as const;
+
+// PHASE0: cooperative batched creator to keep UI responsive
+export async function createCanvasObjectBatched(
+  paths: ParsedPath[],
+  opts: { batchSize: number; onProgress?: (nDone: number, total: number) => void }
+): Promise<ParsedPath[]> {
+  const total = paths.length;
+  const result: ParsedPath[] = [];
+  for (let i = 0; i < total; i += opts.batchSize) {
+    const slice = paths.slice(i, i + opts.batchSize);
+    result.push(...slice);
+    opts.onProgress?.(Math.min(i + slice.length, total), total);
+    // Yield to main thread
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise(requestAnimationFrame);
+  }
+  return result;
+}
+
+// PHASE0: measure lengths for paths missing len in rAF chunks
+export async function measureMissingLengthsIncrementally(
+  paths: ParsedPath[],
+  chunk = 64,
+  onProgress?: (done: number, total: number) => void
+): Promise<number> {
+  const svgNS = 'http://www.w3.org/2000/svg';
+  const scratch = document.createElementNS(svgNS, 'path');
+  const missing = paths.filter(p => !(p as any).len && p.d);
+  const total = missing.length;
+  for (let i = 0; i < total; i += chunk) {
+    const end = Math.min(i + chunk, total);
+    for (let j = i; j < end; j++) {
+      const p = missing[j];
+      scratch.setAttribute('d', p.d);
+      (p as any).len = scratch.getTotalLength();
+    }
+    onProgress?.(end, total);
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise(requestAnimationFrame);
+  }
+  return total;
+}
+
+// PHASE0: helper for tiny-path filtering (exported for tests)
+export function dropTinyPaths(paths: ParsedPath[], minLenPx: number) {
+  const kept: ParsedPath[] = [];
+  let tinyCount = 0;
+  for (const p of paths) {
+    const L = (p as any).len ?? null;
+    if (L != null && L < minLenPx) {
+      tinyCount++;
+      continue;
+    }
+    kept.push(p);
+  }
+  return { kept, tinyDropped: tinyCount, total: paths.length };
+}
 
 // Hard caps to keep Add-to-Canvas responsive for extremely large SVGs
 const HARD_MAX_KEEP = 400; // absolute max number of paths in a single add
 const HARD_MAX_TOTAL_LEN = 1_500_000; // absolute cap on cumulative path length
-const PATHOBJ_BATCH = 500; // batch size when building path objects
 
 // Lightweight item used in Path Refinement UI
 // type RefineItem = {
@@ -27,6 +104,8 @@ const PATHOBJ_BATCH = 500; // batch size when building path objects
 const SvgImporter: React.FC = () => {
   const addObject = useAppStore(s => s.addObject);
   const currentProject = useAppStore(s => s.currentProject);
+  // PHASE0: layer reference for incremental drawing updates
+  const { animatedLayerRef } = useCanvasContext();
 
   const [status, setStatus] = React.useState<string>('');
   const [traceThreshold, setTraceThreshold] = React.useState<number>(128);
@@ -612,24 +691,54 @@ const SvgImporter: React.FC = () => {
       console.debug({ rawCount: combined.length, filteredCount: filtered.length, addedCount: capped.length, totalLenRounded: Math.round(totalLen) });
     }
 
-    const pathObjs: { d: string; stroke: string; strokeWidth: number; fill: string; transform?: number[]; len: number }[] = [];
-    for (let i = 0; i < capped.length; i += PATHOBJ_BATCH) {
-      const slice = capped.slice(i, i + PATHOBJ_BATCH);
-      for (let j = 0; j < slice.length; j++) {
-        const p = slice[j];
-        pathObjs.push({
-          d: p.d,
-          stroke: p.stroke || 'transparent',
-          strokeWidth: p.strokeWidth || 2,
-          fill: p.fill || 'transparent',
-          // TODO: remove legacy m fallback on next cleanup pass
-          transform: (p as any).transform ?? (p as any).m,
-          len: p.len,
-        });
+    // PHASE0: tiny-path early skip
+    let tinyMeta = { tinyDropped: 0, kept: capped.length, total: capped.length };
+    if (importer.dropTinyPaths.enabled) {
+      const res = dropTinyPaths(capped as ParsedPath[], importer.dropTinyPaths.minLenPx);
+      tinyMeta = { tinyDropped: res.tinyDropped, kept: res.kept.length, total: res.total };
+      capped = res.kept;
+      totalLen = Math.max(1, capped.reduce((s, p) => s + (p.len || 0), 0));
+    }
+
+    // PHASE0: build path objects in batches to keep UI responsive
+    let maxBatchMs = 0;
+    const addStart = performance.now();
+    let last = addStart;
+    const pathObjs = addToCanvas.batched
+      ? await createCanvasObjectBatched(capped as ParsedPath[], {
+          batchSize: addToCanvas.batchSize,
+          onProgress: () => {
+            const now = performance.now();
+            maxBatchMs = Math.max(maxBatchMs, now - last);
+            last = now;
+            animatedLayerRef?.current?.batchDraw();
+          },
+        })
+      : [...capped];
+    const addMs = performance.now() - addStart;
+    if (unmountedRef.current) return;
+
+    // PHASE0: record which perf fields were provided
+    const perfMarker = {
+      provided: {
+        samples: pathObjs.some(p => !!p.samples),
+        len: pathObjs.some(p => typeof p.len === 'number'),
+        lut: pathObjs.some(p => !!p.lut),
+      },
+    } as const;
+
+    // PHASE0: measure any missing lengths incrementally
+    let missingCount = 0;
+    let measureMs = 0;
+    if (lengths.measureIncrementally) {
+      const t0 = performance.now();
+      missingCount = await measureMissingLengthsIncrementally(pathObjs, lengths.chunk, () => {
+        animatedLayerRef?.current?.batchDraw();
+      });
+      measureMs = performance.now() - t0;
+      if (missingCount > 0) {
+        totalLen = Math.max(1, pathObjs.reduce((s, p) => s + (p.len || 0), 0));
       }
-      // eslint-disable-next-line no-await-in-loop
-      await new Promise(requestAnimationFrame);
-      if (unmountedRef.current) return;
     }
 
     const durationSec = finalOpts.speed.kind === 'duration'
@@ -649,12 +758,16 @@ const SvgImporter: React.FC = () => {
         totalLen,
         previewDraw: finalOpts.mode === 'preview',
         drawOptions: finalOpts,
+        // PHASE0: pass importer perf marker
+        __perf: perfMarker,
       },
       animationType: 'drawIn',
       animationStart: 0,
       animationDuration: durationSec,
       animationEasing: 'linear',
     });
+    // PHASE0: only redraw animated layer
+    animatedLayerRef?.current?.batchDraw();
     setStatus(
       finalOpts.mode === 'preview'
         ? '✅ Preview-style draw added to canvas'
@@ -662,6 +775,18 @@ const SvgImporter: React.FC = () => {
           ? '✅ Batched draw added to canvas'
           : '✅ Draw added to canvas',
     );
+
+    if (debug.perf) {
+      // eslint-disable-next-line no-console
+      console.log('[SvgImporter] perf', {
+        pathsTotal: tinyMeta.total,
+        pathsKept: tinyMeta.kept,
+        tinyDropped: tinyMeta.tinyDropped,
+        provided: perfMarker.provided,
+        add: { ms: Math.round(addMs), maxBatch: Math.round(maxBatchMs) },
+        incrementalLengths: { totalMissing: missingCount, ms: Math.round(measureMs) },
+      });
+    }
   }, [addObject, buildCanvasAnimFromSvg, currentProject, drawSvgSnapshot, drawOptions, resizeCanvasToHolder, computeSnapshotKey]);
   // Normalized SVG string for responsive preview (compute viewBox if missing; avoid TS deps)
   // ResizeObserver to auto-resize canvas on container or window resize

@@ -12,6 +12,9 @@ export interface CanvasContextType {
     start: () => void;
     stop: () => void;
   };
+  // PHASE0: refs for static and animated layers
+  staticLayerRef?: React.RefObject<Konva.Layer>;
+  animatedLayerRef?: React.RefObject<Konva.Layer>;
 }
 
 export const CanvasContext = React.createContext<CanvasContextType | null>(null);

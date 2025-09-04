@@ -86,16 +86,22 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
       arr.forEach((p: any, index: number) => {
         const d = p?.d as string | undefined;
         if (!d) return;
-        
-        if (!(p as any)._samples) {
-          try {
-            (p as any)._samples = PathSampler.samplePath(d, 1.25, undefined);
-          } catch (error) {
-            (p as any)._samples = [];
+
+        // PHASE0: reuse provided samples/lengths when available
+        if (p.samples && !(p as any)._samples) (p as any)._samples = p.samples;
+        if (p.lut && !(p as any)._lut) (p as any)._lut = p.lut;
+        let len = typeof p.len === 'number' ? p.len : 0;
+        if (len <= 0) {
+          if (!(p as any)._samples) {
+            try {
+              (p as any)._samples = PathSampler.samplePath(d, 1.25, undefined);
+            } catch (error) {
+              (p as any)._samples = [];
+            }
           }
+          const _s = (p as any)._samples as ReturnType<typeof PathSampler.samplePath>;
+          len = _s && _s.length ? _s[_s.length - 1].cumulativeLength : 0;
         }
-        const _s = (p as any)._samples as ReturnType<typeof PathSampler.samplePath>;
-        const len = _s && _s.length ? _s[_s.length - 1].cumulativeLength : 0;
         (p as any).len = len;
         if (!(p as any)._lut) {
           try {
@@ -104,7 +110,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
             (p as any)._lut = null;
           }
         }
-        
+
         if (len > 0) {
           drawablePathsTemp.push({ ...p, index, len });
           sum += len;
@@ -129,25 +135,30 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
         }
         return;
       }
-      
+
       // Validate SVG path data
       if (!d.trim().match(/^[MmLlHhVvCcSsQqTtAaZz0-9\s,.-]+$/)) {
         debugLog('error', '[SvgPathRenderer] Invalid SVG path data:', d);
         return;
       }
-      
-      // Compute path length using PathSampler
-      if (!(p as any)._samples) {
-        try {
-          (p as any)._samples = PathSampler.samplePath(d, 1.25, undefined);
-        } catch (error) {
-          debugLog('error', '[SvgPathRenderer] PathSampler failed for path:', d, error);
-          (p as any)._samples = [];
+
+      // PHASE0: reuse provided sampler results
+      if (p.samples && !(p as any)._samples) (p as any)._samples = p.samples;
+      if (p.lut && !(p as any)._lut) (p as any)._lut = p.lut;
+      let len = typeof p.len === 'number' ? p.len : 0;
+      if (len <= 0) {
+        if (!(p as any)._samples) {
+          try {
+            (p as any)._samples = PathSampler.samplePath(d, 1.25, undefined);
+          } catch (error) {
+            debugLog('error', '[SvgPathRenderer] PathSampler failed for path:', d, error);
+            (p as any)._samples = [];
+          }
         }
+        // Use cached samples to compute transform-aware length
+        const _s = (p as any)._samples as ReturnType<typeof PathSampler.samplePath>;
+        len = _s && _s.length ? _s[_s.length - 1].cumulativeLength : 0;
       }
-      // Use cached samples to compute transform-aware length
-      const _s = (p as any)._samples as ReturnType<typeof PathSampler.samplePath>;
-      const len = _s && _s.length ? _s[_s.length - 1].cumulativeLength : 0;
       (p as any).len = len;
       if (!(p as any)._lut) {
         try {
@@ -156,7 +167,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
           (p as any)._lut = null;
         }
       }
-      
+
       if (len > 0) {
         drawablePathsTemp.push({ ...p, index, len });
         sum += len;

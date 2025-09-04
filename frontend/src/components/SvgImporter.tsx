@@ -29,7 +29,7 @@ export async function createCanvasObjectBatched(
     opts.onProgress?.(Math.min(i + slice.length, total), total);
     // Yield to main thread
     // eslint-disable-next-line no-await-in-loop
-    await new Promise(resolve => requestAnimationFrame(resolve));
+    await new Promise(resolve => setTimeout(resolve, 0));
   }
   return result;
 }
@@ -53,7 +53,7 @@ export async function measureMissingLengthsIncrementally(
     }
     onProgress?.(end, total);
     // eslint-disable-next-line no-await-in-loop
-    await new Promise(resolve => requestAnimationFrame(resolve));
+    await new Promise(resolve => setTimeout(resolve, 0));
   }
   return total;
 }
@@ -75,7 +75,7 @@ export function dropTinyPaths(paths: ParsedPath[], minLenPx: number) {
 
 // Hard caps to keep Add-to-Canvas responsive for extremely large SVGs
 const HARD_MAX_KEEP = 400; // absolute max number of paths in a single add
-const HARD_MAX_TOTAL_LEN = 1_500_000; // absolute cap on cumulative path length
+const MAX_CUMULATIVE_PATH_LENGTH = 1_500_000; // absolute cap on cumulative path length
 
 // Lightweight item used in Path Refinement UI
 // type RefineItem = {
@@ -651,12 +651,12 @@ const SvgImporter: React.FC = () => {
     // Apply hard caps to prevent extreme SVGs from locking the UI
     let capped: ParsedPath[] = filtered.slice(0, Math.min(filtered.length, HARD_MAX_KEEP));
     let totalLen = Math.max(1, capped.reduce((sum, p) => sum + (p.len || 0), 0));
-    if (totalLen > HARD_MAX_TOTAL_LEN) {
+    if (totalLen > MAX_CUMULATIVE_PATH_LENGTH) {
       const limited: typeof capped = [];
       let acc = 0;
         for (const p of capped) {
           const L = p.len || 0;
-          if (acc + L > HARD_MAX_TOTAL_LEN) break;
+          if (acc + L > MAX_CUMULATIVE_PATH_LENGTH) break;
           limited.push(p);
           acc += L;
         }
@@ -671,7 +671,7 @@ const SvgImporter: React.FC = () => {
     }
 
     if (capped.length < filtered.length) {
-      setStatus(`⚠️ Capped ${filtered.length}→${capped.length} paths (cap ${HARD_MAX_KEEP} paths / length≈${(HARD_MAX_TOTAL_LEN / 1_000_000).toFixed(1)}M, added≈${Math.round(totalLen)}).`);
+      setStatus(`⚠️ Capped ${filtered.length}→${capped.length} paths (cap ${HARD_MAX_KEEP} paths / length≈${(MAX_CUMULATIVE_PATH_LENGTH / 1_000_000).toFixed(1)}M, added≈${Math.round(totalLen)}).`);
     }
 
     if (process.env.NODE_ENV !== 'production') {

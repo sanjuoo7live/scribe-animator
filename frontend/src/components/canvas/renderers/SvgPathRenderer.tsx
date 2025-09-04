@@ -3,8 +3,9 @@ import { Group, Rect, Shape } from 'react-konva';
 import { BaseRendererProps } from '../renderers/RendererRegistry';
 import { calculateAnimationProgress } from '../utils/animationUtils';
 import ThreeLayerHandFollower from '../../hands/ThreeLayerHandFollower';
-import { PathSampler } from '../../../utils/pathSampler';
+import { PathSampler, adaptiveSamplePath } from '../../../utils/pathSampler';
 import { getPath2D, getHandLUT, HandLUT } from '../../../utils/pathCache';
+import { flags } from '../../../flags';
 import type { ParsedPath } from '../../../types/parsedPath';
 
 // PHASE0: internal extension with cached fields
@@ -100,7 +101,9 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
         if (p.lut && !cp._lut) cp._lut = p.lut;
         if (!cp._samples) {
           try {
-            cp._samples = PathSampler.samplePath(d, 1.25, undefined);
+            cp._samples = flags.sampler.adaptive
+              ? adaptiveSamplePath(d, 'export', undefined) // PHASE1: adaptive sampler
+              : PathSampler.samplePath(d, flags.sampler.export.minStep, undefined);
           } catch (error) {
             cp._samples = [];
           }
@@ -111,7 +114,8 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
           len = _s && _s.length ? _s[_s.length - 1].cumulativeLength : 0;
         }
         cp.len = len;
-        if (!cp._lut) {
+        if (!cp._lut && !flags.handFollower.lazyLUT) {
+          // PHASE1: eager LUT when not lazy
           try {
             cp._lut = getHandLUT(d, 2);
           } catch {
@@ -156,7 +160,9 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
       if (p.lut && !cp._lut) cp._lut = p.lut;
       if (!cp._samples) {
         try {
-          cp._samples = PathSampler.samplePath(d, 1.25, undefined);
+          cp._samples = flags.sampler.adaptive
+            ? adaptiveSamplePath(d, 'export', undefined) // PHASE1: adaptive sampler
+            : PathSampler.samplePath(d, flags.sampler.export.minStep, undefined);
         } catch (error) {
           debugLog('error', '[SvgPathRenderer] PathSampler failed for path:', d, error);
           cp._samples = [];
@@ -169,7 +175,8 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
         len = _s && _s.length ? _s[_s.length - 1].cumulativeLength : 0;
       }
       cp.len = len;
-      if (!cp._lut) {
+      if (!cp._lut && !flags.handFollower.lazyLUT) {
+        // PHASE1: eager LUT when not lazy
         try {
           cp._lut = getHandLUT(d, 2);
         } catch {
@@ -255,6 +262,11 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
     }
     
     if (!activePath?.d) return null;
+
+    // PHASE1: build LUT on demand when follower is enabled
+    if (flags.handFollower.lazyLUT && !(activePath as any)._lut) {
+      try { (activePath as any)._lut = getHandLUT(activePath.d, 2); } catch { (activePath as any)._lut = null; }
+    }
 
     // Simple debug logging to avoid interference
     if (debug && activePath) {

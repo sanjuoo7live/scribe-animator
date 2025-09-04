@@ -3,7 +3,9 @@ import { useAppStore } from '../store/appStore';
 import { traceImageDataToPaths } from '../vtrace/simpleTrace';
 import SvgDrawSettings, { SvgDrawOptions, defaultSvgDrawOptions } from './SvgDrawSettings';
 // MediaPipe segmentation removed per UI simplification
-import { getPath2D } from '../utils/pathCache';
+import { getPath2D, getHandLUT } from '../utils/pathCache';
+import { PathSampler, adaptiveSamplePath } from '../utils/pathSampler';
+import { flags } from '../flags';
 import { measureSvgLengthsInWorker } from '../workers/measureWorkerClient';
 import { MeasureItem } from '../workers/measureTypes';
 // PHASE0: expose canvas context for layer-local redraws
@@ -256,7 +258,8 @@ const SvgImporter: React.FC = () => {
     const ctx = cvs.getContext('2d');
     if (!ctx) return;
 
-    const dpr = window.devicePixelRatio || 1;
+    // PHASE1: apply preview DPR cap
+    const dpr = Math.min(window.devicePixelRatio || 1, flags.preview.dprCap);
     const displayW = cvs.clientWidth || cvs.width / dpr;
     const displayH = cvs.clientHeight || cvs.height / dpr;
     const scaleX = (displayW * dpr) / Math.max(1, vb.w);
@@ -378,7 +381,8 @@ const SvgImporter: React.FC = () => {
       const ep = st.playing ? Math.min(1, (performance.now() - st.startedAt) / Math.max(1, st.durationMs)) : 1;
       stopPlaybackOnly();
       const rect = holder.getBoundingClientRect();
-      const dpr = window.devicePixelRatio || 1;
+      // PHASE1: apply preview DPR cap
+      const dpr = Math.min(window.devicePixelRatio || 1, flags.preview.dprCap);
       const pxW = Math.max(32, Math.round(rect.width * dpr));
       const pxH = Math.max(32, Math.round(rect.height * dpr));
       if (cvs.width !== pxW || cvs.height !== pxH) {
@@ -572,7 +576,12 @@ const SvgImporter: React.FC = () => {
       setStatus(`Filtered ${beforeN}→${filtered.length} paths (minLen=${minLen}, maxKeep=${maxKeep})`);
 
       st.vb = vb;
-      st.paths = filtered.map(({ len, ...rest }) => rest);
+      st.paths = filtered.map(({ len, ...rest }) => {
+        const samples = flags.sampler.adaptive
+          ? adaptiveSamplePath(rest.d, 'preview', rest.transform)
+          : PathSampler.samplePath(rest.d, flags.sampler.preview.minStep, rest.transform);
+        return { ...rest, samples };
+      });
       st.lens = filtered.map(p => p.len);
       st.total = Math.max(1, filtered.reduce((sum, p) => sum + p.len, 0));
       st.lastEp = 0;
@@ -703,6 +712,22 @@ const SvgImporter: React.FC = () => {
           },
         })
       : [...capped];
+
+    // PHASE1: adaptive sampling for export
+    for (const p of pathObjs) {
+      try {
+        p.samples = flags.sampler.adaptive
+          ? adaptiveSamplePath(p.d, 'export', p.transform as any)
+          : PathSampler.samplePath(p.d, flags.sampler.export.minStep, p.transform as any);
+      } catch { /* ignore */ }
+    }
+
+    // PHASE1: optional eager hand LUT
+    if (!flags.handFollower.lazyLUT) {
+      for (const p of pathObjs) {
+        try { p.lut = getHandLUT(p.d, 2); } catch { /* ignore */ }
+      }
+    }
     const addMs = performance.now() - addStart;
     if (unmountedRef.current) return;
 
@@ -711,6 +736,7 @@ const SvgImporter: React.FC = () => {
       provided: {
         samples: pathObjs.some(p => !!p.samples),
         len: pathObjs.some(p => typeof p.len === 'number'),
+        // PHASE1: track LUT provisioning
         lut: pathObjs.some(p => !!p.lut),
       },
     } as const;
@@ -789,7 +815,8 @@ const SvgImporter: React.FC = () => {
     const onWinResize = () => resizeCanvasToHolder();
     window.addEventListener('resize', onWinResize);
     // Some browsers expose DPR changes via matchMedia
-    const mq = window.matchMedia ? window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`) : null;
+    const dpr = Math.min(window.devicePixelRatio || 1, flags.preview.dprCap);
+    const mq = window.matchMedia ? window.matchMedia(`(resolution: ${dpr}dppx)`) : null;
     const onDprMaybeChange = () => resizeCanvasToHolder();
     if (mq && mq.addEventListener) mq.addEventListener('change', onDprMaybeChange);
     return () => {

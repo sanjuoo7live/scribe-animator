@@ -23,6 +23,7 @@ import { DrawPathRenderer } from './canvas/renderers/DrawPathRenderer';
 import { SvgPathRenderer } from './canvas/renderers/SvgPathRenderer';
 import { PathFollowerRenderer } from './canvas/renderers/PathFollowerRenderer';
 import { calculateAnimationProgress, getAnimatedProperties } from './canvas/utils/animationUtils';
+import { flags } from '../flags';
 
 // Register renderers
 rendererRegistry.register('text', TextRenderer);
@@ -70,6 +71,9 @@ const CanvasEditorRefactored: React.FC = () => {
   const staticLayerRef = useRef<Konva.Layer>(null);
   const animatedLayerRef = useRef<Konva.Layer>(null);
   const overlayRootRef = useRef<HTMLDivElement>(null);
+
+  // PHASE1: carry preview DPR cap
+  Konva.pixelRatio = Math.min(window.devicePixelRatio || 1, flags.preview.dprCap);
 
   const {
     currentProject,

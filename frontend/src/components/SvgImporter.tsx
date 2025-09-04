@@ -88,6 +88,8 @@ export function dropTinyPaths(paths: ParsedPath[], minLenPx: number) {
 // Hard caps to keep Add-to-Canvas responsive for extremely large SVGs
 const HARD_MAX_KEEP = 400; // absolute max number of paths in a single add
 const MAX_CUMULATIVE_PATH_LENGTH = 1_500_000; // absolute cap on cumulative path length
+// Absolute minimum path length to keep (guards tiny dashes across modes)
+const ABS_MIN_PATH_LEN = 8; // px
 
 // Lightweight item used in Path Refinement UI
 // type RefineItem = {
@@ -576,7 +578,13 @@ const SvgImporter: React.FC = () => {
       const beforeN = out.length;
       const baseMinLen = drawOptions.filter?.minLen ?? defaultSvgDrawOptions.filter!.minLen;
       // B&W tends to produce many tiny splinters; aggressively raise the threshold there.
-      const effectiveMinLen = (clusterMode === 'bw') ? Math.max(baseMinLen, 25) : baseMinLen;
+      // BW + spline tends to generate many tiny splinters; raise threshold more aggressively
+      const isBwSpline = (clusterMode === 'bw' && curveMode === 'spline');
+      const effectiveMinLen = isBwSpline
+        ? Math.max(ABS_MIN_PATH_LEN, baseMinLen, 35)
+        : (clusterMode === 'bw')
+          ? Math.max(ABS_MIN_PATH_LEN, baseMinLen, 25)
+          : Math.max(ABS_MIN_PATH_LEN, baseMinLen);
       const maxKeep = drawOptions.filter?.maxKeep ?? defaultSvgDrawOptions.filter!.maxKeep;
       const filtered = out
         .map((p, i) => ({ ...p, len: lens[i] || 0 }))
@@ -597,7 +605,7 @@ const SvgImporter: React.FC = () => {
     } finally {
       if (st.measureAbort === ctrl) st.measureAbort = undefined;
     }
-  }, [cancelMeasurement, drawOptions, clusterMode]);
+  }, [cancelMeasurement, drawOptions, clusterMode, curveMode]);
 
   // Helper: add current draw snapshot to canvas with configured options
   const addSnapshotToCanvas = React.useCallback(async (mode?: 'standard' | 'preview') => {
@@ -650,7 +658,13 @@ const SvgImporter: React.FC = () => {
       : drawOptions;
 
     const baseMinLen2 = finalOpts.filter?.minLen ?? defaultSvgDrawOptions.filter!.minLen;
-    const effectiveMinLen2 = (clusterMode === 'bw') ? Math.max(baseMinLen2, 25) : baseMinLen2;
+    // Extra filtering for BW + spline to avoid lockups from excessive tiny paths
+    const isBwSpline2 = (clusterMode === 'bw' && curveMode === 'spline');
+    const effectiveMinLen2 = isBwSpline2
+      ? Math.max(ABS_MIN_PATH_LEN, baseMinLen2, 35)
+      : (clusterMode === 'bw')
+        ? Math.max(ABS_MIN_PATH_LEN, baseMinLen2, 25)
+        : Math.max(ABS_MIN_PATH_LEN, baseMinLen2);
     const maxKeep = finalOpts.filter?.maxKeep ?? defaultSvgDrawOptions.filter!.maxKeep;
 
     const filtered = combined
@@ -701,7 +715,9 @@ const SvgImporter: React.FC = () => {
     // PHASE0: tiny-path early skip
     let tinyMeta = { tinyDropped: 0, kept: capped.length, total: capped.length };
     if (importer.dropTinyPaths.enabled) {
-      const tinyMin = (clusterMode === 'bw') ? Math.max(importer.dropTinyPaths.minLenPx, 25) : importer.dropTinyPaths.minLenPx;
+      const tinyMin = (clusterMode === 'bw')
+        ? Math.max(ABS_MIN_PATH_LEN, importer.dropTinyPaths.minLenPx, (curveMode === 'spline' ? 35 : 25))
+        : Math.max(ABS_MIN_PATH_LEN, importer.dropTinyPaths.minLenPx);
       const res = dropTinyPaths(capped, tinyMin);
       tinyMeta = { tinyDropped: res.tinyDropped, kept: res.kept.length, total: res.total };
       capped = res.kept;
@@ -795,7 +811,7 @@ const SvgImporter: React.FC = () => {
         incrementalLengths: { totalMissing: missingCount, ms: Math.round(measureMs) },
       });
     }
-  }, [addObject, buildCanvasAnimFromSvg, currentProject, drawSvgSnapshot, drawOptions, resizeCanvasToHolder, computeSnapshotKey, clusterMode, animatedLayerRef]);
+  }, [addObject, buildCanvasAnimFromSvg, currentProject, drawSvgSnapshot, drawOptions, resizeCanvasToHolder, computeSnapshotKey, clusterMode, curveMode, animatedLayerRef]);
   // Normalized SVG string for responsive preview (compute viewBox if missing; avoid TS deps)
   // ResizeObserver to auto-resize canvas on container or window resize
   React.useEffect(() => {
@@ -1692,6 +1708,15 @@ const SvgImporter: React.FC = () => {
                       setStatus(`WASM engine: clamped image to ${HARD_MAX_WASM_DIM}px max to prevent crashes. For higher resolutions, use Tiled engine.`);
                     }
                   }
+                  // Extra safety clamp for BW + spline which can explode complexity
+                  if (clusterMode === 'bw' && curveMode === 'spline') {
+                    const EXTRA_MAX = 720;
+                    const extraScale = Math.min(EXTRA_MAX / img.width, EXTRA_MAX / img.height, 1);
+                    if (extraScale < scale) {
+                      scale = extraScale;
+                      setStatus(prev => (prev ? `${prev} • BW+Spline clamp: ${EXTRA_MAX}px max` : `BW+Spline clamp: ${EXTRA_MAX}px max`));
+                    }
+                  }
                   const w = Math.max(1, Math.floor(img.width * scale));
                   const h = Math.max(1, Math.floor(img.height * scale));
                   const canvas = document.createElement('canvas');
@@ -1703,6 +1728,16 @@ const SvgImporter: React.FC = () => {
                   let data = ctx.getImageData(0, 0, canvas.width, canvas.height);
                   // B/W quantization when B/W is selected (applies in all modes since wasm API lacks color_mode)
                   if (clusterMode === 'bw') {
+                    // For BW + spline, apply a very light blur first to merge speckles
+                    if (curveMode === 'spline') {
+                      const blurCtx = canvas.getContext('2d');
+                      if (blurCtx) {
+                        (blurCtx as any).filter = 'blur(0.8px)';
+                        blurCtx.drawImage(canvas, 0, 0);
+                        (blurCtx as any).filter = 'none';
+                      }
+                      data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                    }
                     const d = data.data;
                     const thr = traceThreshold; // reuse user threshold slider (0..255)
                     for (let i = 0; i < d.length; i += 4) {
@@ -1812,14 +1847,18 @@ const SvgImporter: React.FC = () => {
                               // Real VTracer parameter names from UI
                               mode: (modeOverride || curveMode),
                               hierarchical: hierarchyMode,
-                              filter_speckle: filterSpeckle,
+                              // Ensure minimum speckle filtering for BW+Spline to avoid tiny artifacts
+                              filter_speckle: (clusterMode === 'bw' && (modeOverride || curveMode) === 'spline')
+                                ? Math.max(filterSpeckle, 4)
+                                : filterSpeckle,
                               color_precision: (clusterMode === 'bw') ? 6 : colorPrecision,
                               // Smaller layer difference for B/W to avoid merging everything
                               layer_difference: (clusterMode === 'bw') ? 16 : gradientStep,
                               // Only meaningful for spline mode
                               ...(curveMode === 'spline' ? {
                                 corner_threshold: cornerThreshold,
-                                length_threshold: segmentLength,
+                                // Coarser minimum segment length for BW+Spline
+                                length_threshold: (clusterMode === 'bw') ? Math.max(segmentLength, 3) : segmentLength,
                                 splice_threshold: spliceThreshold
                               } : {}),
                             }

@@ -3,7 +3,6 @@ import { Group, Rect, Shape } from 'react-konva';
 import { BaseRendererProps } from '../renderers/RendererRegistry';
 import { calculateAnimationProgress } from '../utils/animationUtils';
 import ThreeLayerHandFollower from '../../hands/ThreeLayerHandFollower';
-import { PathSampler } from '../../../utils/pathSampler';
 import { getPath2D, getHandLUT, HandLUT, samplesToLut } from '../../../utils/pathCache';
 import type { ParsedPath } from '../../../types/parsedPath';
 // PHASE1: import hand follower flag for lazy LUT
@@ -102,17 +101,11 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
         }
         // PHASE0: reuse provided samples/lengths when available
         if (p.samples && !cp._samples) cp._samples = p.samples;
-        if (!cp._samples) {
-          try {
-            cp._samples = PathSampler.samplePath(d, 1.25, undefined);
-          } catch (error) {
-            cp._samples = [];
-          }
-        }
+        // Avoid heavy per-path sampling at render time; prefer provided lengths
+        // and optionally provided samples.
         let len = typeof p.len === 'number' ? p.len : 0;
-        if (len <= 0) {
-          const _s = cp._samples;
-          len = _s && _s.length ? _s[_s.length - 1].cumulativeLength : 0;
+        if (len <= 0 && cp._samples && cp._samples.length) {
+          len = cp._samples[cp._samples.length - 1].cumulativeLength;
         }
         cp.len = len;
         
@@ -151,19 +144,10 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
       const cp = p as CachedParsedPath;
       if (p.samples && !cp._samples) cp._samples = p.samples;
       if (p.lut && !cp._lut) cp._lut = p.lut;
-      if (!cp._samples) {
-        try {
-          cp._samples = PathSampler.samplePath(d, 1.25, undefined);
-        } catch (error) {
-          debugLog('error', '[SvgPathRenderer] PathSampler failed for path:', d, error);
-          cp._samples = [];
-        }
-      }
+      // Do not auto-sample at render time; rely on provided lengths/samples
       let len = typeof p.len === 'number' ? p.len : 0;
-      if (len <= 0) {
-        // Use cached samples to compute transform-aware length
-        const _s = cp._samples;
-        len = _s && _s.length ? _s[_s.length - 1].cumulativeLength : 0;
+      if (len <= 0 && cp._samples && cp._samples.length) {
+        len = cp._samples[cp._samples.length - 1].cumulativeLength;
       }
       cp.len = len;
       
@@ -549,12 +533,11 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
               continue;
             }
             
-            // Use cached samples rather than re-sampling per frame
-            const samples = (p as any)._samples as ReturnType<typeof PathSampler.samplePath> || [];
-            if (!samples.length) {
-              if (debug) {
-                console.warn(`[SvgPathRenderer] [sceneFunc] Path[${i}] generated no samples:`, dStr);
-              }
+            // Use Path2D dashed stroke to reveal without heavy sampling
+            const m = (p as any).transform;
+            const path2d = tryGetPath2D(dStr);
+            if (!path2d) {
+              if (debug) console.warn(`[SvgPathRenderer] [sceneFunc] Path2D failed for path[${i}]`);
               continue;
             }
 
@@ -624,11 +607,6 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
                 targetLen,
                 start,
                 end,
-                samples: samples.length,
-                firstSample: samples[0],
-                lastSample: samples[samples.length - 1],
-                
-                // Stroke drawing details
                 strokeProgress: len > 0 ? visible / len : 0,
                 strokeProgressPercentage: len > 0 ? `${((visible / len) * 100).toFixed(1)}%` : '0%',
                 isComplete: visible >= len,
@@ -637,46 +615,19 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
             }
 
             if (shouldStroke) {
-              const m = (p as any).transform;
               applyTransformContext(ctx, m, () => {
                 ctx.lineWidth = width;
                 ctx.lineCap = 'round';
                 ctx.lineJoin = 'round';
                 ctx.strokeStyle = stroke;
-                ctx.beginPath();
-
-                // GAP-AWARE STROKING: start new subpath when there's a big jump between samples
-                const gapPx = Math.max(2, 1.5 * width);
-                const gap2  = gapPx * gapPx;
-
-                // Start drawing from the beginning so the already-drawn portion stays visible
-                let j = 0;
-
-                if (samples.length) {
-                  // Start path at the beginning so the already-drawn portion stays visible
-                  ctx.moveTo(samples[0].x, samples[0].y);
-
-                  // Draw fully-visible segments
-                  for (j = 1; j < samples.length && samples[j].cumulativeLength <= visible; j++) {
-                    const A = samples[j - 1], B = samples[j];
-                    const dx = B.x - A.x, dy = B.y - A.y;
-                    if ((dx * dx + dy * dy) > gap2) ctx.moveTo(B.x, B.y);
-                    else ctx.lineTo(B.x, B.y);
-                  }
-
-                  // Interpolate partially visible last segment
-                  if (j < samples.length && j > 0) {
-                    const A = samples[j - 1], B = samples[j];
-                    const t = (visible - A.cumulativeLength) / Math.max(1e-6, B.cumulativeLength - A.cumulativeLength);
-                    const x = A.x + t * (B.x - A.x);
-                    const y = A.y + t * (B.y - A.y);
-                    const dx = x - A.x, dy = y - A.y;
-                    if ((dx * dx + dy * dy) > gap2) ctx.moveTo(x, y);
-                    else ctx.lineTo(x, y);
-                  }
-                }
-
-                ctx.stroke();
+                const SAFE_MAX = 4096;
+                const dashLen = Math.min(len, SAFE_MAX);
+                ctx.setLineDash([dashLen, dashLen]);
+                const frac = len > 0 ? (visible / len) : 1;
+                ctx.lineDashOffset = Math.max(0, dashLen - (dashLen * frac));
+                ctx.stroke(path2d);
+                // Reset dash to avoid affecting subsequent draws
+                ctx.setLineDash([]);
               });
             }
 

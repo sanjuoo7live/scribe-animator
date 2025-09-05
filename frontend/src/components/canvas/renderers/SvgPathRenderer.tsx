@@ -3,10 +3,9 @@ import { Group, Rect, Shape } from 'react-konva';
 import { BaseRendererProps } from '../renderers/RendererRegistry';
 import { calculateAnimationProgress } from '../utils/animationUtils';
 import ThreeLayerHandFollower from '../../hands/ThreeLayerHandFollower';
-import { getPath2D, getHandLUT, getHandLUTTransformed, buildHandLUTTransformedAsync, HandLUT, samplesToLut } from '../../../utils/pathCache';
+import { getPath2D, getPathTotalLength, buildHandLUTTransformedAsync, HandLUT, samplesToLut } from '../../../utils/pathCache';
 import type { ParsedPath } from '../../../types/parsedPath';
-// PHASE1: import hand follower flag for lazy LUT
-import { handFollower } from '../../SvgImporter';
+// Note: renderer reads handFollower settings from obj.properties.handFollower
 
 // PHASE0: internal extension with cached fields
 interface CachedParsedPath extends ParsedPath {
@@ -77,6 +76,22 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
   
   // Check if we need to apply calibration offset to path drawing
   
+  // Helper: split a compound path 'd' into separate subpaths at M/m commands
+  const splitPathD = React.useCallback((d: string): string[] => {
+    if (!d || typeof d !== 'string') return [];
+    const norm = d.replace(/\s+/g, ' ').trim();
+    const chunks = norm.split(/(?=[Mm][^Mm]*)/g).filter(Boolean);
+    const out: string[] = [];
+    for (let c of chunks) {
+      c = c.trim();
+      if (!c) continue;
+      if (!/^[Mm]/.test(c)) c = 'M ' + c;
+      if (c.length < 6) continue;
+      out.push(c);
+    }
+    return out.length ? out : [norm];
+  }, []);
+
   // Compute precise total length and drawable path information
   const { totalLen, drawablePaths } = React.useMemo(() => {
     const arr = Array.isArray(obj.properties?.paths) ? obj.properties.paths : [];
@@ -87,9 +102,11 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
       const drawablePathsTemp: any[] = [];
       let sum = 0;
       
-      arr.forEach((p: ParsedPath, index: number) => {
+      let runningIndex = 0;
+      arr.forEach((p: ParsedPath) => {
         const d = p?.d as string | undefined;
         if (!d) return;
+        const subDs = splitPathD(d);
 
         const cp = p as CachedParsedPath;
         if (!obj.properties?.handFollower?.enabled) {
@@ -101,17 +118,13 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
         }
         // PHASE0: reuse provided samples/lengths when available
         if (p.samples && !cp._samples) cp._samples = p.samples;
-        // Avoid heavy per-path sampling at render time; prefer provided lengths
-        // and optionally provided samples.
-        let len = typeof p.len === 'number' ? p.len : 0;
-        if (len <= 0 && cp._samples && cp._samples.length) {
-          len = cp._samples[cp._samples.length - 1].cumulativeLength;
-        }
-        cp.len = len;
-        
-        if (len > 0) {
-          drawablePathsTemp.push({ ...p, index, len });
-          sum += len;
+        // Split compound paths into subpaths so reveal only affects one fragment at a time
+        for (const subD of subDs) {
+          const subLen = getPathTotalLength(subD);
+          if (subLen > 0) {
+            drawablePathsTemp.push({ ...p, d: subD, index: runningIndex++, len: subLen });
+            sum += subLen;
+          }
         }
       });
       
@@ -124,8 +137,9 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
     // Compute from scratch
     const drawablePathsTemp: any[] = [];
     let sum = 0;
+    let runningIndex = 0;
     
-      arr.forEach((p: ParsedPath, index: number) => {
+      arr.forEach((p: ParsedPath) => {
         const d = p?.d as string | undefined;
         if (!d) {
         if (debug) {
@@ -140,18 +154,14 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
         return;
       }
 
+      const subDs = splitPathD(d);
+
       // PHASE0: reuse provided sampler results
       const cp = p as CachedParsedPath;
       if (p.samples && !cp._samples) cp._samples = p.samples;
       if (p.lut && !cp._lut) cp._lut = p.lut;
-      // Do not auto-sample at render time; rely on provided lengths/samples
-      let len = typeof p.len === 'number' ? p.len : 0;
-      if (len <= 0 && cp._samples && cp._samples.length) {
-        len = cp._samples[cp._samples.length - 1].cumulativeLength;
-      }
-      cp.len = len;
-      
-    
+      // Do not auto-sample at render time
+
       // PHASE1: lazy LUT building - only build when hand follower is enabled and LUT is missing
       // Safe default: only if handFollower flag is ON and follower is enabled
       if (obj.properties?.handFollower?.enabled) {
@@ -166,12 +176,12 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
         }
       }
 
-      if (len > 0) {
-        drawablePathsTemp.push({ ...p, index, len });
-        sum += len;
-      } else if (debug) {
-        const debugSamples = cp._samples;
-        console.warn('[SvgPathRenderer] Path has zero length:', { d, samples: debugSamples?.length ?? 0, index });
+      for (const subD of subDs) {
+        const subLen = getPathTotalLength(subD);
+        if (subLen > 0) {
+          drawablePathsTemp.push({ ...p, d: subD, index: runningIndex++, len: subLen });
+          sum += subLen;
+        }
       }
     });
     
@@ -206,6 +216,8 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
 
   // Compute hand follower node once per relevant changes
   const handFollowerMemo = React.useMemo(() => {
+    // Touch lutTick so dependency is meaningful
+    void lutTick;
     const handFollowerSettings = obj.properties?.handFollower;
     if (!handFollowerSettings?.enabled) return { node: null, activePath: null };
 
@@ -600,6 +612,12 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
               }
             }
 
+            // During drawing, only render the currently active path's stroke
+            const objectStillDrawing = !isComplete && progress < 1;
+            const isActive = objectStillDrawing ? (targetLen > start && targetLen <= end) : true;
+            // Suppress stroke only for non-active, not-yet-complete paths
+            if (objectStillDrawing && !isActive && !isPathComplete) shouldStroke = false;
+
             if (debug) {
               // eslint-disable-next-line no-console
               console.log(`📏 [STROKE DEBUG] path[${i}] rendering`, {
@@ -638,7 +656,8 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
               });
             }
 
-            if (visible >= len && p.fill && p.fill !== 'none') {
+            // Defer fills until the entire object completes to avoid large black flash on BW images
+            if (isComplete && visible >= len && p.fill && p.fill !== 'none') {
               try {
                 const m = (p as any).transform;
                 applyTransformContext(ctx, m, () => {

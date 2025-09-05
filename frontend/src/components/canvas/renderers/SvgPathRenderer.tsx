@@ -559,8 +559,10 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
             //    - If it has no fill, keep an outline (preview or real stroke).
             //    - If it has a very light/white fill (nearly invisible on white bg), also keep an outline.
             //    - Otherwise, follow hidePreviewOnComplete.
+            // Hide preview stroke when the entire object completes (default true for all modes)
+            const configuredHide = obj.properties?.drawOptions?.previewStroke?.hideOnComplete;
             const hidePreviewOnComplete =
-              obj.properties?.drawOptions?.previewStroke?.hideOnComplete ?? true;
+              typeof configuredHide === 'boolean' ? configuredHide : true;
             // Keep completed strokes visible during the overall drawing progression
             // so prior strokes don’t appear to disappear when a new subpath starts.
             // Respect explicit user settings if provided.
@@ -610,65 +612,13 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
               }
             }
 
-            // Make stroke visibility vary by mode for clearer differentiation
-            if (!isComplete) {
-              if (mode === 'preview') {
-                // In per-path mode: once a path completes and has fill, hide preview stroke
-                if (isPathComplete && hasFill && hidePreviewOnComplete) {
-                  shouldStroke = hasRealStroke; // keep only real outline, not preview
-                }
-              } else if (mode === 'batched') {
-                // In batched mode: hide preview stroke for paths that have fallen into completed batches
-                const inCompletedBatch = (end <= batchThreshold);
-                if (inCompletedBatch && hidePreviewOnComplete) {
-                  shouldStroke = hasRealStroke; // keep only real outline if any
-                }
-              }
-            }
+            // Preview/Batched default now keeps previous strokes visible unless explicitly configured
 
             // During drawing, only render the currently active path's stroke
             const objectStillDrawing = !isComplete && progress < 1;
             const isActive = objectStillDrawing ? (targetLen > start && targetLen <= end) : true;
             // Suppress stroke only for non-active, not-yet-complete paths
             if (objectStillDrawing && !isActive && !isPathComplete) shouldStroke = false;
-
-            if (debug) {
-              // eslint-disable-next-line no-console
-              console.log(`📏 [STROKE DEBUG] path[${i}] rendering`, {
-                id: obj.id,
-                pathIndex: i,
-                d: p.d?.substring(0, 50) + '...',
-                len: p.len,
-                stroke,
-                width,
-                visible,
-                progress,
-                targetLen,
-                start,
-                end,
-                strokeProgress: len > 0 ? visible / len : 0,
-                strokeProgressPercentage: len > 0 ? `${((visible / len) * 100).toFixed(1)}%` : '0%',
-                isComplete: visible >= len,
-                willFill: visible >= len && p.fill && p.fill !== 'none'
-              });
-            }
-
-            if (shouldStroke) {
-              applyTransformContext(ctx, m, () => {
-                ctx.lineWidth = width;
-                ctx.lineCap = 'round';
-                ctx.lineJoin = 'round';
-                ctx.strokeStyle = stroke;
-                // Use full path length for exact dash reveal so hand tip aligns
-                const dashLen = Math.max(1, len);
-                ctx.setLineDash([dashLen, dashLen]);
-                const frac = len > 0 ? (visible / len) : 1;
-                ctx.lineDashOffset = Math.max(0, dashLen - (dashLen * frac));
-                ctx.stroke(path2d);
-                // Reset dash to avoid affecting subsequent draws
-                ctx.setLineDash([]);
-              });
-            }
 
             // Fill behavior depends on strategy
             // - afterAll: fill only once the entire object completes
@@ -681,8 +631,8 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
               } else if (fillKind === 'perPath') {
                 shouldFill = visible >= len; // path finished, regardless of overall completion
               } else { // 'batched'
-                // Fill paths entirely within completed threshold; also ensure completed path fills
-                shouldFill = (end <= batchThreshold) || (visible >= len && targetLen >= end - 1e-3);
+                // Fill only when the batch threshold passes this subpath's end
+                shouldFill = (end <= batchThreshold);
               }
             }
 
@@ -701,6 +651,46 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
                   console.error(`[SvgPathRenderer] [sceneFunc] Fill failed for path[${i}]:`, fillError);
                 }
               }
+            }
+
+            // Debug after fill decision so we can see final state for this iteration
+            if (debug) {
+              // eslint-disable-next-line no-console
+              console.log(`📏 [STROKE DEBUG] path[${i}] rendering`, {
+                id: obj.id,
+                pathIndex: i,
+                d: p.d?.substring(0, 50) + '...',
+                len: p.len,
+                stroke,
+                width,
+                visible,
+                progress,
+                targetLen,
+                start,
+                end,
+                strokeProgress: len > 0 ? visible / len : 0,
+                strokeProgressPercentage: len > 0 ? `${((visible / len) * 100).toFixed(1)}%` : '0%',
+                isComplete: visible >= len,
+                willFill: shouldFill
+              });
+            }
+
+            // Stroke after fill so outline remains visible
+            if (shouldStroke) {
+              applyTransformContext(ctx, m, () => {
+                ctx.lineWidth = width;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.strokeStyle = stroke;
+                // Use full path length for exact dash reveal so hand tip aligns
+                const dashLen = Math.max(1, len);
+                ctx.setLineDash([dashLen, dashLen]);
+                const frac = len > 0 ? (visible / len) : 1;
+                ctx.lineDashOffset = Math.max(0, dashLen - (dashLen * frac));
+                ctx.stroke(path2d);
+                // Reset dash to avoid affecting subsequent draws
+                ctx.setLineDash([]);
+              });
             }
           }
           shape.fillEnabled(false);

@@ -560,18 +560,13 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
             //    - Otherwise, follow hidePreviewOnComplete.
             const hidePreviewOnComplete =
               obj.properties?.drawOptions?.previewStroke?.hideOnComplete ?? true;
-            let keepStrokeIfNoFill =
+            // Keep completed strokes visible during the overall drawing progression
+            // so prior strokes don’t appear to disappear when a new subpath starts.
+            // Respect explicit user settings if provided.
+            const keepStrokeIfNoFill =
               obj.properties?.drawOptions?.previewStroke?.keepIfNoFill ?? true;
-            let keepUntilAllComplete =
+            const keepUntilAllComplete =
               obj.properties?.drawOptions?.previewStroke?.keepUntilAllComplete ?? true;
-            // If we are actively drawing without hand follower, avoid multiple parallel visible strokes
-            // by not keeping completed strokes during the animation.
-            const handEnabled = !!obj.properties?.handFollower?.enabled;
-            if (draw && !handEnabled) {
-              keepUntilAllComplete = false;
-              // Also avoid keeping outlines for completed line-art paths during animation
-              keepStrokeIfNoFill = false;
-            }
 
             const isPathComplete = visible >= (len - 1e-3);
             const hasFill = !!p.fill && p.fill !== 'none';

@@ -1,7 +1,7 @@
 import React from 'react';
 import { render } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import CanvasEditorRefactored from '../../CanvasEditorRefactored';
+import CanvasEditorRefactored from '../../core/CanvasEditorRefactored';
 import { useAppStore } from '../../../store/appStore';
 
 // Mock the canvas module for Konva

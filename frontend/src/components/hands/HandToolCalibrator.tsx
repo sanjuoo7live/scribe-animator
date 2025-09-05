@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import AssetLibraryPopup from '../AssetLibraryPopup';
+import AssetLibraryPopup from '../panels/AssetLibraryPopup';
 import { HandAsset, ToolAsset } from '../../types/handAssets';
 import { setCalibration } from '../../utils/calibrationStore';
 

@@ -1,4 +1,4 @@
-import { createCanvasObjectBatched, dropTinyPaths } from '../SvgImporter';
+import { createCanvasObjectBatched, dropTinyPaths } from '../core/SvgImporter';
 
 // Polyfill rAF for node environment
 beforeAll(() => {

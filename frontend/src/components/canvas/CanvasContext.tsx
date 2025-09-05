@@ -1,7 +1,7 @@
 import React from 'react';
 import Konva from 'konva';
 // PHASE1: import preview flag for DPR cap
-import { preview } from '../SvgImporter';
+import { preview } from '../core/SvgImporter';
 
 // Canvas Context provides access to core canvas elements and services
 export interface CanvasContextType {

@@ -46,9 +46,9 @@ jest.mock('react-konva', () => require('./testUtils/reactKonvaMock').default);
 
 // Mock heavy child components to keep this smoke test light
 jest.mock('./components/Timeline', () => ({ __esModule: true, default: () => <div data-testid="timeline">Timeline</div> }));
-jest.mock('./components/AssetPanel', () => ({ __esModule: true, default: () => <div data-testid="asset-panel">Assets</div> }));
-jest.mock('./components/PropertiesPanel', () => ({ __esModule: true, default: () => <div data-testid="properties-panel">Properties</div> }));
-jest.mock('./components/ProjectTemplates', () => ({ __esModule: true, default: () => <div data-testid="project-templates">Templates</div> }));
+jest.mock('./components/panels/AssetPanel', () => ({ __esModule: true, default: () => <div data-testid="asset-panel">Assets</div> }));
+jest.mock('./components/panels/PropertiesPanel', () => ({ __esModule: true, default: () => <div data-testid="properties-panel">Properties</div> }));
+jest.mock('./components/shared/ProjectTemplates', () => ({ __esModule: true, default: () => <div data-testid="project-templates">Templates</div> }));
 jest.mock('./components/ProjectManager', () => ({ __esModule: true, default: () => <div data-testid="project-manager">Manager</div> }));
 jest.mock('./components/ExportSystem', () => ({ __esModule: true, default: () => <div data-testid="export-system">Export</div> }));
 jest.mock('./components/AIAssistant', () => ({ __esModule: true, default: () => <div data-testid="ai-assistant">AI</div> }));

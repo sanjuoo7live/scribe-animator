@@ -1,13 +1,13 @@
 import React, { useState, useCallback } from 'react';
-import CanvasEditorRefactored from './components/CanvasEditorRefactored';
-import Timeline from './components/Timeline';
-import AssetPanel from './components/AssetPanel';
-import PropertiesPanel from './components/PropertiesPanel';
-import ProjectTemplates from './components/ProjectTemplates';
-import ProjectManager from './components/ProjectManager';
-import ExportSystem from './components/ExportSystem';
-import AIAssistant from './components/AIAssistant';
-import KeyboardShortcuts from './components/KeyboardShortcuts';
+import CanvasEditorRefactored from './components/core/CanvasEditorRefactored';
+import Timeline from './components/core/Timeline';
+import AssetPanel from './components/panels/AssetPanel';
+import PropertiesPanel from './components/panels/PropertiesPanel';
+import ProjectTemplates from './components/shared/ProjectTemplates';
+import ProjectManager from './features/project/app/ProjectManager';
+import ExportSystem from './features/export/app/ExportSystem';
+import AIAssistant from './features/collaboration/ui/AIAssistant';
+import KeyboardShortcuts from './components/core/KeyboardShortcuts';
 import { useAppStore, createDefaultProject } from './store/appStore';
 import './App.css';
 

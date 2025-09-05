@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import AssetLibraryPopup from '../AssetLibraryPopup';
+import AssetLibraryPopup from '../panels/AssetLibraryPopup';
 import { HAND_ASSETS, TOOL_ASSETS, HandAsset, ToolAsset } from '../../types/handAssets';
 
 interface Props {

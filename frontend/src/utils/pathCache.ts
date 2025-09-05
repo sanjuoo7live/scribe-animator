@@ -67,7 +67,6 @@ export function getPathTotalLength(d: string): number {
 
 /** Build (or get) an arc-length LUT for O(1) hand pose sampling */
 export function getHandLUT(d: string, samplePx = 2): HandLUT {
-  console.log('[pathCache] getHandLUT called - building LUT for path (this should be skipped if hand follower is disabled)');
   try {
     const key = samplePx === 2 ? d : `${d}#${samplePx}`;
     let lut = lutCache.get(key);
@@ -91,6 +90,108 @@ export function getHandLUT(d: string, samplePx = 2): HandLUT {
   } catch {
     // fail-soft: minimal LUT to avoid crashes; caller may ignore pose smoothing
     return { len: 0, points: [{ s: 0, x: 0, y: 0, theta: 0 }] };
+  }
+}
+
+/** Build LUT with coordinates and tangents computed in transformed space */
+export function getHandLUTTransformed(d: string, matrix?: number[], samplePx = 2): HandLUT {
+  try {
+    if (!matrix || matrix.length < 6) return getHandLUT(d, samplePx);
+    const key = `${d}#m:${matrix.join(',')}#${samplePx}`;
+    let lut = lutCache.get(key);
+    if (lut) return lut;
+
+    const path = document.createElementNS(svgNS, 'path');
+    path.setAttribute('d', d);
+    const total = path.getTotalLength();
+    const n = Math.max(2, Math.ceil(total / samplePx));
+    const [a, b, c, d2, e, f] = matrix;
+
+    const points: LutPoint[] = [];
+    const eps = 0.5;
+    for (let i = 0; i <= n; i++) {
+      const s = (i / n) * total;
+      const p = path.getPointAtLength(s);
+      const px = a * p.x + c * p.y + e;
+      const py = b * p.x + d2 * p.y + f;
+      const p0 = path.getPointAtLength(Math.max(0, s - eps));
+      const p1 = path.getPointAtLength(Math.min(total, s + eps));
+      const dx = p1.x - p0.x;
+      const dy = p1.y - p0.y;
+      const tdx = a * dx + c * dy;
+      const tdy = b * dx + d2 * dy;
+      const theta = Math.atan2(tdy, tdx);
+      points.push({ s, x: px, y: py, theta });
+    }
+    lut = { len: total, points };
+    lutCache.set(key, lut);
+    return lut;
+  } catch {
+    return { len: 0, points: [{ s: 0, x: 0, y: 0, theta: 0 }] };
+  }
+}
+
+/**
+ * Asynchronously build a transformed Hand LUT in idle slices to avoid jank.
+ * Resolves immediately from cache when available.
+ */
+export function buildHandLUTTransformedAsync(
+  d: string,
+  matrix?: number[],
+  samplePx = 2
+): Promise<HandLUT> {
+  try {
+    if (!matrix || matrix.length < 6) return Promise.resolve(getHandLUT(d, samplePx));
+    const key = `${d}#m:${matrix.join(',')}#${samplePx}`;
+    const cached = lutCache.get(key);
+    if (cached) return Promise.resolve(cached);
+
+    const path = document.createElementNS(svgNS, 'path');
+    path.setAttribute('d', d);
+    const total = path.getTotalLength();
+    const n = Math.max(2, Math.ceil(total / samplePx));
+    const [a, b, c, d2, e, f] = matrix;
+    const points: LutPoint[] = new Array(n + 1);
+    const eps = 0.5;
+    let i = 0;
+
+    return new Promise<HandLUT>((resolve) => {
+      const step = (deadline?: { timeRemaining: () => number }) => {
+        const budgetMs = 8;
+        const t0 = performance.now();
+        while (i <= n && ((deadline && deadline.timeRemaining() > 1) || (performance.now() - t0) < budgetMs)) {
+          const s = (i / n) * total;
+          const p = path.getPointAtLength(s);
+          const px = a * p.x + c * p.y + e;
+          const py = b * p.x + d2 * p.y + f;
+          const p0 = path.getPointAtLength(Math.max(0, s - eps));
+          const p1 = path.getPointAtLength(Math.min(total, s + eps));
+          const dx = p1.x - p0.x;
+          const dy = p1.y - p0.y;
+          const tdx = a * dx + c * dy;
+          const tdy = b * dx + d2 * dy;
+          const theta = Math.atan2(tdy, tdx);
+          points[i] = { s, x: px, y: py, theta };
+          i++;
+        }
+        if (i <= n) {
+          const ric = (globalThis as any).requestIdleCallback as ((cb: (d: any) => void) => number) | undefined;
+          if (ric) ric(step);
+          else setTimeout(() => step(), 0);
+        } else {
+          const lut: HandLUT = { len: total, points };
+          lutCache.set(key, lut);
+          resolve(lut);
+        }
+      };
+      const ric = (globalThis as any).requestIdleCallback as ((cb: (d: any) => void) => number) | undefined;
+      if (ric) ric(step); else setTimeout(() => step(), 0);
+    }).finally(() => {
+      // cleanup path element (not attached to DOM but be safe)
+      // no-op; not appended
+    });
+  } catch {
+    return Promise.resolve({ len: 0, points: [{ s: 0, x: 0, y: 0, theta: 0 }] });
   }
 }
 

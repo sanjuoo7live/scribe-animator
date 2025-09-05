@@ -3,7 +3,7 @@ import { Group, Rect, Shape } from 'react-konva';
 import { BaseRendererProps } from '../renderers/RendererRegistry';
 import { calculateAnimationProgress } from '../utils/animationUtils';
 import ThreeLayerHandFollower from '../../hands/ThreeLayerHandFollower';
-import { getPath2D, getHandLUT, HandLUT, samplesToLut } from '../../../utils/pathCache';
+import { getPath2D, getHandLUT, getHandLUTTransformed, buildHandLUTTransformedAsync, HandLUT, samplesToLut } from '../../../utils/pathCache';
 import type { ParsedPath } from '../../../types/parsedPath';
 // PHASE1: import hand follower flag for lazy LUT
 import { handFollower } from '../../SvgImporter';
@@ -155,25 +155,9 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
       // PHASE1: lazy LUT building - only build when hand follower is enabled and LUT is missing
       // Safe default: only if handFollower flag is ON and follower is enabled
       if (obj.properties?.handFollower?.enabled) {
-        if (!cp._lut) {
-          // Only build if lazyLUT flag is ON
-          if (typeof handFollower === 'object' && handFollower.lazyLUT) {
-            try {
-              cp._lut = getHandLUT(d, 2);
-              if (debug) {
-                console.log(`[PHASE1] Lazy LUT built for path: ${d.substring(0, 30)}...`);
-              }
-            } catch {
-              cp._lut = null;
-            }
-          } else if (p.lut) {
-            // Legacy: use provided LUT if present
-            cp._lut = p.lut;
-            if (debug) {
-              console.log('[SvgPathRenderer] Hand follower enabled - using provided LUT');
-            }
-          }
-        }
+        // Do not build LUT here to avoid blocking when enabling hand on complex SVGs.
+        // If provided, adopt the LUT; otherwise it will be lazily built for the active path only.
+        if (!cp._lut && p.lut) cp._lut = p.lut;
       } else {
         // If follower is disabled, ensure no LUT is attached
         cp._lut = undefined;
@@ -218,6 +202,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
 
   // Track LUT builds to trigger rerenders
   // (Removed unused 'lutVersion' state variable to fix ESLint error)
+  const [lutTick, setLutTick] = React.useState(0);
 
   // Compute hand follower node once per relevant changes
   const handFollowerMemo = React.useMemo(() => {
@@ -265,10 +250,6 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
     if (!activePath?.d) return { node: null, activePath: null };
 
     const cpActive = activePath as CachedParsedPath;
-    if (!cpActive._lut) {
-      // Build LUT asynchronously and hide follower until ready
-      return { node: null, activePath: cpActive };
-    }
 
     // Simple debug logging to avoid interference
     if (debug && activePath) {
@@ -362,7 +343,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
     }
 
     return { node: null, activePath: cpActive };
-  }, [obj.properties?.handFollower, drawablePaths, targetLen, draw, previewWidthBoost, obj.id, debug]);
+  }, [obj.properties?.handFollower, drawablePaths, targetLen, draw, previewWidthBoost, obj.id, debug, lutTick]);
 
   const handNode = handFollowerMemo.node;
   const activeLutPath = handFollowerMemo.activePath;
@@ -371,8 +352,26 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
   React.useEffect(() => {
     if (!obj.properties?.handFollower?.enabled) return;
     if (!activeLutPath || activeLutPath._lut) return;
+    if ((activeLutPath as any)._lutBuilding) return;
+    (activeLutPath as any)._lutBuilding = true;
     const build = () => {
-      activeLutPath._lut = samplesToLut(activeLutPath._samples) ?? getHandLUT(activeLutPath.d as string, 2);
+      const m = (activeLutPath as any).transform as number[] | undefined;
+      const len = (activeLutPath as any).len as number | undefined;
+      // Choose a coarser sampling for very long paths to prevent hangs
+      const samplePx = Math.max(2, Math.min(8, len ? Math.round(len / 1200) : 2));
+      const fromSamples = samplesToLut(activeLutPath._samples);
+      if (fromSamples) {
+        activeLutPath._lut = fromSamples;
+        (activeLutPath as any)._lutBuilding = false;
+        setLutTick(t => t + 1);
+        return;
+      }
+      buildHandLUTTransformedAsync(activeLutPath.d as string, m, samplePx)
+        .then(lut => {
+          activeLutPath._lut = lut;
+          setLutTick(t => t + 1);
+        })
+        .finally(() => { (activeLutPath as any)._lutBuilding = false; });
   // (Removed setLutVersion call; lutVersion state no longer used)
     };
     const ric = (window as any).requestIdleCallback as ((cb: () => void) => number) | undefined;
@@ -549,10 +548,18 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
             //    - Otherwise, follow hidePreviewOnComplete.
             const hidePreviewOnComplete =
               obj.properties?.drawOptions?.previewStroke?.hideOnComplete ?? true;
-            const keepStrokeIfNoFill =
+            let keepStrokeIfNoFill =
               obj.properties?.drawOptions?.previewStroke?.keepIfNoFill ?? true;
-            const keepUntilAllComplete =
+            let keepUntilAllComplete =
               obj.properties?.drawOptions?.previewStroke?.keepUntilAllComplete ?? true;
+            // If we are actively drawing without hand follower, avoid multiple parallel visible strokes
+            // by not keeping completed strokes during the animation.
+            const handEnabled = !!obj.properties?.handFollower?.enabled;
+            if (draw && !handEnabled) {
+              keepUntilAllComplete = false;
+              // Also avoid keeping outlines for completed line-art paths during animation
+              keepStrokeIfNoFill = false;
+            }
 
             const isPathComplete = visible >= (len - 1e-3);
             const hasFill = !!p.fill && p.fill !== 'none';
@@ -620,8 +627,8 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
                 ctx.lineCap = 'round';
                 ctx.lineJoin = 'round';
                 ctx.strokeStyle = stroke;
-                const SAFE_MAX = 4096;
-                const dashLen = Math.min(len, SAFE_MAX);
+                // Use full path length for exact dash reveal so hand tip aligns
+                const dashLen = Math.max(1, len);
                 ctx.setLineDash([dashLen, dashLen]);
                 const frac = len > 0 ? (visible / len) : 1;
                 ctx.lineDashOffset = Math.max(0, dashLen - (dashLen * frac));

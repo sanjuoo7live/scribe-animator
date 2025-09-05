@@ -193,21 +193,22 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
   const draw = obj.animationType === 'drawIn';
   // const previewMode = !!obj.properties?.previewDraw;
   const drawOptions = obj.properties?.drawOptions || null;
-  // const fillKind: 'afterAll' | 'perPath' | 'batched' = drawOptions?.fillStrategy?.kind
-  //   || (previewMode ? 'perPath' : 'afterAll');
-  // const batchesN = Math.max(2, Number(drawOptions?.fillStrategy?.batchesN || 4));
+  // Fill strategy wiring
+  const fillKind: 'afterAll' | 'perPath' | 'batched' = (drawOptions?.fillStrategy?.kind as any) || 'afterAll';
+  const mode: 'standard' | 'preview' | 'batched' = (drawOptions?.mode as any) || (fillKind === 'perPath' ? 'preview' : fillKind === 'batched' ? 'batched' : 'standard');
+  const batchesN: number = Math.max(2, Number(drawOptions?.fillStrategy?.batchesN || 4));
   // const previewStrokeColor = drawOptions?.previewStroke?.color || '#3b82f6';
   const previewWidthBoost = typeof drawOptions?.previewStroke?.widthBoost === 'number' ? drawOptions.previewStroke.widthBoost : 1;
 
   // Reveal length is tied to object's duration so timeline edits directly influence drawing speed
   const targetLen = draw ? progress * totalLen : totalLen;
   // Batched fill threshold (ensure last batch fills when complete)
-  // const fraction = totalLen > 0 ? targetLen / totalLen : 1;
-  // const clampedFraction = Math.max(0, Math.min(1, fraction));
-  // const filledBatches = totalLen > 0 ? Math.floor(clampedFraction * batchesN + 1e-9) : 0; // 0..batchesN
-  // const batchThreshold = (fillKind === 'batched' && totalLen > 0)
-  //   ? (Math.min(filledBatches, batchesN) / batchesN) * totalLen
-  //   : totalLen;
+  const fraction = totalLen > 0 ? targetLen / totalLen : 1;
+  const clampedFraction = Math.max(0, Math.min(1, fraction));
+  const filledBatches = totalLen > 0 ? Math.floor(clampedFraction * batchesN + 1e-9) : 0; // 0..batchesN
+  const batchThreshold = (fillKind === 'batched' && totalLen > 0)
+    ? (Math.min(filledBatches, batchesN) / batchesN) * totalLen
+    : totalLen;
   // let consumed = 0;
 
   // Track LUT builds to trigger rerenders
@@ -569,7 +570,9 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
               obj.properties?.drawOptions?.previewStroke?.keepUntilAllComplete ?? true;
 
             const isPathComplete = visible >= (len - 1e-3);
-            const hasFill = !!p.fill && p.fill !== 'none';
+            // Consider transparent fills as effectively no fill for mode logic
+            const fillStr = String(p.fill || '').trim().toLowerCase();
+            const hasFill = !!p.fill && fillStr !== 'none' && fillStr !== 'transparent' && !/^rgba\(.*?,.*?,.*?,\s*0\s*\)$/.test(fillStr);
 
             // Heuristic: treat near-white fills as "invisible" on white backgrounds
             const fillIsNearWhite = hasFill
@@ -604,6 +607,22 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
               if (shouldStroke && hasRealStroke) {
                 stroke = p.stroke;
                 width = p.strokeWidth ?? width;
+              }
+            }
+
+            // Make stroke visibility vary by mode for clearer differentiation
+            if (!isComplete) {
+              if (mode === 'preview') {
+                // In per-path mode: once a path completes and has fill, hide preview stroke
+                if (isPathComplete && hasFill && hidePreviewOnComplete) {
+                  shouldStroke = hasRealStroke; // keep only real outline, not preview
+                }
+              } else if (mode === 'batched') {
+                // In batched mode: hide preview stroke for paths that have fallen into completed batches
+                const inCompletedBatch = (end <= batchThreshold);
+                if (inCompletedBatch && hidePreviewOnComplete) {
+                  shouldStroke = hasRealStroke; // keep only real outline if any
+                }
               }
             }
 
@@ -651,14 +670,29 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
               });
             }
 
-            // Defer fills until the entire object completes to avoid large black flash on BW images
-            if (isComplete && visible >= len && p.fill && p.fill !== 'none') {
+            // Fill behavior depends on strategy
+            // - afterAll: fill only once the entire object completes
+            // - perPath:  fill each subpath as soon as it completes
+            // - batched:  fill all subpaths that fall within the completed batch threshold
+            let shouldFill = false;
+            if (hasFill) {
+              if (fillKind === 'afterAll') {
+                shouldFill = isComplete && visible >= len;
+              } else if (fillKind === 'perPath') {
+                shouldFill = visible >= len; // path finished, regardless of overall completion
+              } else { // 'batched'
+                // Fill paths entirely within completed threshold; also ensure completed path fills
+                shouldFill = (end <= batchThreshold) || (visible >= len && targetLen >= end - 1e-3);
+              }
+            }
+
+            if (shouldFill) {
               try {
                 const m = (p as any).transform;
                 applyTransformContext(ctx, m, () => {
                   const path2d = tryGetPath2D(String(p.d || ''));
                   if (!path2d) return;
-                  ctx.fillStyle = p.fill;
+                  ctx.fillStyle = p.fill as any;
                   if (p.fillRule) ctx.fill(path2d, p.fillRule);
                   else ctx.fill(path2d);
                 });

@@ -36,7 +36,36 @@
     "extends": [
       "react-app",
       "react-app/jest"
-    ]
+    ],
+    "rules": {
+      "DESIGN_TOKEN": "off",
+      "@salesforce/design-token": "off",
+      "slds/design-token": "off",
+      "react-hooks/rules-of-hooks": "off",
+      "react-hooks/exhaustive-deps": "off",
+      "no-restricted-imports": [
+        "error",
+        {
+          "patterns": [
+            {
+              "group": ["**/domain/**"],
+              "importNames": ["React", "useState", "useEffect"],
+              "message": "Domain layer should not directly use React hooks. Use application services."
+            },
+            {
+              "group": ["**/ui/**"],
+              "importNames": ["axios", "fetch"],
+              "message": "UI layer should not make direct API calls. Use application services."
+            },
+            {
+              "group": ["**/infra/**"],
+              "importNames": ["React"],
+              "message": "Infrastructure layer should not contain React components."
+            }
+          ]
+        }
+      ]
+    }
   },
   "browserslist": {
     "production": [

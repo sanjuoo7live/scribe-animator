@@ -19,7 +19,32 @@
     "isolatedModules": true,
     "noEmit": true,
     "jsx": "react-jsx",
-    "baseUrl": "./src"
+    "baseUrl": "./src",
+    "paths": {
+      // Feature boundaries - domain-driven architecture
+      "@features/*": ["features/*"],
+      "@features/animation/*": ["features/animation/*"],
+      "@features/assets/*": ["features/assets/*"],
+      "@features/collaboration/*": ["features/collaboration/*"],
+      "@features/export/*": ["features/export/*"],
+      "@features/project/*": ["features/project/*"],
+
+      // Component boundaries - organized by responsibility
+      "@components/*": ["components/*"],
+      "@components/core/*": ["components/core/*"],
+      "@components/panels/*": ["components/panels/*"],
+      "@components/dialogs/*": ["components/dialogs/*"],
+      "@components/shared/*": ["components/shared/*"],
+      "@components/hands/*": ["components/hands/*"],
+
+      // Infrastructure boundaries
+      "@store/*": ["store/*"],
+      "@types/*": ["types/*"],
+      "@utils/*": ["utils/*"],
+      "@services/*": ["services/*"],
+      "@hooks/*": ["hooks/*"],
+      "@constants/*": ["constants/*"]
+    }
   },
   "include": [
     "src"

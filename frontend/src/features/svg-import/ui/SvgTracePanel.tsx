@@ -804,40 +804,75 @@ const SvgTracePanel: React.FC = () => {
               <button
                 className="chip"
                 style={{ background: '#059669' }}
-                onClick={() => {
+                onClick={async () => {
                   // Clamp draw preview box size before adding
                   if (drawBoxRef.current) {
                     const r = drawBoxRef.current.getBoundingClientRect();
                     setFrozenDrawBox({ w: Math.round(r.width), h: Math.round(r.height) });
                   }
-                  // Map imported paths (with meta) to canvas ParsedPath format
-                  const canvasPaths = result.paths.map((p: any) => ({
-                    d: p.d,
-                    stroke: p.stroke,
-                    strokeWidth: p.strokeWidth,
-                    fill: p.fill,
-                    fillRule: p.meta?.fillRule,
-                    transform: p.meta?.transform,
-                  }));
-                  addObject({
-                    id: `svg-import-${Date.now()}`,
-                    type: 'svgPath',
-                    x: 150,
-                    y: 150,
-                    width: result.viewBox[2] || 400,
-                    height: result.viewBox[3] || 300,
-                    rotation: 0,
-                    properties: {
-                      paths: canvasPaths,
-                      totalLen: result.paths.length * 100, // Estimated length
-                      previewDraw: drawOptions.mode === 'preview',
-                      drawOptions,
-                    },
-                    animationType: 'drawIn',
-                    animationStart: 0,
-                    animationDuration: 3,
-                    animationEasing: 'linear',
-                  });
+                  try {
+                    setStatus('Preparing object… Measuring + filtering paths');
+                    type Mat = [number, number, number, number, number, number];
+                    const items = result.paths.map((p: any) => ({ d: p.d, m: (p.meta?.transform as Mat | undefined) }));
+                    const ctrl = new AbortController();
+                    const { measureSvgLengthsInWorker } = await import('../../../workers/measureWorkerClient');
+                    const { lens } = await measureSvgLengthsInWorker(items as any, 10, ctrl.signal, (p) => {
+                      const pct = Math.round(p * 100);
+                      if (pct % 10 === 0) setStatus(`Measuring… ${pct}%`);
+                    });
+
+                    const ABS_MIN_PATH_LEN = 8;
+                    const baseMinLen = drawOptions.filter?.minLen ?? 3;
+                    const isBwSpline = (clusterMode === 'bw' && curveMode === 'spline');
+                    const effectiveMinLen = isBwSpline ? Math.max(ABS_MIN_PATH_LEN, baseMinLen, 35)
+                      : (clusterMode === 'bw') ? Math.max(ABS_MIN_PATH_LEN, baseMinLen, 25)
+                      : Math.max(ABS_MIN_PATH_LEN, baseMinLen);
+                    const maxKeep = drawOptions.filter?.maxKeep ?? 400;
+                    const MAX_CUMULATIVE_PATH_LENGTH = 1_500_000;
+
+                    let combined = result.paths.map((p: any, i: number) => ({
+                      d: p.d,
+                      stroke: p.stroke,
+                      strokeWidth: p.strokeWidth,
+                      fill: p.fill,
+                      fillRule: p.meta?.fillRule,
+                      transform: p.meta?.transform as Mat | undefined,
+                      len: lens[i] || 0,
+                    }));
+                    combined = combined.filter(p => p.len >= Math.max(effectiveMinLen, (p.strokeWidth || 0) * 0.5));
+                    combined.sort((a, b) => (b.len - a.len));
+                    if (combined.length > maxKeep) combined = combined.slice(0, maxKeep);
+                    let sum = 0;
+                    const capped: typeof combined = [];
+                    for (const p of combined) {
+                      if (sum + p.len > MAX_CUMULATIVE_PATH_LENGTH) break;
+                      capped.push(p); sum += p.len;
+                    }
+
+                    addObject({
+                      id: `svg-import-${Date.now()}`,
+                      type: 'svgPath',
+                      x: 150,
+                      y: 150,
+                      width: result.viewBox[2] || 400,
+                      height: result.viewBox[3] || 300,
+                      rotation: 0,
+                      properties: {
+                        paths: capped,
+                        totalLen: sum,
+                        previewDraw: drawOptions.mode === 'preview',
+                        drawOptions,
+                      },
+                      animationType: 'drawIn',
+                      animationStart: 0,
+                      animationDuration: Math.max(2, Math.min(6, Math.round(sum / 400))),
+                      animationEasing: 'linear',
+                    });
+                    setStatus(`✅ Added ${capped.length} paths (totalLen≈${Math.round(sum)})`);
+                  } catch (e) {
+                    console.error(e);
+                    setStatus('❌ Failed to add to canvas');
+                  }
                 }}
               >
                 Add to Canvas

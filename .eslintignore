@@ -1,0 +1,6 @@
+# Ignore legacy backup and docs
+HAND_ANIMATION_BACKUP/
+HAND_ANIMATION_BACKUP/**
+docs/
+vtracer/webapp/
+

@@ -65,7 +65,10 @@ function extractPathsFromSvg(svg: string): string[] {
     const { data: pixels, width, height } = imageData;
     const imageBytes = new Uint8Array(pixels);
 
+    // Progress: module init
+    (globalThis as any).postMessage({ type: 'progress', stage: 'init', pct: 5 });
     const loaded = await loadVTracer();
+    (globalThis as any).postMessage({ type: 'progress', stage: 'ready', pct: 15, source: loaded.source });
     const v = loaded.api;
     if (typeof v?.convert_image_to_svg !== 'function') {
       throw new Error('convert_image_to_svg not found on module');
@@ -74,6 +77,12 @@ function extractPathsFromSvg(svg: string): string[] {
     // Direct pass-through with sane defaults matching CLI defaults
     const requestedMode = options.mode ?? 'spline';
     const modeResolved = requestedMode === 'pixel' ? 'none' : requestedMode;
+    // Progress heartbeat while conversion runs
+    let pct = 20;
+    const timer = setInterval(() => {
+      pct = Math.min(95, pct + 2);
+      (globalThis as any).postMessage({ type: 'progress', stage: 'convert', pct });
+    }, 250);
     const res = v.convert_image_to_svg(
       imageBytes,
       width,
@@ -87,13 +96,16 @@ function extractPathsFromSvg(svg: string): string[] {
       modeResolved,
       options.hierarchical ?? 'stacked'
     );
+    clearInterval(timer);
 
     const svg = res?.svg_data;
     const paths = typeof svg === 'string' ? extractPathsFromSvg(svg).slice(0, 800) : [];
     // @ts-ignore
+    (globalThis as any).postMessage({ type: 'progress', stage: 'finalize', pct: 100 });
+    // @ts-ignore
     (globalThis as any).postMessage({ paths, svg } as TraceResponse);
   } catch (e: any) {
     // @ts-ignore
-    (globalThis as any).postMessage({ paths: [], error: e?.message || String(e) });
+    (globalThis as any).postMessage({ error: e?.message || String(e) });
   }
 });

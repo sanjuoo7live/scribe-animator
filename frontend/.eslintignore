@@ -1,0 +1,4 @@
+# Ignore legacy backup folder at repo root (not part of app)
+../HAND_ANIMATION_BACKUP/
+../HAND_ANIMATION_BACKUP/**
+

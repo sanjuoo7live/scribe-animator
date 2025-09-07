@@ -86,8 +86,38 @@ export function normalizeDrawPath(_obj: SceneObject): Partial<SceneObject> | nul
   return null;
 }
 
-export function normalizeHandFollower(_obj: SceneObject): Partial<SceneObject> | null {
-  return null;
+export function normalizeHandFollower(obj: SceneObject): Partial<SceneObject> | null {
+  if (obj.type !== 'svgPath') return null;
+  const hf = (obj.properties as any)?.handFollower;
+  if (!hf) return null;
+
+  const defaults = {
+    enabled: false,
+    mirror: false,
+    scale: PROPERTY_RANGES.handScale.default,
+    smoothing: { enabled: false, strength: PROPERTY_RANGES.smoothingStrength.default },
+    cornerLifts: { enabled: false },
+  };
+  const next = {
+    ...defaults,
+    ...hf,
+    smoothing: {
+      ...defaults.smoothing,
+      ...(hf?.smoothing || {}),
+      strength: clampNumber(
+        hf?.smoothing?.strength ?? defaults.smoothing.strength,
+        PROPERTY_RANGES.smoothingStrength.min,
+        PROPERTY_RANGES.smoothingStrength.max ?? Infinity
+      ),
+    },
+  };
+  next.scale = clampNumber(
+    next.scale,
+    PROPERTY_RANGES.handScale.min,
+    PROPERTY_RANGES.handScale.max ?? Infinity
+  );
+  if (JSON.stringify(next) === JSON.stringify(hf)) return null;
+  return { properties: { handFollower: next } } as any;
 }
 
 function mergePatch(base: Partial<SceneObject>, patch: Partial<SceneObject>) {
@@ -121,10 +151,12 @@ export function normalizeObject(obj: SceneObject): Partial<SceneObject> | null {
       break;
     case 'svgPath':
       merge(normalizeSvgPath(obj));
+      if (obj.properties?.handFollower) {
+        merge(normalizeHandFollower(obj));
+      }
       break;
     default:
       break;
   }
-  merge(normalizeHandFollower(obj));
   return Object.keys(result).length ? result : null;
 }

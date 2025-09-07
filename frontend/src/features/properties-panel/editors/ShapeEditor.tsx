@@ -123,61 +123,58 @@ const ShapeEditorComponent: React.FC = () => {
   );
 
   return (
-    <div className="mb-6">
-      <h4 className="text-sm font-semibold text-gray-400 mb-2">Shape</h4>
-      <div className="grid grid-cols-2" style={{ columnGap: 8, rowGap: 8 }}>
-        <div>
-          <label className="block text-xs text-gray-400 mb-1">Width</label>
-          <input
-            type="number"
-            value={widthLocal}
-            onChange={handleWidthChange}
-            onBlur={commitWidth}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                commitWidth();
-              }
-            }}
-            className="w-full p-2 bg-gray-700 text-white rounded text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-400 mb-1">Height</label>
-          <input
-            type="number"
-            value={heightLocal}
-            onChange={handleHeightChange}
-            onBlur={commitHeight}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                commitHeight();
-              }
-            }}
-            className="w-full p-2 bg-gray-700 text-white rounded text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-400 mb-1">Fill</label>
-          <input type="color" value={fillLocal} onChange={handleFill} />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-400 mb-1">Stroke</label>
-          <input type="color" value={strokeLocal} onChange={handleStroke} />
-        </div>
-        <div className="col-span-2">
-          <label className="block text-xs text-gray-400 mb-1">Stroke Width</label>
-          <input
-            type="range"
-            min={PROPERTY_RANGES.strokeWidth.min}
-            max={PROPERTY_RANGES.strokeWidth.max}
-            step={PROPERTY_RANGES.strokeWidth.step}
-            value={strokeWidth}
-            onChange={handleStrokeWidth}
-            className="w-full"
-          />
-        </div>
+    <div className="grid grid-cols-2 gap-2">
+      <div>
+        <label className="block text-xs text-gray-400 mb-1">Width</label>
+        <input
+          type="number"
+          value={widthLocal}
+          onChange={handleWidthChange}
+          onBlur={commitWidth}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              commitWidth();
+            }
+          }}
+          className="w-full p-2 bg-gray-700 text-white rounded text-sm"
+        />
+      </div>
+      <div>
+        <label className="block text-xs text-gray-400 mb-1">Height</label>
+        <input
+          type="number"
+          value={heightLocal}
+          onChange={handleHeightChange}
+          onBlur={commitHeight}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              commitHeight();
+            }
+          }}
+          className="w-full p-2 bg-gray-700 text-white rounded text-sm"
+        />
+      </div>
+      <div>
+        <label className="block text-xs text-gray-400 mb-1">Fill</label>
+        <input type="color" value={fillLocal} onChange={handleFill} />
+      </div>
+      <div>
+        <label className="block text-xs text-gray-400 mb-1">Stroke</label>
+        <input type="color" value={strokeLocal} onChange={handleStroke} />
+      </div>
+      <div className="col-span-2">
+        <label className="block text-xs text-gray-400 mb-1">Stroke Width</label>
+        <input
+          type="range"
+          min={PROPERTY_RANGES.strokeWidth.min}
+          max={PROPERTY_RANGES.strokeWidth.max}
+          step={PROPERTY_RANGES.strokeWidth.step}
+          value={strokeWidth}
+          onChange={handleStrokeWidth}
+          className="w-full"
+        />
       </div>
     </div>
   );

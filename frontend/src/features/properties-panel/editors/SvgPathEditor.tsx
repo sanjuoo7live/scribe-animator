@@ -3,6 +3,11 @@ import { shallow } from 'zustand/shallow';
 import { useAppStore } from '../../../store/appStore';
 import { FEATURE_FLAGS } from '../domain/flags';
 import { patchSceneObject } from '../domain/patch';
+import PROPERTY_RANGES from '../domain/constants';
+import { clampNumber } from '../validation';
+import useThrottledCallback from '../hooks/useThrottledCallback';
+import { HandFollowerCalibrationModalLazy } from '../../../components/hands/lazy';
+import { HAND_ASSETS, TOOL_ASSETS } from '../../../types/handAssets';
 
 const SvgPathEditorComponent: React.FC = () => {
   const { id, handFollower } = (useAppStore as any)(
@@ -21,6 +26,7 @@ const SvgPathEditorComponent: React.FC = () => {
   ) as { id: string; handFollower: any };
 
   const hf = handFollower || {};
+  const [calibrateOpen, setCalibrateOpen] = React.useState(false);
 
   const handleToggle = React.useCallback(
     (key: 'enabled' | 'mirror') => () => {
@@ -34,16 +40,28 @@ const SvgPathEditorComponent: React.FC = () => {
     [id, hf]
   );
 
-  const handleScale = React.useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const val = Number(e.target.value);
+  const patchScale = useThrottledCallback(
+    (val: number) => {
       if (id) {
         patchSceneObject(id, {
           properties: { handFollower: { ...hf, scale: val } },
         });
       }
     },
+    80,
     [id, hf]
+  );
+
+  const handleScale = React.useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = clampNumber(
+        Number(e.target.value),
+        PROPERTY_RANGES.handScale.min,
+        PROPERTY_RANGES.handScale.max ?? Infinity
+      );
+      patchScale(val);
+    },
+    [patchScale]
   );
 
   const handleSmoothing = React.useCallback(() => {
@@ -75,63 +93,78 @@ const SvgPathEditorComponent: React.FC = () => {
   if (!id) return null;
 
   return (
-    <div className="mb-6">
-      <h4 className="text-sm font-semibold text-gray-400 mb-2">SVG Path</h4>
-      <div className="space-y-2">
-        <label className="flex items-center gap-2 text-xs">
-          <input
-            type="checkbox"
-            checked={!!hf.enabled}
-            onChange={handleToggle('enabled')}
-            aria-label="Show hand following path"
-          />
-          Show hand following path
-        </label>
-        {hf.enabled && (
-          <div className="pl-4 space-y-2">
-            <label className="flex items-center gap-2 text-xs">
-              <input
-                type="checkbox"
-                checked={!!hf.mirror}
-                onChange={handleToggle('mirror')}
-                aria-label="Mirror Left/Right"
-              />
-              Mirror Left/Right
-            </label>
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">Hand Scale</label>
-              <input
-                type="range"
-                min={0.5}
-                max={2}
-                step={0.1}
-                value={hf.scale ?? 1}
-                onChange={handleScale}
-              />
-            </div>
-            {FEATURE_FLAGS.handSmoothing && (
-              <label className="flex items-center gap-2 text-xs">
-                <input
-                  type="checkbox"
-                  checked={!!hf.smoothing?.enabled}
-                  onChange={handleSmoothing}
-                  aria-label="Enable smooth movement"
-                />
-                Enable smooth movement
-              </label>
-            )}
-            <label className="flex items-center gap-2 text-xs">
-              <input
-                type="checkbox"
-                checked={!!hf.cornerLifts?.enabled}
-                onChange={handleCornerLifts}
-                aria-label="Lift hand at sharp corners"
-              />
-              Lift hand at sharp corners
-            </label>
+    <div className="space-y-2">
+      <label className="flex items-center gap-2 text-xs">
+        <input
+          type="checkbox"
+          checked={!!hf.enabled}
+          onChange={handleToggle('enabled')}
+          aria-label="Show hand following path"
+        />
+        Show hand following path
+      </label>
+      {hf.enabled && (
+        <div className="pl-4 space-y-2">
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={!!hf.mirror}
+              onChange={handleToggle('mirror')}
+              aria-label="Mirror Left/Right"
+            />
+            Mirror Left/Right
+          </label>
+          <div>
+            <label className="block text-xs text-gray-400 mb-1">Hand Scale</label>
+            <input
+              type="range"
+              min={PROPERTY_RANGES.handScale.min}
+              max={PROPERTY_RANGES.handScale.max}
+              step={PROPERTY_RANGES.handScale.step}
+              value={hf.scale ?? PROPERTY_RANGES.handScale.default}
+              onChange={handleScale}
+            />
           </div>
+          {FEATURE_FLAGS.handSmoothing && (
+            <label className="flex items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={!!hf.smoothing?.enabled}
+                onChange={handleSmoothing}
+                aria-label="Enable smooth movement"
+              />
+              Enable smooth movement
+            </label>
+          )}
+          <label className="flex items-center gap-2 text-xs">
+            <input
+              type="checkbox"
+              checked={!!hf.cornerLifts?.enabled}
+              onChange={handleCornerLifts}
+              aria-label="Lift hand at sharp corners"
+            />
+            Lift hand at sharp corners
+          </label>
+          {FEATURE_FLAGS.calibrators && (
+            <button
+              className="text-xs text-blue-300 underline"
+              onClick={() => setCalibrateOpen(true)}
+            >
+              Calibrate Hand
+            </button>
+          )}
+        </div>
+      )}
+      <React.Suspense fallback={null}>
+        {calibrateOpen && (
+          <HandFollowerCalibrationModalLazy
+            isOpen={calibrateOpen}
+            onClose={() => setCalibrateOpen(false)}
+            handAsset={HAND_ASSETS[0]}
+            toolAsset={TOOL_ASSETS[0]}
+          />
         )}
-      </div>
+      </React.Suspense>
     </div>
   );
 };

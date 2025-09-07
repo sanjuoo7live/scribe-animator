@@ -26,14 +26,11 @@ const LayerOrderEditorComponent: React.FC = () => {
   if (!id) return null;
 
   return (
-    <div className="mb-6">
-      <h4 className="text-sm font-semibold text-gray-400 mb-2">Layer Order</h4>
-      <div className="flex gap-2">
-        <button className="px-2 py-1 bg-gray-700 rounded" onClick={makeHandler('front')}>Front</button>
-        <button className="px-2 py-1 bg-gray-700 rounded" onClick={makeHandler('forward')}>Forward</button>
-        <button className="px-2 py-1 bg-gray-700 rounded" onClick={makeHandler('backward')}>Backward</button>
-        <button className="px-2 py-1 bg-gray-700 rounded" onClick={makeHandler('back')}>Back</button>
-      </div>
+    <div className="flex gap-2">
+      <button className="px-2 py-1 bg-gray-700 rounded" onClick={makeHandler('front')}>Front</button>
+      <button className="px-2 py-1 bg-gray-700 rounded" onClick={makeHandler('forward')}>Forward</button>
+      <button className="px-2 py-1 bg-gray-700 rounded" onClick={makeHandler('backward')}>Backward</button>
+      <button className="px-2 py-1 bg-gray-700 rounded" onClick={makeHandler('back')}>Back</button>
     </div>
   );
 };

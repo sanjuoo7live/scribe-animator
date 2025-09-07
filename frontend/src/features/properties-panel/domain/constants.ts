@@ -25,6 +25,7 @@ export const PROPERTY_RANGES: Record<string, RangeConfig> = {
   cornerLiftAngle: { min: 15, max: 60, step: 5, default: 30, unit: 'deg' },
   cornerLiftHeight: { min: 4, max: 20, step: 2, default: 8, unit: 'px' },
   cornerLiftDuration: { min: 100, max: 300, step: 25, default: 150, unit: 'ms' },
+  opacity: { min: 0, max: 1, step: 0.05, default: 1 },
 };
 
 export default PROPERTY_RANGES;

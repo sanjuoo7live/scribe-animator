@@ -17,15 +17,15 @@ This document tracks the status of the Properties Panel refactor tasks.
 - All property editors refactored with field-level selectors, memoization, and rAF-batched updates
 - Numeric inputs commit on blur/Enter with single undo entries
 - Lazy-loaded heavy hand-tool modals behind feature flag
+- Throttled font-size and hand-scale sliders wired through schema-based normalization
 - Perf smoke tests and selector-isolation tests
+- Phase 4 — Extended Guardrails & Hand Follower Migration completed with responsive panel layout, render containment, schema-wired editors, and regression tests for animation defaults and layout
+- Collapsible, responsive layout with render-contained editors and throttled opacity slider
+- Hand follower defaults clamped via normalization orchestrator and animation defaults enforced
 
 ## In Progress
 - Perf instrumentation and additional guard rails
 
 ## Pending
-- Centralize validation and normalization rules and wire editors through them
-- Extend performance guard rails across all editors (render containment, throttled inputs, lazy-loaded modals)
 - Preserve single-select behavior; defer multi-select support
-- Migrate hand follower block into SvgPath editor, keeping calibration and default-merging logic
-- Verify no layout regressions and animation defaults match legacy behavior
 

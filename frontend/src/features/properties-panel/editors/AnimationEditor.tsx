@@ -89,69 +89,66 @@ const AnimationEditorComponent: React.FC = () => {
   );
 
   return (
-    <div className="mb-6">
-      <h4 className="text-sm font-semibold text-gray-400 mb-2">Animation</h4>
-      <div className="space-y-4">
-        <div>
-          <label className="block text-xs text-gray-400 mb-1">Start Time (seconds)</label>
-          <input
-            type="number"
-            value={startLocal}
-            onChange={handleStartChange}
-            onBlur={commitStart}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                commitStart();
-              }
-            }}
-            className="w-full p-2 bg-gray-700 text-white rounded text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-400 mb-1">Duration (seconds)</label>
-          <input
-            type="number"
-            value={durationLocal}
-            onChange={handleDurationChange}
-            onBlur={commitDuration}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                commitDuration();
-              }
-            }}
-            className="w-full p-2 bg-gray-700 text-white rounded text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-400 mb-1">Animation Type</label>
-          <select
-            value={type}
-            onChange={handleType}
-            className="w-full p-2 bg-gray-700 text-white rounded text-sm"
-          >
-            {types.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-gray-400 mb-1">Easing</label>
-          <select
-            value={easing}
-            onChange={handleEasing}
-            className="w-full p-2 bg-gray-700 text-white rounded text-sm"
-          >
-            {easings.map((e) => (
-              <option key={e} value={e}>
-                {e}
-              </option>
-            ))}
-          </select>
-        </div>
+    <div className="space-y-4">
+      <div>
+        <label className="block text-xs text-gray-400 mb-1">Start Time (seconds)</label>
+        <input
+          type="number"
+          value={startLocal}
+          onChange={handleStartChange}
+          onBlur={commitStart}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              commitStart();
+            }
+          }}
+          className="w-full p-2 bg-gray-700 text-white rounded text-sm"
+        />
+      </div>
+      <div>
+        <label className="block text-xs text-gray-400 mb-1">Duration (seconds)</label>
+        <input
+          type="number"
+          value={durationLocal}
+          onChange={handleDurationChange}
+          onBlur={commitDuration}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              commitDuration();
+            }
+          }}
+          className="w-full p-2 bg-gray-700 text-white rounded text-sm"
+        />
+      </div>
+      <div>
+        <label className="block text-xs text-gray-400 mb-1">Animation Type</label>
+        <select
+          value={type}
+          onChange={handleType}
+          className="w-full p-2 bg-gray-700 text-white rounded text-sm"
+        >
+          {types.map((t) => (
+            <option key={t} value={t}>
+              {t}
+            </option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className="block text-xs text-gray-400 mb-1">Easing</label>
+        <select
+          value={easing}
+          onChange={handleEasing}
+          className="w-full p-2 bg-gray-700 text-white rounded text-sm"
+        >
+          {easings.map((e) => (
+            <option key={e} value={e}>
+              {e}
+            </option>
+          ))}
+        </select>
       </div>
     </div>
   );

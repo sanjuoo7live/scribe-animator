@@ -50,41 +50,38 @@ const PositionEditorComponent: React.FC = () => {
   );
 
   return (
-    <div className="mb-6">
-      <h4 className="text-sm font-semibold text-gray-400 mb-2">Position</h4>
-      <div className="grid grid-cols-2" style={{ columnGap: 8, rowGap: 8 }}>
-        <div>
-          <label className="block text-xs text-gray-400 mb-1">X</label>
-          <input
-            type="number"
-            value={xLocal}
-            onChange={handleXChange}
-            onBlur={commitX}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                commitX();
-              }
-            }}
-            className="w-full p-2 bg-gray-700 text-white rounded text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-400 mb-1">Y</label>
-          <input
-            type="number"
-            value={yLocal}
-            onChange={handleYChange}
-            onBlur={commitY}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                commitY();
-              }
-            }}
-            className="w-full p-2 bg-gray-700 text-white rounded text-sm"
-          />
-        </div>
+    <div className="grid grid-cols-2 gap-2">
+      <div>
+        <label className="block text-xs text-gray-400 mb-1">X</label>
+        <input
+          type="number"
+          value={xLocal}
+          onChange={handleXChange}
+          onBlur={commitX}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              commitX();
+            }
+          }}
+          className="w-full p-2 bg-gray-700 text-white rounded text-sm"
+        />
+      </div>
+      <div>
+        <label className="block text-xs text-gray-400 mb-1">Y</label>
+        <input
+          type="number"
+          value={yLocal}
+          onChange={handleYChange}
+          onBlur={commitY}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              commitY();
+            }
+          }}
+          className="w-full p-2 bg-gray-700 text-white rounded text-sm"
+        />
       </div>
     </div>
   );

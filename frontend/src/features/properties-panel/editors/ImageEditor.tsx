@@ -4,6 +4,7 @@ import { useAppStore } from '../../../store/appStore';
 import PROPERTY_RANGES from '../domain/constants';
 import { clampNumber } from '../validation';
 import { patchSceneObject } from '../domain/patch';
+import useThrottledCallback from '../hooks/useThrottledCallback';
 
 const ImageEditorComponent: React.FC = () => {
   const { id, width, height, opacity } = (useAppStore as any)(
@@ -56,62 +57,71 @@ const ImageEditorComponent: React.FC = () => {
     []
   );
 
-  const handleOpacity = React.useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const val = Number(e.target.value);
+  const patchOpacity = useThrottledCallback(
+    (val: number) => {
       if (id) patchSceneObject(id, { properties: { opacity: val } });
     },
+    80,
     [id]
   );
 
+  const handleOpacity = React.useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = clampNumber(
+        Number(e.target.value),
+        PROPERTY_RANGES.opacity.min,
+        PROPERTY_RANGES.opacity.max ?? Infinity
+      );
+      patchOpacity(val);
+    },
+    [patchOpacity]
+  );
+
   return (
-    <div className="mb-6">
-      <h4 className="text-sm font-semibold text-gray-400 mb-2">Image</h4>
-      <div className="grid grid-cols-2" style={{ columnGap: 8, rowGap: 8 }}>
-        <div>
-          <label className="block text-xs text-gray-400 mb-1">Width</label>
-          <input
-            type="number"
-            value={widthLocal}
-            onChange={handleWidthChange}
-            onBlur={commitWidth}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                commitWidth();
-              }
-            }}
-            className="w-full p-2 bg-gray-700 text-white rounded text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-400 mb-1">Height</label>
-          <input
-            type="number"
-            value={heightLocal}
-            onChange={handleHeightChange}
-            onBlur={commitHeight}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                commitHeight();
-              }
-            }}
-            className="w-full p-2 bg-gray-700 text-white rounded text-sm"
-          />
-        </div>
-        <div className="col-span-2">
-          <label className="block text-xs text-gray-400 mb-1">Opacity</label>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.05}
-            value={opacity}
-            onChange={handleOpacity}
-            className="w-full"
-          />
-        </div>
+    <div className="grid grid-cols-2 gap-2">
+      <div>
+        <label className="block text-xs text-gray-400 mb-1">Width</label>
+        <input
+          type="number"
+          value={widthLocal}
+          onChange={handleWidthChange}
+          onBlur={commitWidth}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              commitWidth();
+            }
+          }}
+          className="w-full p-2 bg-gray-700 text-white rounded text-sm"
+        />
+      </div>
+      <div>
+        <label className="block text-xs text-gray-400 mb-1">Height</label>
+        <input
+          type="number"
+          value={heightLocal}
+          onChange={handleHeightChange}
+          onBlur={commitHeight}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              commitHeight();
+            }
+          }}
+          className="w-full p-2 bg-gray-700 text-white rounded text-sm"
+        />
+      </div>
+      <div className="col-span-2">
+        <label className="block text-xs text-gray-400 mb-1">Opacity</label>
+        <input
+          type="range"
+          min={PROPERTY_RANGES.opacity.min}
+          max={PROPERTY_RANGES.opacity.max}
+          step={PROPERTY_RANGES.opacity.step}
+          value={opacity}
+          onChange={handleOpacity}
+          className="w-full"
+        />
       </div>
     </div>
   );

@@ -11,6 +11,8 @@ export interface RangeConfig {
  * These values document the current limits without altering behavior.
  */
 export const PROPERTY_RANGES: Record<string, RangeConfig> = {
+  x: { min: -10000, max: 10000, step: 1, default: 0 },
+  y: { min: -10000, max: 10000, step: 1, default: 0 },
   strokeWidth: { min: 0, max: 20, step: 1, default: 2, unit: 'px' },
   fontSize: { min: 8, max: 72, step: 1, default: 16, unit: 'px' },
   animationStart: { min: 0, step: 0.1, default: 0, unit: 's' },

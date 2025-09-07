@@ -50,13 +50,16 @@ interface AppState {
   setProject: (project: Project) => void;
   updateProject: (updates: Partial<Project>) => void;
   addObject: (object: SceneObject) => void;
-  updateObject: (id: string, updates: Partial<SceneObject>) => void;
+  updateObject: (id: string, updates: Partial<SceneObject>, options?: { silent?: boolean }) => void;
   removeObject: (id: string) => void;
   selectObject: (id: string | null) => void;
   setPlaying: (playing: boolean) => void;
   setCurrentTime: (time: number) => void;
   setCompactUIOnPlay: (v: boolean) => void;
   moveObjectLayer: (id: string, direction: 'front' | 'back' | 'forward' | 'backward') => void;
+
+  // Placeholder for rAF-batched transactions
+  transaction: (fn: () => void) => void;
   
   // Undo/Redo actions
   undo: () => void;
@@ -172,8 +175,8 @@ export const useAppStore = create<AppState>((set, get) => {
       };
     }),
 
-    updateObject: (id, updates) => set((state) => {
-      const newHistory = saveToHistory();
+    updateObject: (id, updates, options) => set((state) => {
+      const newHistory = options?.silent ? state.history : saveToHistory();
       if (!state.currentProject) return { currentProject: null, history: newHistory };
       const prevObjects = Array.isArray(state.currentProject.objects) ? state.currentProject.objects : [];
       return {
@@ -203,10 +206,10 @@ export const useAppStore = create<AppState>((set, get) => {
     setPlaying: (playing) => set({ isPlaying: playing }),
     setCurrentTime: (time) => set({ currentTime: time }),
     setCompactUIOnPlay: (v) => set({ compactUIOnPlay: v }),
-    
+
     moveObjectLayer: (id, direction) => set((state) => {
       if (!state.currentProject) return state;
-      
+
       const newHistory = saveToHistory();
       const objects = [...(Array.isArray(state.currentProject.objects) ? state.currentProject.objects : [])];
       const objectIndex = objects.findIndex(obj => obj.id === id);
@@ -242,6 +245,11 @@ export const useAppStore = create<AppState>((set, get) => {
         history: newHistory
       };
     }),
+
+    transaction: (fn) => {
+      // TODO: wire rAF-batched updates + one-gesture-one-undo
+      fn();
+    },
 
     // Undo/Redo functionality
     undo: () => set((state) => {

@@ -55,32 +55,6 @@ exports[`PropertiesPanel shape snapshot matches snapshot for shape object 1`] = 
       <h4
         class="text-sm font-semibold text-gray-400 mb-2"
       >
-        Debug
-      </h4>
-      <div
-        class="space-y-2"
-      >
-        <label
-          class="flex items-center gap-2 text-xs text-gray-300"
-        >
-          <input
-            type="checkbox"
-          />
-          Enable Renderer Logs
-        </label>
-        <p
-          class="text-xs text-gray-500"
-        >
-          Shows detailed progress and rendering info in browser console
-        </p>
-      </div>
-    </div>
-    <div
-      class="mb-6"
-    >
-      <h4
-        class="text-sm font-semibold text-gray-400 mb-2"
-      >
         Position
       </h4>
       <div
@@ -119,37 +93,14 @@ exports[`PropertiesPanel shape snapshot matches snapshot for shape object 1`] = 
       <h4
         class="text-sm font-semibold text-gray-400 mb-2"
       >
-        Size
+        Shape
       </h4>
-      <div
-        class="grid grid-cols-2"
-        style="column-gap: 8px; row-gap: 8px;"
+      <p
+        class="text-xs text-gray-500"
       >
-        <div>
-          <label
-            class="block text-xs text-gray-400 mb-1"
-          >
-            Width
-          </label>
-          <input
-            class="w-full p-2 bg-gray-700 text-white rounded text-sm"
-            type="number"
-            value="100"
-          />
-        </div>
-        <div>
-          <label
-            class="block text-xs text-gray-400 mb-1"
-          >
-            Height
-          </label>
-          <input
-            class="w-full p-2 bg-gray-700 text-white rounded text-sm"
-            type="number"
-            value="100"
-          />
-        </div>
-      </div>
+        Editor placeholder for shape object 
+        obj1
+      </p>
     </div>
     <div
       class="mb-6"
@@ -157,66 +108,14 @@ exports[`PropertiesPanel shape snapshot matches snapshot for shape object 1`] = 
       <h4
         class="text-sm font-semibold text-gray-400 mb-2"
       >
-        Appearance
+        Animation
       </h4>
-      <div
-        class="space-y-3"
+      <p
+        class="text-xs text-gray-500"
       >
-        <div>
-          <label
-            class="block text-xs text-gray-400 mb-1"
-          >
-            Fill Color
-          </label>
-          <div
-            class="flex items-center"
-            style="gap: 6px;"
-          >
-            <input
-              class="w-8 h-8 rounded border border-gray-600"
-              type="color"
-              value="#ffffff"
-            />
-            <button
-              class="px-2 py-1 bg-gray-600 text-xs rounded hover:bg-gray-500"
-            >
-              Transparent
-            </button>
-          </div>
-        </div>
-        <div>
-          <label
-            class="block text-xs text-gray-400 mb-1"
-          >
-            Stroke Color
-          </label>
-          <input
-            class="w-8 h-8 rounded border border-gray-600"
-            type="color"
-            value="#000000"
-          />
-        </div>
-        <div>
-          <label
-            class="block text-xs text-gray-400 mb-1"
-          >
-            Stroke Width
-          </label>
-          <input
-            class="w-full"
-            max="20"
-            min="0"
-            type="range"
-            value="2"
-          />
-          <span
-            class="text-xs text-gray-400"
-          >
-            2
-            px
-          </span>
-        </div>
-      </div>
+        Editor placeholder for animation on 
+        obj1
+      </p>
     </div>
     <div
       class="mb-6"
@@ -227,141 +126,28 @@ exports[`PropertiesPanel shape snapshot matches snapshot for shape object 1`] = 
         Layer Order
       </h4>
       <div
-        class="grid grid-cols-2 gap-2"
+        class="flex gap-2"
       >
         <button
-          class="p-2 bg-gray-600 hover:bg-gray-500 rounded text-xs"
+          class="px-2 py-1 bg-gray-700 rounded"
         >
-          🔝 Bring to Front
+          Front
         </button>
         <button
-          class="p-2 bg-gray-600 hover:bg-gray-500 rounded text-xs"
+          class="px-2 py-1 bg-gray-700 rounded"
         >
-          📤 Send to Back
+          Forward
         </button>
         <button
-          class="p-2 bg-gray-600 hover:bg-gray-500 rounded text-xs"
+          class="px-2 py-1 bg-gray-700 rounded"
         >
-          ⬆️ Bring Forward
+          Backward
         </button>
         <button
-          class="p-2 bg-gray-600 hover:bg-gray-500 rounded text-xs"
+          class="px-2 py-1 bg-gray-700 rounded"
         >
-          ⬇️ Send Backward
+          Back
         </button>
-      </div>
-    </div>
-    <div
-      class="mb-6"
-    >
-      <h4
-        class="text-sm font-semibold text-gray-400 mb-2"
-      >
-        Animation
-      </h4>
-      <div
-        class="space-y-3"
-      >
-        <div>
-          <label
-            class="block text-xs text-gray-400 mb-1"
-          >
-            Start Time (seconds)
-          </label>
-          <input
-            class="w-full p-2 bg-gray-700 text-white rounded text-sm"
-            min="0"
-            step="0.1"
-            type="number"
-            value="0"
-          />
-        </div>
-        <div>
-          <label
-            class="block text-xs text-gray-400 mb-1"
-          >
-            Duration (seconds)
-          </label>
-          <input
-            class="w-full p-2 bg-gray-700 text-white rounded text-sm"
-            min="0.1"
-            step="0.1"
-            type="number"
-            value="5"
-          />
-        </div>
-        <div>
-          <label
-            class="block text-xs text-gray-400 mb-1"
-          >
-            Animation Type
-          </label>
-          <select
-            class="w-full p-2 bg-gray-700 text-white rounded text-sm"
-          >
-            <option
-              value="none"
-            >
-              None
-            </option>
-            <option
-              value="fadeIn"
-            >
-              Fade In
-            </option>
-            <option
-              value="slideIn"
-            >
-              Slide In
-            </option>
-            <option
-              value="scaleIn"
-            >
-              Scale In
-            </option>
-            <option
-              value="drawIn"
-            >
-              Draw In
-            </option>
-            <option
-              value="pathFollow"
-            >
-              Path Follow
-            </option>
-          </select>
-        </div>
-        <div>
-          <label
-            class="block text-xs text-gray-400 mb-1"
-          >
-            Easing
-          </label>
-          <select
-            class="w-full p-2 bg-gray-700 text-white rounded text-sm"
-          >
-            <option
-              value="linear"
-            >
-              Linear
-            </option>
-            <option
-              value="easeIn"
-            >
-              Ease In
-            </option>
-            <option
-              value="easeOut"
-            >
-              Ease Out
-            </option>
-            <option
-              value="easeInOut"
-            >
-              Ease In Out
-            </option>
-          </select>
-        </div>
       </div>
     </div>
   </div>

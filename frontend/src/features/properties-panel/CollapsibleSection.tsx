@@ -11,17 +11,17 @@ const CollapsibleSection: React.FC<Props> = ({ title, children, defaultOpen = tr
   const toggle = React.useCallback(() => setOpen((o) => !o), []);
 
   return (
-    <section className="bg-gray-800 rounded-md border border-gray-700">
+    <section className="bg-gray-800 rounded-md border border-gray-700 mb-2">
       <button
         type="button"
         onClick={toggle}
         aria-expanded={open}
-        className="w-full flex justify-between items-center px-2 py-1 text-sm font-semibold text-gray-300"
+        className="w-full flex justify-between items-center px-3 py-2 text-sm font-semibold text-white bg-gray-600 hover:bg-gray-500 transition-colors duration-150 border-b border-gray-500"
       >
-        {title}
-        <span>{open ? '−' : '+'}</span>
+        <span className="text-left">{title}</span>
+        <span className="text-gray-400 font-bold text-lg leading-none">{open ? '−' : '+'}</span>
       </button>
-      {open && <div className="p-2">{children}</div>}
+      {open && <div className="p-3 bg-gray-800">{children}</div>}
     </section>
   );
 };

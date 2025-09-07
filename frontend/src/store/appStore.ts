@@ -59,7 +59,9 @@ interface AppState {
   setCompactUIOnPlay: (v: boolean) => void;
   moveObjectLayer: (id: string, direction: 'front' | 'back' | 'forward' | 'backward') => void;
 
-  // Placeholder for rAF-batched transactions
+  // rAF-batched transaction helpers
+  beginTransaction: () => void;
+  commitTransaction: () => void;
   transaction: (fn: () => void) => void;
   
   // Undo/Redo actions
@@ -70,6 +72,8 @@ interface AppState {
 }
 
 export const useAppStore = create<AppState>((set, get) => {
+  let inTransaction = false;
+
   // Ensure a project has the expected shape regardless of backend variations
   const normalizeProject = (input: any): Project => {
     const settings = input?.settings || {};
@@ -188,7 +192,7 @@ export const useAppStore = create<AppState>((set, get) => {
     }),
 
     updateObject: (id, updates, options) => set((state) => {
-      const newHistory = options?.silent ? state.history : saveToHistory();
+      const newHistory = options?.silent || inTransaction ? state.history : saveToHistory();
       if (!state.currentProject) return { currentProject: null, history: newHistory };
       const prevObjects = Array.isArray(state.currentProject.objects) ? state.currentProject.objects : [];
       return {
@@ -258,9 +262,28 @@ export const useAppStore = create<AppState>((set, get) => {
       };
     }),
 
+    beginTransaction: () => {
+      if (!inTransaction) {
+        inTransaction = true;
+      }
+    },
+
+    commitTransaction: () => {
+      if (!inTransaction) return;
+      inTransaction = false;
+      set({ history: saveToHistory() });
+    },
+
     transaction: (fn) => {
-      // TODO: wire rAF-batched updates + one-gesture-one-undo
+      const was = inTransaction;
+      if (!was) {
+        inTransaction = true;
+      }
       fn();
+      if (!was) {
+        inTransaction = false;
+        set({ history: saveToHistory() });
+      }
     },
 
     // Undo/Redo functionality

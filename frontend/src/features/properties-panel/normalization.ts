@@ -5,9 +5,17 @@ import { clampNumber } from './validation';
 /** Normalize basic numeric fields present on all objects. */
 function normalizeBase(obj: SceneObject): Partial<SceneObject> | null {
   const next: Partial<SceneObject> = {};
-  const nx = clampNumber(obj.x, PROPERTY_RANGES.x.min, PROPERTY_RANGES.x.max);
+    const nx = clampNumber(
+      obj.x,
+      PROPERTY_RANGES.x.min,
+      PROPERTY_RANGES.x.max ?? Infinity
+    );
   if (nx !== obj.x) next.x = nx;
-  const ny = clampNumber(obj.y, PROPERTY_RANGES.y.min, PROPERTY_RANGES.y.max);
+    const ny = clampNumber(
+      obj.y,
+      PROPERTY_RANGES.y.min,
+      PROPERTY_RANGES.y.max ?? Infinity
+    );
   if (ny !== obj.y) next.y = ny;
   const width = clampNumber(
     obj.width ?? PROPERTY_RANGES.width.default,

@@ -1,22 +1,38 @@
 import React from 'react';
-import type { SceneObject } from '../../../store/appStore';
+import { shallow } from 'zustand/shallow';
+import { useAppStore } from '../../../store/appStore';
+import { dispatchPanelUpdate } from '../domain/updateBus';
 
-interface Props {
-  value: SceneObject;
-  onChange: (patch: Partial<SceneObject>) => void;
-  move: (id: string, direction: 'front' | 'back' | 'forward' | 'backward') => void;
-}
+const LayerOrderEditorComponent: React.FC = () => {
+  const { id } = (useAppStore as any)(
+    (state: any) => {
+      const obj = state.currentProject?.objects.find(
+        (o: any) => o.id === state.selectedObject
+      );
+      return { id: obj?.id || '' };
+    },
+    shallow
+  ) as { id: string };
+  const move = useAppStore((s) => s.moveObjectLayer);
 
-const LayerOrderEditorComponent: React.FC<Props> = ({ value, onChange, move }) => {
-  void onChange;
+  const makeHandler = React.useCallback(
+    (dir: 'front' | 'back' | 'forward' | 'backward') => () => {
+      if (!id) return;
+      dispatchPanelUpdate(() => move(id, dir));
+    },
+    [id, move]
+  );
+
+  if (!id) return null;
+
   return (
     <div className="mb-6">
       <h4 className="text-sm font-semibold text-gray-400 mb-2">Layer Order</h4>
       <div className="flex gap-2">
-        <button className="px-2 py-1 bg-gray-700 rounded" onClick={() => move(value.id, 'front')}>Front</button>
-        <button className="px-2 py-1 bg-gray-700 rounded" onClick={() => move(value.id, 'forward')}>Forward</button>
-        <button className="px-2 py-1 bg-gray-700 rounded" onClick={() => move(value.id, 'backward')}>Backward</button>
-        <button className="px-2 py-1 bg-gray-700 rounded" onClick={() => move(value.id, 'back')}>Back</button>
+        <button className="px-2 py-1 bg-gray-700 rounded" onClick={makeHandler('front')}>Front</button>
+        <button className="px-2 py-1 bg-gray-700 rounded" onClick={makeHandler('forward')}>Forward</button>
+        <button className="px-2 py-1 bg-gray-700 rounded" onClick={makeHandler('backward')}>Backward</button>
+        <button className="px-2 py-1 bg-gray-700 rounded" onClick={makeHandler('back')}>Back</button>
       </div>
     </div>
   );

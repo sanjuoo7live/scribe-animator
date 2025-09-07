@@ -1,18 +1,17 @@
 import React from 'react';
 import { useAppStore } from '../../store/appStore';
 import { normalizeObject } from './normalization';
-import { dispatchPanelUpdate } from './domain/updateBus';
-import { PositionEditor } from './editors/PositionEditor'; // TODO: narrow selectors per editor
-import { TextEditor } from './editors/TextEditor'; // TODO: narrow selectors per editor
-import { ShapeEditor } from './editors/ShapeEditor'; // TODO: narrow selectors per editor
-import { ImageEditor } from './editors/ImageEditor'; // TODO: narrow selectors per editor
-import { SvgPathEditor } from './editors/SvgPathEditor'; // TODO: narrow selectors per editor
-import { AnimationEditor } from './editors/AnimationEditor'; // TODO: narrow selectors per editor
-import { LayerOrderEditor } from './editors/LayerOrderEditor'; // TODO: narrow selectors per editor
+import { PositionEditor } from './editors/PositionEditor';
+import { TextEditor } from './editors/TextEditor';
+import { ShapeEditor } from './editors/ShapeEditor';
+import { ImageEditor } from './editors/ImageEditor';
+import { SvgPathEditor } from './editors/SvgPathEditor';
+import { AnimationEditor } from './editors/AnimationEditor';
+import { LayerOrderEditor } from './editors/LayerOrderEditor';
 
 const PropertiesPanel: React.FC = () => {
-  const { currentProject, selectedObject, updateObject, moveObjectLayer } = useAppStore();
-  const obj = currentProject?.objects.find(o => o.id === selectedObject);
+  const { currentProject, selectedObject, updateObject } = useAppStore();
+  const obj = currentProject?.objects.find((o) => o.id === selectedObject);
 
   React.useEffect(() => {
     if (!obj) return;
@@ -21,20 +20,6 @@ const PropertiesPanel: React.FC = () => {
       updateObject(obj.id, norm, { silent: true });
     }
   }, [obj?.id, obj?.type, obj?.animationType, obj?.animationEasing, updateObject]);
-
-  const update = React.useCallback(
-    (patch: Partial<typeof obj>) => {
-      if (!obj) return;
-      // TODO: wire rAF-batched updates + one-gesture-one-undo
-      dispatchPanelUpdate(() => updateObject(obj.id, patch as any));
-    },
-    [obj?.id, updateObject]
-  );
-
-  const move = React.useCallback(
-    (id: string, dir: 'front' | 'back' | 'forward' | 'backward') => moveObjectLayer(id, dir),
-    [moveObjectLayer]
-  );
 
   if (!obj) {
     return (
@@ -71,13 +56,13 @@ const PropertiesPanel: React.FC = () => {
           </div>
         </div>
       </div>
-      <PositionEditor value={obj} onChange={update} />
-      {obj.type === 'text' && <TextEditor value={obj} onChange={update} />}
-      {obj.type === 'shape' && <ShapeEditor value={obj} onChange={update} />}
-      {obj.type === 'image' && <ImageEditor value={obj} onChange={update} />}
-      {obj.type === 'svgPath' && <SvgPathEditor value={obj} onChange={update} />}
-      <AnimationEditor value={obj} onChange={update} />
-      <LayerOrderEditor value={obj} onChange={update} move={move} />
+      <PositionEditor />
+      {obj.type === 'text' && <TextEditor />}
+      {obj.type === 'shape' && <ShapeEditor />}
+      {obj.type === 'image' && <ImageEditor />}
+      {obj.type === 'svgPath' && <SvgPathEditor />}
+      <AnimationEditor />
+      <LayerOrderEditor />
     </div>
   );
 };

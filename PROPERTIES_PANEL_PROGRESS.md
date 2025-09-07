@@ -13,15 +13,19 @@ This document tracks the status of the Properties Panel refactor tasks.
 - Object editors (Text, Shape, Image, SvgPath, Animation, Layer order) migrated into modular structure
 - SVG path animation defaults encoded in `normalization.ts`
 - Backward-compatible import paths and prop names retained
+- rAF-batched update bus with gesture-scoped undo commits
+- All property editors refactored with field-level selectors, memoization, and rAF-batched updates
+- Numeric inputs commit on blur/Enter with single undo entries
+- Lazy-loaded heavy hand-tool modals behind feature flag
+- Perf smoke tests and selector-isolation tests
 
 ## In Progress
-- None
+- Perf instrumentation and additional guard rails
 
 ## Pending
 - Centralize validation and normalization rules and wire editors through them
-- Add responsiveness and performance guard rails (render containment, memoization, debounced updates, undo batching, narrow selectors)
+- Extend performance guard rails across all editors (render containment, throttled inputs, lazy-loaded modals)
 - Preserve single-select behavior; defer multi-select support
 - Migrate hand follower block into SvgPath editor, keeping calibration and default-merging logic
-- Expand testing: maintain snapshot parity, interaction probes, performance smoke test for slider drag
 - Verify no layout regressions and animation defaults match legacy behavior
 

@@ -17,6 +17,8 @@ export interface CanvasContextType {
   // PHASE0: refs for static and animated layers
   staticLayerRef?: React.RefObject<Konva.Layer | null>;
   animatedLayerRef?: React.RefObject<Konva.Layer | null>;
+  // Overlay Konva layer for UI/followers (always on top)
+  overlayLayerRef?: React.RefObject<Konva.Layer | null>;
   // PHASE1: DPR cap for preview performance
   getEffectiveDpr: () => number;
 }

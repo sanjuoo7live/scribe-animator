@@ -5,6 +5,7 @@ import { calculateAnimationProgress } from '../utils/animationUtils';
 import ThreeLayerHandFollower from '../../hands/ThreeLayerHandFollower';
 import { getPath2D, getPathTotalLength, buildHandLUTTransformedAsync, HandLUT, samplesToLut } from '../../../utils/pathCache';
 import type { ParsedPath } from '../../../types/parsedPath';
+import { useCanvasContextOptional } from '../../canvas';
 // Note: renderer reads handFollower settings from obj.properties.handFollower
 
 // PHASE0: internal extension with cached fields
@@ -54,6 +55,19 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
   onDragMove,
   onTransformEnd,
 }) => {
+  const canvasCtx = useCanvasContextOptional();
+  // Overlay layer (Konva) if available
+  const overlayLayer = canvasCtx?.overlayLayerRef?.current || null;
+
+  // Ensure rerender during playback by subscribing to the canvas clock
+  const [clockTick, setClockTick] = React.useState(0);
+  React.useEffect(() => {
+    if (!canvasCtx?.clock) return;
+    const unsubscribe = canvasCtx.clock.subscribe(() => {
+      setClockTick((t) => (t + 1) & 0xffff); // cheap wraparound
+    });
+    return unsubscribe;
+  }, [canvasCtx?.clock]);
 
   // Calculate animation progress using utility function
   const progress = calculateAnimationProgress(
@@ -65,6 +79,9 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
 
   const groupX = animatedProps.x ?? obj.x;
   const groupY = animatedProps.y ?? obj.y;
+  const groupRotationDeg = obj.rotation || 0;
+  const groupScaleX = (obj.properties?.scaleX ?? 1) * (animatedProps.scaleX ?? 1);
+  const groupScaleY = (obj.properties?.scaleY ?? 1) * (animatedProps.scaleY ?? 1);
 
   const debug = !!obj.properties?.debug?.logRenderer;
   const debugLog = React.useCallback((level: 'log' | 'warn' | 'error', ...args: any[]) => {
@@ -338,12 +355,38 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
         }
       }
 
+      // Build world-space transform: Group(x,y,rot,scale) * PathLocalTransform
+      const toRad = (deg: number) => (deg * Math.PI) / 180;
+      const mul = (A: number[], B: number[]): number[] => {
+        const [a1, b1, c1, d1, e1, f1] = A;
+        const [a2, b2, c2, d2, e2, f2] = B;
+        return [
+          a1 * a2 + c1 * b2,
+          b1 * a2 + d1 * b2,
+          a1 * c2 + c1 * d2,
+          b1 * c2 + d1 * d2,
+          a1 * e2 + c1 * f2 + e1,
+          b1 * e2 + d1 * f2 + f1,
+        ];
+      };
+      const trs = (tx: number, ty: number, rotDeg: number, sx: number, sy: number): number[] => {
+        const r = toRad(rotDeg);
+        const cos = Math.cos(r), sin = Math.sin(r);
+        const R = [cos, sin, -sin, cos, 0, 0];
+        const S = [sx, 0, 0, sy, 0, 0];
+        const T = [1, 0, 0, 1, tx, ty];
+        return mul(T, mul(R, S));
+      };
+      const pathM = ((activePath as any).transform as number[] | undefined) || [1, 0, 0, 1, 0, 0];
+      const groupM = trs(groupX, groupY, groupRotationDeg, groupScaleX, groupScaleY);
+      const worldM = mul(groupM, pathM);
+
       return {
         node: (
           <ThreeLayerHandFollower
-            key="hand-follower"
+            key={`hand-follower-${obj.id}`}
             pathData={activePath.d}
-            pathMatrix={(activePath as any).transform as number[] | undefined}
+            pathMatrix={worldM}
             progress={localProgress}
             tipBacktrackPx={tipBacktrackPx}
             handAsset={handFollowerSettings.handAsset}
@@ -355,6 +398,8 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
             showForeground={handFollowerSettings.showForeground !== false}
             extraOffset={handFollowerSettings.calibrationOffset || handFollowerSettings.offset || { x: 0, y: 0 }}
             nibAnchor={handFollowerSettings.nibAnchor}
+            listening={false}
+            mountLayer={overlayLayer}
           />
         ),
         activePath: cpActive
@@ -362,7 +407,25 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
     }
 
     return { node: null, activePath: cpActive };
-  }, [obj.properties?.handFollower, obj.properties?.handFollower?.tipBacktrackPx, drawablePaths, targetLen, draw, previewWidthBoost, obj.id, debug, lutTick]);
+  }, [
+    obj.properties?.handFollower,
+    obj.properties?.handFollower?.tipBacktrackPx,
+    drawablePaths,
+    targetLen,
+    draw,
+    previewWidthBoost,
+    obj.id,
+    debug,
+    lutTick,
+    // Ensure world transform recomputes when object transform changes
+    groupX,
+    groupY,
+    groupRotationDeg,
+    groupScaleX,
+    groupScaleY,
+    overlayLayer,
+    clockTick,
+  ]);
 
   const handNode = handFollowerMemo.node;
   const activeLutPath = handFollowerMemo.activePath;
@@ -446,7 +509,9 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
     });
   }, [progress, targetLen, totalLen, drawablePaths, obj.properties?.handFollower, obj.id, debug]);
 
+
   return (
+    <>
     <Group
       key={obj.id}
       id={obj.id}
@@ -454,8 +519,8 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
       x={groupX}
       y={groupY}
       rotation={obj.rotation || 0}
-      scaleX={(obj.properties?.scaleX ?? 1) * (animatedProps.scaleX ?? 1)}
-      scaleY={(obj.properties?.scaleY ?? 1) * (animatedProps.scaleY ?? 1)}
+      scaleX={groupScaleX}
+      scaleY={groupScaleY}
   opacity={obj.type === 'svgPath' ? 1 : (animatedProps.opacity ?? 1)}
       // Bind custom attrs directly so react-konva updates node on time changes
       __progress={progress}
@@ -702,7 +767,9 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
           shape.fillEnabled(false);
         }}
       />
-  {handNode}
     </Group>
+    {/* Always mount follower component; it mounts into overlay layer when provided and returns null */}
+    {handNode}
+    </>
   );
 };

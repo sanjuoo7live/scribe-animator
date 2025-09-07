@@ -41,8 +41,9 @@ const CanvasProvider: React.FC<{
   stageRef: React.RefObject<Konva.Stage | null>;
   staticLayerRef: React.RefObject<Konva.Layer | null>;
   animatedLayerRef: React.RefObject<Konva.Layer | null>;
+  overlayLayerRef: React.RefObject<Konva.Layer | null>;
   overlayRootRef: React.RefObject<HTMLDivElement | null>;
-}> = ({ children, stageRef, staticLayerRef, animatedLayerRef, overlayRootRef }) => {
+}> = ({ children, stageRef, staticLayerRef, animatedLayerRef, overlayLayerRef, overlayRootRef }) => {
   const contextValue = React.useMemo(() => ({
     stage: stageRef.current,
     // Backward compat: expose animated layer as default layer
@@ -51,6 +52,7 @@ const CanvasProvider: React.FC<{
     clock: animationEngine,
     staticLayerRef,
     animatedLayerRef,
+    overlayLayerRef,
     // PHASE1: DPR cap for preview performance
     getEffectiveDpr: () => {
       const deviceDpr = window.devicePixelRatio || 1;
@@ -60,7 +62,7 @@ const CanvasProvider: React.FC<{
       }
       return cappedDpr;
     },
-  }), [stageRef, staticLayerRef, animatedLayerRef, overlayRootRef]);
+  }), [stageRef, staticLayerRef, animatedLayerRef, overlayLayerRef, overlayRootRef]);
 
   return (
     <CanvasContext.Provider value={contextValue}>
@@ -80,6 +82,7 @@ const CanvasEditorRefactored: React.FC = () => {
   // PHASE0: separate static vs animated layers
   const staticLayerRef = useRef<Konva.Layer>(null);
   const animatedLayerRef = useRef<Konva.Layer>(null);
+  const overlayLayerRef = useRef<Konva.Layer>(null);
   const overlayRootRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -578,6 +581,7 @@ const CanvasEditorRefactored: React.FC = () => {
       stageRef={stageRef}
       staticLayerRef={staticLayerRef}
       animatedLayerRef={animatedLayerRef}
+      overlayLayerRef={overlayLayerRef}
       overlayRootRef={overlayRootRef}
     >
       <div className="h-full flex flex-col">
@@ -790,6 +794,8 @@ const CanvasEditorRefactored: React.FC = () => {
                   />
                 )}
               </Layer>
+              {/* Overlay layer on top for followers and UI; no event handling */}
+              <Layer ref={overlayLayerRef} listening={false} />
             </Stage>
           </div>
         </div>

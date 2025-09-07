@@ -19,6 +19,9 @@ interface Props {
   showForeground?: boolean;
   extraOffset?: { x: number; y: number };
   nibAnchor?: { x: number; y: number }; // Tool tip position in hand image coordinates
+  listening?: boolean; // whether the wrapper Konva group should listen to events
+  // Optional: mount directly into a Konva Layer instead of returning a wrapper Group
+  mountLayer?: Konva.Layer | null;
 }
 
 // React wrapper that mounts a Konva group composed by ThreeLayerHandRenderer
@@ -36,6 +39,8 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
   showForeground = true,
   extraOffset,
   nibAnchor,
+  listening = false,
+  mountLayer,
 }) => {
   const mountRef = useRef<Konva.Group>(null);
   const innerGroupRef = useRef<Konva.Group | null>(null);
@@ -139,7 +144,9 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
   // Initialize assets and add inner group once
   // Only create the group and load assets when pathData, handAsset, or toolAsset changes
   useEffect(() => {
-    if (!mountRef.current || !pathData || !handAsset || !toolAsset || !visible) return;
+    // When mounting into an external layer, mountRef is not used.
+    // Only block when neither a wrapper ref nor an external layer exists.
+    if ((!mountLayer && !mountRef.current) || !pathData || !handAsset || !toolAsset || !visible) return;
     let cancelled = false;
     const setup = async () => {
       HandToolCompositor.resetDebugState();
@@ -174,8 +181,19 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
       });
       if (cancelled) { group.destroy(); return; }
       innerGroupRef.current = group;
-      mountRef.current!.add(group);
-      mountRef.current!.getLayer()?.batchDraw();
+      if (mountLayer) {
+        // Mount directly into provided layer
+        mountLayer.add(group);
+        try { group.moveToTop(); } catch {}
+        try { mountLayer.batchDraw(); } catch {}
+        try { mountLayer.getStage()?.batchDraw(); } catch {}
+      } else {
+        // Default: mount inside wrapper Group in render tree
+        mountRef.current!.add(group);
+        // Ensure the hand sits above other content in the same layer
+        try { mountRef.current!.moveToTop(); } catch {}
+        mountRef.current!.getLayer()?.batchDraw();
+      }
     };
     setup();
     return () => {
@@ -188,7 +206,7 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
       rendererRef.current = null;
       prevAngleRef.current = undefined;
     };
-  }, [getFrenetFramePosition, handAsset, toolAsset, displayScale, visible, mirror, showForeground, pathData]);
+  }, [getFrenetFramePosition, handAsset, toolAsset, displayScale, visible, mirror, showForeground, pathData, mountLayer]);
   // Only update position on progress and calibration changes
   useEffect(() => {
     if (!rendererRef.current || !innerGroupRef.current || !pathData || !visible) return;
@@ -221,11 +239,21 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
       showForeground,
       nibAnchor,
     });
-    mountRef.current?.getLayer()?.batchDraw();
-  }, [progress, tipBacktrackPx, handAsset, toolAsset, displayScale, visible, mirror, showForeground, extraOffset, pathData, nibAnchor]);
+    if (mountLayer) {
+      try { innerGroupRef.current?.moveToTop(); } catch {}
+      try { mountLayer.batchDraw(); } catch {}
+      try { mountLayer.getStage()?.batchDraw(); } catch {}
+    } else {
+      try { mountRef.current?.moveToTop(); } catch {}
+      try { mountRef.current?.getLayer()?.batchDraw(); } catch {}
+      try { mountRef.current?.getStage()?.batchDraw(); } catch {}
+    }
+  }, [progress, tipBacktrackPx, handAsset, toolAsset, displayScale, visible, mirror, showForeground, extraOffset, pathData, nibAnchor, pathMatrix, mountLayer]);
 
   if (!visible) return null;
-  return <Group ref={mountRef} />;
+  // If mounting to an external layer, render nothing
+  if (mountLayer) return null;
+  return <Group ref={mountRef} listening={listening} />;
 };
 
 export default ThreeLayerHandFollower;

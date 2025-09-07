@@ -10,6 +10,7 @@ export interface HandFollowerSettings {
   scale?: number;
   offset?: { x: number; y: number };
   visible?: boolean;
+  // Path-follow policy removed; hand always follows the currently drawing path
   
   // Phase 2: Natural Movement Settings
   smoothing?: {

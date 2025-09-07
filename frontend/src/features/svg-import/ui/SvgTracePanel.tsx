@@ -830,7 +830,9 @@ const SvgTracePanel: React.FC = () => {
                     const maxKeep = drawOptions.filter?.maxKeep ?? 400;
                     const MAX_CUMULATIVE_PATH_LENGTH = 1_500_000;
 
-                    let combined = result.paths.map((p: any, i: number) => ({
+                    // Build enriched list with original indices so we can preserve stacking order
+                    type P = { d: string; stroke?: string; strokeWidth?: number; fill?: string; fillRule?: CanvasFillRule; transform?: Mat; len: number; __idx: number };
+                    const enriched: P[] = result.paths.map((p: any, i: number) => ({
                       d: p.d,
                       stroke: p.stroke,
                       strokeWidth: p.strokeWidth,
@@ -838,13 +840,27 @@ const SvgTracePanel: React.FC = () => {
                       fillRule: p.meta?.fillRule,
                       transform: p.meta?.transform as Mat | undefined,
                       len: lens[i] || 0,
+                      __idx: i,
                     }));
-                    combined = combined.filter(p => p.len >= Math.max(effectiveMinLen, (p.strokeWidth || 0) * 0.5));
-                    combined.sort((a, b) => (b.len - a.len));
-                    if (combined.length > maxKeep) combined = combined.slice(0, maxKeep);
+                    // Filter tiny paths first (keep original order)
+                    const filtered = enriched.filter(p => p.len >= Math.max(effectiveMinLen, (p.strokeWidth || 0) * 0.5));
+
+                    // If we need to limit by count, choose the longest N but render in original order
+                    let kept: P[] = filtered;
+                    if (filtered.length > maxKeep) {
+                      // Pick top-N indices by length
+                      const top = [...filtered]
+                        .sort((a, b) => b.len - a.len)
+                        .slice(0, maxKeep)
+                        .map(p => p.__idx);
+                      const allow = new Set(top);
+                      kept = filtered.filter(p => allow.has(p.__idx)); // preserve original stacking order
+                    }
+
+                    // Cap by cumulative length while preserving order
                     let sum = 0;
-                    const capped: typeof combined = [];
-                    for (const p of combined) {
+                    const capped: P[] = [];
+                    for (const p of kept) {
                       if (sum + p.len > MAX_CUMULATIVE_PATH_LENGTH) break;
                       capped.push(p); sum += p.len;
                     }

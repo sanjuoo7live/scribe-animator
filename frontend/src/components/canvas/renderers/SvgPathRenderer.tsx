@@ -252,7 +252,6 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
         used = end;
       }
 
-      // If no active path found, use the first drawable path
       if (!activePath && drawablePaths.length > 0) {
         activePath = drawablePaths[0];
         localProgress = 0;

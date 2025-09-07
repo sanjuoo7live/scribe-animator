@@ -524,7 +524,7 @@ const PropertiesPanel: React.FC = () => {
           <p className="text-[11px] text-gray-500 mb-2">Hand-draw animation uses stroke-dash reveal. Easing is forced to linear.</p>
           <SvgDrawSettings
             value={selectedObj.properties?.drawOptions as SvgDrawOptions | undefined}
-            onChange={(opts) => updateProperty('drawOptions', opts)}
+            onChange={(opts: SvgDrawOptions) => updateProperty('drawOptions', opts)}
             totalLen={selectedObj.properties?.totalLen}
             currentDurationSec={selectedObj.animationDuration}
           />
@@ -612,6 +612,8 @@ const PropertiesPanel: React.FC = () => {
                     Show Foreground
                   </label>
                 </div>
+
+                {/* Path follow policy removed */}
 
                 {/* Debug overlay toggle */}
                 <label className="flex items-center gap-2 text-xs text-gray-300 mt-1">
@@ -1112,11 +1114,11 @@ const PropertiesPanel: React.FC = () => {
             mirror: selectedObj.properties.handFollower.mirror,
             showForeground: selectedObj.properties.handFollower.showForeground,
           }}
-          onApply={(settings) => {
+          onApply={(settings: { tipBacktrackPx: number; calibrationOffset: { x: number; y: number }; nibAnchor: { x: number; y: number }; scale: number; mirror: boolean; showForeground: boolean; extraOffset?: { x: number; y: number }; }) => {
             const currentSettings = selectedObj.properties?.handFollower || {};
             updateProperty('handFollower', { ...currentSettings, ...settings });
           }}
-          onLiveChange={(partial) => {
+          onLiveChange={(partial: Partial<{ tipBacktrackPx: number; calibrationOffset: { x: number; y: number }; nibAnchor: { x: number; y: number }; scale: number; mirror: boolean; showForeground: boolean; extraOffset?: { x: number; y: number }; }>) => {
             const currentSettings = selectedObj.properties?.handFollower || {};
             updateProperty('handFollower', { ...currentSettings, ...partial });
           }}

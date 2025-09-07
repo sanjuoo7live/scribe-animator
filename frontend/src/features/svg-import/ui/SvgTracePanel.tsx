@@ -18,9 +18,9 @@ const SvgTracePanel: React.FC = () => {
   const [clusterMode, setClusterMode] = React.useState<'bw' | 'color'>('color');
   const [hierarchyMode, setHierarchyMode] = React.useState<'cutout' | 'stacked'>('stacked');
   const [curveMode, setCurveMode] = React.useState<'pixel' | 'polygon' | 'spline'>('spline');
-  const [filterSpeckle, setFilterSpeckle] = React.useState<number>(4);
+  const [filterSpeckle, setFilterSpeckle] = React.useState<number>(20); // Set high for color by default
   const [colorPrecision, setColorPrecision] = React.useState<number>(6);
-  const [gradientStep, setGradientStep] = React.useState<number>(16);
+  const [gradientStep, setGradientStep] = React.useState<number>(64); // Set high for color by default
   const [cornerThreshold, setCornerThreshold] = React.useState<number>(60);
   const [segmentLength, setSegmentLength] = React.useState<number>(4.0);
   const [spliceThreshold, setSpliceThreshold] = React.useState<number>(45);
@@ -132,9 +132,9 @@ const SvgTracePanel: React.FC = () => {
       setClusterMode(saved.clusterMode ?? 'color');
       setHierarchyMode(saved.hierarchyMode ?? 'stacked');
       setCurveMode(saved.curveMode ?? 'spline');
-      setFilterSpeckle(saved.filterSpeckle ?? 4);
+      setFilterSpeckle(saved.filterSpeckle ?? 0); // Default for bw mode, will be overridden by auto-adjustment for color
       setColorPrecision(saved.colorPrecision ?? 6);
-      setGradientStep(saved.gradientStep ?? 16);
+      // gradientStep is not loaded from localStorage anymore - always use code defaults
       setCornerThreshold(saved.cornerThreshold ?? 60);
       setSegmentLength(saved.segmentLength ?? 4.0);
       setSpliceThreshold(saved.spliceThreshold ?? 45);
@@ -150,32 +150,45 @@ const SvgTracePanel: React.FC = () => {
     }
   }, []);
 
-  // Persist changes
+  // Persist changes (include filterSpeckle for bw mode, exclude gradientStep from user settings)
   React.useEffect(() => {
     const payload = {
       clusterMode, hierarchyMode, curveMode,
-      filterSpeckle, colorPrecision, gradientStep,
+      filterSpeckle, colorPrecision,
       cornerThreshold, segmentLength, spliceThreshold,
       threshold, preset, showDrawPreview, advancedExpanded
     };
     try { localStorage.setItem(LS_KEY, JSON.stringify(payload)); } catch {}
-  }, [clusterMode, hierarchyMode, curveMode, filterSpeckle, colorPrecision, gradientStep, cornerThreshold, segmentLength, spliceThreshold, threshold, preset, showDrawPreview, advancedExpanded]);
+  }, [clusterMode, hierarchyMode, curveMode, filterSpeckle, colorPrecision, cornerThreshold, segmentLength, spliceThreshold, threshold, preset, showDrawPreview, advancedExpanded]);
+
+  // Auto-adjust filterSpeckle and gradientStep based on cluster mode
+  React.useEffect(() => {
+    if (clusterMode === 'color') {
+      // For color images: set high values for cleaner results with fewer layers
+      setFilterSpeckle(20); // Maximum speckle filtering (not user-controllable for color)
+      setGradientStep(64);  // Maximum gradient step for fewer layers (not user-controllable)
+    } else if (clusterMode === 'bw') {
+      // For black and white images: only set gradientStep, let user control filterSpeckle
+      setGradientStep(64);  // Keep high gradient step for consistency
+      // Don't override filterSpeckle for bw mode - let user control it
+    }
+  }, [clusterMode]);
 
   const applyPreset = React.useCallback((p: Preset) => {
     setPreset(p);
     if (p === 'photo-subject') {
       setClusterMode('color'); setHierarchyMode('stacked'); setCurveMode('spline');
-      setFilterSpeckle(6); setColorPrecision(6); setGradientStep(16);
+      setFilterSpeckle(20); setColorPrecision(6); setGradientStep(64); // High values for color
       setCornerThreshold(60); setSegmentLength(4.0); setSpliceThreshold(45);
     } else if (p === 'line-art') {
       setClusterMode('bw'); setCurveMode('spline');
-      setFilterSpeckle(6); setCornerThreshold(80); setSegmentLength(3.5); setSpliceThreshold(35);
+      setFilterSpeckle(0); setCornerThreshold(80); setSegmentLength(3.5); setSpliceThreshold(35); // Min filterSpeckle for bw
     } else if (p === 'logo-flat') {
       setClusterMode('color'); setHierarchyMode('cutout'); setCurveMode('polygon');
-      setFilterSpeckle(3); setColorPrecision(6); setGradientStep(48);
+      setFilterSpeckle(20); setColorPrecision(6); setGradientStep(64); // High values for color
     } else if (p === 'noisy-photo') {
       setClusterMode('color'); setHierarchyMode('stacked'); setCurveMode('spline');
-      setFilterSpeckle(10); setGradientStep(24); setCornerThreshold(70); setSegmentLength(5.0);
+      setFilterSpeckle(20); setGradientStep(64); setCornerThreshold(70); setSegmentLength(5.0); // High values for color
     }
   }, []);
 
@@ -688,25 +701,19 @@ const SvgTracePanel: React.FC = () => {
                 </div>
               </div>
 
-              {/* Filter Speckle and Color Precision */}
-              <div style={{ display: 'flex', gap: 24 }}>
-                <div style={{ flex: 1 }}>
-                  <div className="text-sm text-gray-300" style={{ marginBottom: 6, fontWeight: 600 }}>Filter Speckle (Cleaner)</div>
-                  <input className="slider-blue" type="range" min={0} max={20} value={filterSpeckle} onChange={e=>{ setFilterSpeckle(Number(e.target.value)); setPreset('custom'); }} style={{ width: '100%' }} />
-                </div>
-                {clusterMode === 'color' && (
-                  <div style={{ flex: 1 }}>
-                    <div className="text-sm text-gray-300" style={{ marginBottom: 6, fontWeight: 600 }}>Color Precision (More accurate)</div>
-                    <input className="slider-blue" type="range" min={1} max={8} value={colorPrecision} onChange={e=>{ setColorPrecision(Number(e.target.value)); setPreset('custom'); }} style={{ width: '100%' }} />
-                  </div>
-                )}
-              </div>
-
-              {/* Gradient Step (only for color mode) */}
+              {/* Color Precision (only for color mode) */}
               {clusterMode === 'color' && (
                 <div>
-                  <div className="text-sm text-gray-300" style={{ marginBottom: 6, fontWeight: 600 }}>Gradient Step (Less layers)</div>
-                  <input className="slider-blue" type="range" min={1} max={64} value={gradientStep} onChange={e=>{ setGradientStep(Number(e.target.value)); setPreset('custom'); }} style={{ width: '100%' }} />
+                  <div className="text-sm text-gray-300" style={{ marginBottom: 6, fontWeight: 600 }}>Color Precision (More accurate)</div>
+                  <input className="slider-blue" type="range" min={1} max={8} value={colorPrecision} onChange={e=>{ setColorPrecision(Number(e.target.value)); setPreset('custom'); }} style={{ width: '100%' }} />
+                </div>
+              )}
+
+              {/* Filter Speckle (only for black and white mode) */}
+              {clusterMode === 'bw' && (
+                <div>
+                  <div className="text-sm text-gray-300" style={{ marginBottom: 6, fontWeight: 600 }}>Filter Speckle (Cleaner)</div>
+                  <input className="slider-blue" type="range" min={0} max={20} value={filterSpeckle} onChange={e=>{ setFilterSpeckle(Number(e.target.value)); setPreset('custom'); }} style={{ width: '100%' }} />
                 </div>
               )}
 

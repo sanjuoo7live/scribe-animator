@@ -216,6 +216,22 @@ export class HandToolCompositor {
       naturalTiltDeg: -(hand.naturalTiltDeg || 0)
     };
   }
+
+  /**
+   * Create a mirrored version of a tool asset (for left/right hand appearance)
+   * Mirrors across the vertical axis of the image width.
+   */
+  static mirrorToolAsset(tool: ToolAsset): ToolAsset {
+    return {
+      ...tool,
+      id: tool.id + "_mirrored",
+      name: tool.name + " (Mirrored)",
+      socketBase: { x: tool.sizePx.w - tool.socketBase.x, y: tool.socketBase.y },
+      socketForward: { x: tool.sizePx.w - tool.socketForward.x, y: tool.socketForward.y },
+      tipAnchor: { x: tool.sizePx.w - tool.tipAnchor.x, y: tool.tipAnchor.y },
+      rotationOffsetDeg: -(tool.rotationOffsetDeg || 0)
+    };
+  }
   
   /**
    * Find the best hand-tool combination for a given drawing style

@@ -75,19 +75,35 @@ export class ThreeLayerHandRenderer {
 
     // Calculate the composition transforms using the calibrated target
     const handForCalc = config.mirror ? HandToolCompositor.mirrorHandAsset(config.handAsset) : config.handAsset;
+    const toolForCalc = config.mirror ? HandToolCompositor.mirrorToolAsset(config.toolAsset) : config.toolAsset;
     this.composition = HandToolCompositor.composeHandTool(
       handForCalc,
-      config.toolAsset,
+      toolForCalc,
       calibratedTarget,
       config.pathAngle,
       config.scale
     );
 
-    // Use the composition positions directly (no additional offset needed)
-    const handPos = this.composition.handPosition;
+    // Use the composition positions directly for tool.
+    // For the hand, compute the world position of the grip point and
+    // pivot the images around that point. This keeps the hand locked
+    // to the tool socket even when mirrored (scaleX < 0).
     const toolPos = this.composition.toolPosition;
     const handRotDeg = (this.composition.handRotation * 180) / Math.PI;
     const toolRotDeg = (this.composition.toolRotation * 180) / Math.PI;
+
+    // The composition was calculated possibly with a mirrored hand model
+    // (handForCalc). Reconstruct the world-space grip position from the
+    // composition so that we can set it as the node origin (via offset).
+    const cosH = Math.cos(this.composition.handRotation);
+    const sinH = Math.sin(this.composition.handRotation);
+    const handForCalc2 = config.mirror
+      ? HandToolCompositor.mirrorHandAsset(config.handAsset)
+      : config.handAsset;
+    const gripWorld = {
+      x: this.composition.handPosition.x + (handForCalc2.gripBase.x * cosH - handForCalc2.gripBase.y * sinH) * this.composition.handScale,
+      y: this.composition.handPosition.y + (handForCalc2.gripBase.x * sinH + handForCalc2.gripBase.y * cosH) * this.composition.handScale,
+    };
 
     // Create the main group
     const handGroup = new Konva.Group({
@@ -99,40 +115,42 @@ export class ThreeLayerHandRenderer {
     // Layer 1 (Bottom): Hand Background (palm + lower fingers)
     const handBgNode = new Konva.Image({
       image: this.handBgImage,
-      x: handPos.x,
-      y: handPos.y,
+      // Position the node by the grip point and pivot around it
+      x: gripWorld.x,
+      y: gripWorld.y,
       rotation: handRotDeg,
       scaleX: (config.mirror ? -1 : 1) * this.composition.handScale,
       scaleY: this.composition.handScale,
-      // Set offset to ensure rotation around pen tip instead of image origin
-      offsetX: 0,
-      offsetY: 0,
+      // Pivot around the grip in the ORIGINAL (unmirrored) image space
+      offsetX: config.handAsset.gripBase.x,
+      offsetY: config.handAsset.gripBase.y,
     });
 
     // Layer 2 (Middle): Tool (pen, brush, marker, etc.)
     const toolNode = new Konva.Image({
       image: this.toolImage,
-      x: toolPos.x,
-      y: toolPos.y,
+      // Pivot at tip so the tip stays glued to the path
+      x: this.composition.finalTipPosition.x,
+      y: this.composition.finalTipPosition.y,
       rotation: toolRotDeg,
-      scaleX: this.composition.toolScale,
+      scaleX: (config.mirror ? -1 : 1) * this.composition.toolScale,
       scaleY: this.composition.toolScale,
-      // Set offset to ensure rotation around pen tip
-      offsetX: 0,
-      offsetY: 0,
+      offsetX: config.toolAsset.tipAnchor.x,
+      offsetY: config.toolAsset.tipAnchor.y,
     });
 
     // Layer 3 (Top): Hand Foreground (top fingers + thumb for depth)
     const handFgNode = new Konva.Image({
       image: this.handFgImage,
-      x: handPos.x,
-      y: handPos.y,
+      // Position the node by the grip point and pivot around it
+      x: gripWorld.x,
+      y: gripWorld.y,
       rotation: handRotDeg,
       scaleX: (config.mirror ? -1 : 1) * this.composition.handScale,
       scaleY: this.composition.handScale,
-      // Set offset to ensure rotation around pen tip instead of image origin
-      offsetX: 0,
-      offsetY: 0,
+      // Pivot around the grip in the ORIGINAL (unmirrored) image space
+      offsetX: config.handAsset.gripBase.x,
+      offsetY: config.handAsset.gripBase.y,
     });
     if (config.showForeground === false) {
       handFgNode.visible(false);
@@ -185,7 +203,7 @@ export class ThreeLayerHandRenderer {
       : config.handAsset;
     this.composition = HandToolCompositor.composeHandTool(
       handForCalc,
-      config.toolAsset,
+      (config.mirror ? HandToolCompositor.mirrorToolAsset(config.toolAsset) : config.toolAsset),
       calibratedTarget,
       config.pathAngle,
       config.scale
@@ -194,25 +212,38 @@ export class ThreeLayerHandRenderer {
     // Always pick the first three children as the image layers (bg, tool, fg)
     const [handBgNode, toolNode, handFg] = handGroup.children.slice(0, 3) as Konva.Image[];
 
-    // Update hand background and foreground (they move together) - no additional offset needed
+    // Recompute world grip position and pivot around it, so mirroring
+    // (negative scaleX) keeps the hand locked to the tool socket.
+    const cosH = Math.cos(this.composition.handRotation);
+    const sinH = Math.sin(this.composition.handRotation);
+    // Use the same mirrored/unmirrored hand used for composition above
+    const gripWorld = {
+      x: this.composition.handPosition.x + (handForCalc.gripBase.x * cosH - handForCalc.gripBase.y * sinH) * this.composition.handScale,
+      y: this.composition.handPosition.y + (handForCalc.gripBase.x * sinH + handForCalc.gripBase.y * cosH) * this.composition.handScale,
+    };
+
     const handTransform = {
-      x: this.composition.handPosition.x,
-      y: this.composition.handPosition.y,
+      x: gripWorld.x,
+      y: gripWorld.y,
       rotation: (this.composition.handRotation * 180) / Math.PI,
       scaleX: (config.mirror ? -1 : 1) * this.composition.handScale,
       scaleY: this.composition.handScale,
-    };
+      offsetX: config.handAsset.gripBase.x,
+      offsetY: config.handAsset.gripBase.y,
+    } as const;
 
-    handBgNode.setAttrs(handTransform);
-    handFg.setAttrs(handTransform);
+    handBgNode.setAttrs(handTransform as any);
+    handFg.setAttrs(handTransform as any);
 
-    // Update tool independently - no additional offset needed
+    // Update tool pivoting at tip so tip stays fixed when mirrored
     toolNode.setAttrs({
-      x: this.composition.toolPosition.x,
-      y: this.composition.toolPosition.y,
+      x: this.composition.finalTipPosition.x,
+      y: this.composition.finalTipPosition.y,
       rotation: (this.composition.toolRotation * 180) / Math.PI,
-      scaleX: this.composition.toolScale,
-      scaleY: this.composition.toolScale
+      scaleX: (config.mirror ? -1 : 1) * this.composition.toolScale,
+      scaleY: this.composition.toolScale,
+      offsetX: config.toolAsset.tipAnchor.x,
+      offsetY: config.toolAsset.tipAnchor.y,
     });
 
     // Foreground visibility toggle

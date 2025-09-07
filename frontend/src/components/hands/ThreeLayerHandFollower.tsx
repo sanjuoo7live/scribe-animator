@@ -18,6 +18,7 @@ interface Props {
   mirror?: boolean;
   showForeground?: boolean;
   extraOffset?: { x: number; y: number };
+  nibAnchor?: { x: number; y: number }; // Tool tip position in hand image coordinates
 }
 
 // React wrapper that mounts a Konva group composed by ThreeLayerHandRenderer
@@ -34,6 +35,7 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
   mirror = false,
   showForeground = true,
   extraOffset,
+  nibAnchor,
 }) => {
   const mountRef = useRef<Konva.Group>(null);
   const innerGroupRef = useRef<Konva.Group | null>(null);
@@ -167,7 +169,8 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
         debug,
         mirror,
         showForeground,
-        extraOffset,
+        // nibAnchor affects both tool pivot offset and compositor math
+        nibAnchor,
       });
       if (cancelled) { group.destroy(); return; }
       innerGroupRef.current = group;
@@ -186,7 +189,7 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
       prevAngleRef.current = undefined;
     };
   }, [getFrenetFramePosition, handAsset, toolAsset, displayScale, visible, mirror, showForeground, pathData]);
-  // Only update position on progress changes
+  // Only update position on progress and calibration changes
   useEffect(() => {
     if (!rendererRef.current || !innerGroupRef.current || !pathData || !visible) return;
     const currentProgress = progress <= 0 ? 0.0001 : progress;
@@ -216,10 +219,10 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
       debug,
       mirror,
       showForeground,
-      extraOffset,
+      nibAnchor,
     });
     mountRef.current?.getLayer()?.batchDraw();
-  }, [progress, tipBacktrackPx, handAsset, toolAsset, displayScale, visible, mirror, showForeground, extraOffset, pathData]);
+  }, [progress, tipBacktrackPx, handAsset, toolAsset, displayScale, visible, mirror, showForeground, extraOffset, pathData, nibAnchor]);
 
   if (!visible) return null;
   return <Group ref={mountRef} />;

@@ -587,7 +587,7 @@ const PropertiesPanel: React.FC = () => {
                   </p>
                 </div>
 
-                {/* Mirror + Foreground toggle */}
+                {/* Mirror toggle */}
                 <div className="grid grid-cols-2 gap-2">
                   <label className="flex items-center gap-2 text-xs text-gray-300">
                     <input
@@ -599,17 +599,6 @@ const PropertiesPanel: React.FC = () => {
                       }}
                     />
                     Mirror Left/Right
-                  </label>
-                  <label className="flex items-center gap-2 text-xs text-gray-300">
-                    <input
-                      type="checkbox"
-                      checked={selectedObj.properties?.handFollower?.showForeground !== false}
-                      onChange={(e)=>{
-                        const current = selectedObj.properties?.handFollower || {};
-                        updateProperty('handFollower', { ...current, showForeground: e.target.checked });
-                      }}
-                    />
-                    Show Foreground
                   </label>
                 </div>
 
@@ -1053,10 +1042,10 @@ const PropertiesPanel: React.FC = () => {
           initialHand={selectedObj.properties?.handFollower?.handAsset || undefined}
           initialTool={selectedObj.properties?.handFollower?.toolAsset || undefined}
           initialScale={selectedObj.properties?.handFollower?.scale || 1}
-          onApply={({ hand, tool, scale, mirror, showForeground }: { hand: HandAsset | null; tool: ToolAsset | null; scale: number; mirror: boolean; showForeground: boolean }) => {
+          onApply={({ hand, tool, scale, mirror }: { hand: HandAsset | null; tool: ToolAsset | null; scale: number; mirror: boolean }) => {
             try {
               const current = selectedObj.properties?.handFollower || {};
-              const next: any = { ...current, mode: 'professional', scale, mirror, showForeground };
+              const next: any = { ...current, mode: 'professional', scale, mirror };
               if (hand) next.handAsset = hand; // only override if provided
               if (tool) next.toolAsset = tool; // only override if provided
               // Set nibAnchor so the tool's tip aligns with the hand's grip using compositor
@@ -1112,13 +1101,8 @@ const PropertiesPanel: React.FC = () => {
             nibAnchor: selectedObj.properties.handFollower.nibAnchor,
             scale: selectedObj.properties.handFollower.scale,
             mirror: selectedObj.properties.handFollower.mirror,
-            showForeground: selectedObj.properties.handFollower.showForeground,
           }}
-          onApply={(settings: { tipBacktrackPx: number; calibrationOffset: { x: number; y: number }; nibAnchor: { x: number; y: number }; scale: number; mirror: boolean; showForeground: boolean; extraOffset?: { x: number; y: number }; }) => {
-            const currentSettings = selectedObj.properties?.handFollower || {};
-            updateProperty('handFollower', { ...currentSettings, ...settings });
-          }}
-          onLiveChange={(partial: Partial<{ tipBacktrackPx: number; calibrationOffset: { x: number; y: number }; nibAnchor: { x: number; y: number }; scale: number; mirror: boolean; showForeground: boolean; extraOffset?: { x: number; y: number }; }>) => {
+          onLiveChange={(partial: Partial<{ tipBacktrackPx: number; calibrationOffset: { x: number; y: number }; nibAnchor: { x: number; y: number }; scale: number; mirror: boolean; extraOffset?: { x: number; y: number }; }>) => {
             const currentSettings = selectedObj.properties?.handFollower || {};
             updateProperty('handFollower', { ...currentSettings, ...partial });
           }}

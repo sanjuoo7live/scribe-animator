@@ -13,6 +13,8 @@ export interface ThreeLayerHandConfig {
   mirror?: boolean;
   showForeground?: boolean;
   extraOffset?: { x: number; y: number };
+  // Nib anchor in HAND image coordinates (unmirrored). Used to nudge tool only.
+  nibAnchor?: { x: number; y: number };
 }
 
 export class ThreeLayerHandRenderer {
@@ -21,6 +23,9 @@ export class ThreeLayerHandRenderer {
   private toolImage: HTMLImageElement | null = null;
   private composition: HandToolComposition | null = null;
   private debugEnabled: boolean = false;
+  // Cached base nib position in hand image coordinates for current assets
+  private baseNibInHand: { x: number; y: number } | null = null;
+  private baseNibCacheKey: string | null = null;
   private dbg = {
     handRect: null as Konva.Rect | null,
     toolRect: null as Konva.Rect | null,
@@ -67,19 +72,16 @@ export class ThreeLayerHandRenderer {
       throw new Error('Assets not loaded. Call loadAssets() first.');
     }
 
-    // Apply calibration offset to the target position before calculating composition
-    const calibratedTarget = {
-      x: config.pathPosition.x + (config.extraOffset?.x || 0),
-      y: config.pathPosition.y + (config.extraOffset?.y || 0)
-    };
-
-    // Calculate the composition transforms using the calibrated target
+    // Calculate the composition transforms using the provided world target.
+    // Any calibration offset has already been applied by the caller in
+    // ThreeLayerHandFollower (in the path's Frenet frame), so we must NOT
+    // add it again here to avoid double application and drift.
     const handForCalc = config.mirror ? HandToolCompositor.mirrorHandAsset(config.handAsset) : config.handAsset;
     const toolForCalc = config.mirror ? HandToolCompositor.mirrorToolAsset(config.toolAsset) : config.toolAsset;
     this.composition = HandToolCompositor.composeHandTool(
       handForCalc,
       toolForCalc,
-      calibratedTarget,
+      config.pathPosition,
       config.pathAngle,
       config.scale
     );
@@ -139,6 +141,25 @@ export class ThreeLayerHandRenderer {
       offsetY: config.toolAsset.tipAnchor.y,
     });
 
+    // If a nibAnchor is provided (in hand image coordinates), nudge only the tool
+    if (config.nibAnchor) {
+      // Build or reuse base nib pos in hand space for the active handedness
+      const base = this.computeBaseNibInHand(handForCalc, toolForCalc);
+      const nibInHand = config.mirror
+        ? { x: handForCalc.sizePx.w - config.nibAnchor.x, y: config.nibAnchor.y }
+        : config.nibAnchor;
+      const dxHand = (nibInHand.x - base.x);
+      const dyHand = (nibInHand.y - base.y);
+      if (Math.abs(dxHand) + Math.abs(dyHand) > 0.01) {
+        const cosH = Math.cos(this.composition.handRotation);
+        const sinH = Math.sin(this.composition.handRotation);
+        const dxWorld = (dxHand * cosH - dyHand * sinH) * this.composition.handScale;
+        const dyWorld = (dxHand * sinH + dyHand * cosH) * this.composition.handScale;
+        toolNode.x(toolNode.x() + dxWorld);
+        toolNode.y(toolNode.y() + dyWorld);
+      }
+    }
+
     // Layer 3 (Top): Hand Foreground (top fingers + thumb for depth)
     const handFgNode = new Konva.Image({
       image: this.handFgImage,
@@ -164,8 +185,8 @@ export class ThreeLayerHandRenderer {
     // Optional debug overlay
     this.debugEnabled = !!config.debug;
     if (this.debugEnabled) {
-      const target = { x: calibratedTarget.x, y: calibratedTarget.y };
-      const tip = { x: this.composition.finalTipPosition.x, y: this.composition.finalTipPosition.y };
+      const target = { x: config.pathPosition.x, y: config.pathPosition.y };
+      const tip = { x: toolNode.x(), y: toolNode.y() };
       const errPts = [target.x, target.y, tip.x, tip.y];
       this.dbg.targetCircle = new Konva.Circle({ x: target.x, y: target.y, radius: 3, fill: 'magenta', opacity: 0.9 });
       this.dbg.tipCircle = new Konva.Circle({ x: tip.x, y: tip.y, radius: 3, fill: 'lime', opacity: 0.9 });
@@ -191,20 +212,15 @@ export class ThreeLayerHandRenderer {
       return;
     }
 
-    // Apply calibration offset to the target position before calculating composition
-    const calibratedTarget = {
-      x: config.pathPosition.x + (config.extraOffset?.x || 0),
-      y: config.pathPosition.y + (config.extraOffset?.y || 0)
-    };
-
-    // Recalculate composition for new position using calibrated target
+    // Recalculate composition for new position. The caller already applied
+    // any calibration offset, so use the provided point directly.
     const handForCalc = config.mirror
       ? HandToolCompositor.mirrorHandAsset(config.handAsset)
       : config.handAsset;
     this.composition = HandToolCompositor.composeHandTool(
       handForCalc,
       (config.mirror ? HandToolCompositor.mirrorToolAsset(config.toolAsset) : config.toolAsset),
-      calibratedTarget,
+      config.pathPosition,
       config.pathAngle,
       config.scale
     );
@@ -246,6 +262,26 @@ export class ThreeLayerHandRenderer {
       offsetY: config.toolAsset.tipAnchor.y,
     });
 
+    // Apply tool-only nudge from nib anchor in hand space
+    if (config.nibAnchor) {
+      const activeHand = handForCalc;
+      const activeTool = (config.mirror ? HandToolCompositor.mirrorToolAsset(config.toolAsset) : config.toolAsset);
+      const base = this.computeBaseNibInHand(activeHand, activeTool);
+      const nibInHand = config.mirror
+        ? { x: activeHand.sizePx.w - config.nibAnchor.x, y: config.nibAnchor.y }
+        : config.nibAnchor;
+      const dxHand = (nibInHand.x - base.x);
+      const dyHand = (nibInHand.y - base.y);
+      if (Math.abs(dxHand) + Math.abs(dyHand) > 0.01) {
+        const cosH = Math.cos(this.composition.handRotation);
+        const sinH = Math.sin(this.composition.handRotation);
+        const dxWorld = (dxHand * cosH - dyHand * sinH) * this.composition.handScale;
+        const dyWorld = (dxHand * sinH + dyHand * cosH) * this.composition.handScale;
+        toolNode.x(toolNode.x() + dxWorld);
+        toolNode.y(toolNode.y() + dyWorld);
+      }
+    }
+
     // Foreground visibility toggle
     if (config.showForeground === false) {
       handFg.visible(false);
@@ -256,8 +292,8 @@ export class ThreeLayerHandRenderer {
     // Update debug overlay
     if (config.debug) {
       this.debugEnabled = true;
-      const target = { x: calibratedTarget.x, y: calibratedTarget.y };
-      const tip = { x: this.composition.finalTipPosition.x, y: this.composition.finalTipPosition.y };
+      const target = { x: config.pathPosition.x, y: config.pathPosition.y };
+      const tip = { x: toolNode.x(), y: toolNode.y() };
       if (!this.dbg.tipCircle || !this.dbg.targetCircle || !this.dbg.errorLine) {
         // Create if missing
         this.dbg.targetCircle = new Konva.Circle({ x: target.x, y: target.y, radius: 3, fill: 'magenta', opacity: 0.9 });
@@ -349,6 +385,23 @@ export class ThreeLayerHandRenderer {
     this.handFgImage = null;
     this.toolImage = null;
     this.composition = null;
+    this.baseNibInHand = null;
+    this.baseNibCacheKey = null;
+  }
+
+  // Compute the default nib position (tip) in hand image coordinates
+  // for the given handedness. Cached per renderer instance for current assets.
+  private computeBaseNibInHand(hand: HandAsset, tool: ToolAsset): { x: number; y: number } {
+    const key = `${hand.id}__${tool.id}`;
+    if (this.baseNibInHand && this.baseNibCacheKey === key) return this.baseNibInHand;
+    const comp = HandToolCompositor.composeHandTool(hand, tool, { x: 0, y: 0 }, 0, 1);
+    const base = {
+      x: comp.finalTipPosition.x - comp.handPosition.x,
+      y: comp.finalTipPosition.y - comp.handPosition.y,
+    };
+    this.baseNibInHand = base;
+    this.baseNibCacheKey = key;
+    return base;
   }
 }
 

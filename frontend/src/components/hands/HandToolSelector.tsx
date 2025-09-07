@@ -7,7 +7,7 @@ interface Props {
   initialHand?: HandAsset | null;
   initialTool?: ToolAsset | null;
   initialScale?: number;
-  onApply: (sel: { hand: HandAsset | null; tool: ToolAsset | null; scale: number; mirror: boolean; showForeground: boolean }) => void;
+  onApply: (sel: { hand: HandAsset | null; tool: ToolAsset | null; scale: number; mirror: boolean }) => void;
   onClose: () => void;
 }
 
@@ -16,7 +16,7 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
   const [tool, setTool] = useState<ToolAsset | null>(initialTool || null);
   const [scale, setScale] = useState<number>(initialScale);
   const [mirror, setMirror] = useState(false);
-  const [showForeground, setShowForeground] = useState(true); // Re-enabled with proper thumb-only image
+  // Foreground always on now; control removed
   const [loadingPreset, setLoadingPreset] = useState(false);
 
   const hands = useMemo(() => {
@@ -129,7 +129,7 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
       };
 
       // Apply directly, mirroring the Run Direct Demo asset selection
-      onApply({ hand: demoHand, tool: demoTool, scale: 0.35, mirror, showForeground });
+      onApply({ hand: demoHand, tool: demoTool, scale: 0.35, mirror });
     } catch (e) {
       console.error('Failed to apply direct demo preset', e);
       alert('Failed to load demo assets from backend. Ensure the backend is running and assets exist under /api/assets');
@@ -205,10 +205,7 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
             <input type="checkbox" checked={mirror} onChange={e=>setMirror(e.target.checked)} />
             <span className="text-sm">Mirror (Left/Right)</span>
           </label>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={showForeground} onChange={e=>setShowForeground(e.target.checked)} />
-            <span className="text-sm">Show Foreground Fingers</span>
-          </label>
+          {/* Foreground is always on; control removed */}
         </div>
 
         {/* Selection Status */}
@@ -240,7 +237,7 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
                 imageFg: resolvedHand.imageFg,
                 toolImage: resolvedTool.image
               });
-              onApply({ hand: resolvedHand, tool: resolvedTool, scale, mirror, showForeground });
+              onApply({ hand: resolvedHand, tool: resolvedTool, scale, mirror });
             } catch (error) {
               console.error('Failed to resolve asset URLs:', error);
               alert('Failed to resolve backend asset URLs. Ensure the backend is running.');

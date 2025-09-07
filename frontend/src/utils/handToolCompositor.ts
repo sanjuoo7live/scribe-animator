@@ -23,7 +23,8 @@ export class HandToolCompositor {
     toolAsset: ToolAsset,
     pathPosition: Point2D,
     pathAngle: number,
-    scale: number = 1.0
+    scale: number = 1.0,
+    customNibAnchor?: Point2D // Override tool's tipAnchor with custom nib position
   ): HandToolComposition {
     
     // Debug large angle changes that might cause displacement
@@ -40,14 +41,15 @@ export class HandToolCompositor {
     }
     this.lastAngle = current;
     
-    // 1. Calculate tool transform to align tip with path position
-    const toolTransform = this.calculateToolTransform(toolAsset, pathPosition, pathAngle, scale);
+    // 1. Calculate tool transform to align tip with path position (using custom nib if provided)
+    const effectiveTipAnchor = customNibAnchor || toolAsset.tipAnchor;
+    const toolTransform = this.calculateToolTransform(toolAsset, pathPosition, pathAngle, scale, effectiveTipAnchor);
     
     // 2. Calculate hand transform to grip the tool properly
     const handTransform = this.calculateHandTransform(handAsset, toolAsset, toolTransform, scale);
     
     // 3. Compute final tip position (should match pathPosition)
-    const finalTipPosition = this.computeFinalTipPosition(toolAsset, toolTransform);
+    const finalTipPosition = this.computeFinalTipPosition(toolAsset, toolTransform, effectiveTipAnchor);
 
     // Diagnostics: measure actual tip error vs path target
     if (this.debugEnabled) {
@@ -80,10 +82,14 @@ export class HandToolCompositor {
     tool: ToolAsset,
     targetPosition: Point2D,
     targetAngle: number,
-    scale: number
+    scale: number,
+    customTipAnchor?: Point2D // Override tool's tipAnchor
   ) {
     // Apply rotation offset if tool sprite is drawn off-axis
     const adjustedAngle = targetAngle + (tool.rotationOffsetDeg || 0) * Math.PI / 180;
+    
+    // Use custom tip anchor if provided, otherwise use tool's default
+    const tipAnchor = customTipAnchor || tool.tipAnchor;
     
     // CRITICAL: Calculate tool position so that the tip anchor rotates around the target position
     // This ensures the tip stays exactly at targetPosition regardless of rotation
@@ -91,8 +97,8 @@ export class HandToolCompositor {
     const sin = Math.sin(adjustedAngle);
     
     // Transform tip anchor by rotation and scale
-    const transformedTipX = tool.tipAnchor.x * cos - tool.tipAnchor.y * sin;
-    const transformedTipY = tool.tipAnchor.x * sin + tool.tipAnchor.y * cos;
+    const transformedTipX = tipAnchor.x * cos - tipAnchor.y * sin;
+    const transformedTipY = tipAnchor.x * sin + tipAnchor.y * cos;
     
     // Tool origin position = target - transformed tip anchor
     const toolPosition = {
@@ -184,13 +190,14 @@ export class HandToolCompositor {
   /**
    * Compute the final tip position after all transforms (for verification)
    */
-  private static computeFinalTipPosition(tool: ToolAsset, toolTransform: any): Point2D {
+  private static computeFinalTipPosition(tool: ToolAsset, toolTransform: any, customTipAnchor?: Point2D): Point2D {
     const cos = Math.cos(toolTransform.rotation);
     const sin = Math.sin(toolTransform.rotation);
     
+    const tipAnchor = customTipAnchor || tool.tipAnchor;
     const rotatedTip = {
-      x: tool.tipAnchor.x * cos - tool.tipAnchor.y * sin,
-      y: tool.tipAnchor.x * sin + tool.tipAnchor.y * cos
+      x: tipAnchor.x * cos - tipAnchor.y * sin,
+      y: tipAnchor.x * sin + tipAnchor.y * cos
     };
     
     return {

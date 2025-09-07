@@ -286,7 +286,10 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
       const previewScale = 1 + ((previewWidthBoost || 0) / Math.max(1, logicalW));
       const capExt = (cap === 'round' || cap === 'square') ? 0.5 * logicalW : 0;
       const autoBacktrack = (capExt * previewScale) + 0.4 * logicalW;
-      let tipBacktrackPx = draw ? Math.max(1, (userBacktrack ?? autoBacktrack)) : 0;
+      // Respect user-set backtrack even when not drawing; fall back to auto only when user hasn't set one
+      let tipBacktrackPx = (userBacktrack !== null)
+        ? Math.max(0, userBacktrack)
+        : (draw ? Math.max(1, autoBacktrack) : 0);
 
       try {
         if (draw && activePath?.d && activePath.len > 0) {
@@ -307,7 +310,10 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
             const totalAngleChange = Math.abs(d1) + Math.abs(d2);
             const kappa = totalAngleChange / Math.max(1e-3, (2*arc));
             const damping = Math.max(0.3, Math.min(1, 1 - 6 * kappa));
-            tipBacktrackPx *= damping;
+            // Only damp automatic backtrack; preserve explicit user value
+            if (userBacktrack === null) {
+              tipBacktrackPx *= damping;
+            }
 
             // 🔍 Add curvature analysis logging
             if (debug) {
@@ -348,6 +354,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
             mirror={!!handFollowerSettings.mirror}
             showForeground={handFollowerSettings.showForeground !== false}
             extraOffset={handFollowerSettings.calibrationOffset || handFollowerSettings.offset || { x: 0, y: 0 }}
+            nibAnchor={handFollowerSettings.nibAnchor}
           />
         ),
         activePath: cpActive
@@ -355,7 +362,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
     }
 
     return { node: null, activePath: cpActive };
-  }, [obj.properties?.handFollower, drawablePaths, targetLen, draw, previewWidthBoost, obj.id, debug, lutTick]);
+  }, [obj.properties?.handFollower, obj.properties?.handFollower?.tipBacktrackPx, drawablePaths, targetLen, draw, previewWidthBoost, obj.id, debug, lutTick]);
 
   const handNode = handFollowerMemo.node;
   const activeLutPath = handFollowerMemo.activePath;

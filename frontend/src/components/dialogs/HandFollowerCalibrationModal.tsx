@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import AssetLibraryPopup from '../panels/AssetLibraryPopup';
 import { HandAsset, ToolAsset } from '../../types/handAssets';
+import { HandToolCompositor } from '../../utils/handToolCompositor';
 
 interface HandFollowerCalibrationModalProps {
   isOpen: boolean;
@@ -17,7 +18,7 @@ interface HandFollowerCalibrationModalProps {
     mirror?: boolean;
     showForeground?: boolean;
   };
-  onApply: (settings: {
+  onApply?: (settings: {
     tipBacktrackPx: number;
     calibrationOffset: { x: number; y: number };
     nibAnchor: { x: number; y: number };
@@ -53,20 +54,39 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
   const [calibrationOffset, setCalibrationOffset] = useState(
     initialSettings?.calibrationOffset ?? { x: 0, y: 0 }
   );
-  const [nibAnchor, setNibAnchor] = useState(
-    initialSettings?.nibAnchor ?? { 
-      x: toolAsset.tipAnchor.x, // Use tool's tip position as default
-      y: toolAsset.tipAnchor.y
+  const [nibAnchor, setNibAnchor] = useState(() => {
+    // Prefer caller-provided default; otherwise compute a sensible default
+    // by composing the hand + tool at origin and measuring tip vs hand pos.
+    if (initialSettings?.nibAnchor) return initialSettings.nibAnchor;
+    try {
+      const comp = HandToolCompositor.composeHandTool(
+        handAsset,
+        toolAsset,
+        { x: 0, y: 0 },
+        0,
+        1
+      );
+      return {
+        x: comp.finalTipPosition.x - comp.handPosition.x,
+        y: comp.finalTipPosition.y - comp.handPosition.y,
+      };
+    } catch {
+      return { x: handAsset.gripBase.x, y: handAsset.gripBase.y };
     }
-  );
+  });
   const [scale, setScale] = useState(initialSettings?.scale ?? 1);
   const [mirror, setMirror] = useState(initialSettings?.mirror ?? false);
-  const [showForeground, setShowForeground] = useState(initialSettings?.showForeground ?? true);
+  // Removed local Show Foreground control (managed in Properties Panel)
+  
+  // Force update counter to ensure live changes are reflected
+  const [, forceUpdate] = useState(0);
   
   // Preview canvas refs
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
   const handImageRef = useRef<HTMLImageElement>(null);
   const [handImageLoaded, setHandImageLoaded] = useState(false);
+  const handFgImageRef = useRef<HTMLImageElement>(null);
+  const [handFgImageLoaded, setHandFgImageLoaded] = useState(false);
   const toolImageRef = useRef<HTMLImageElement>(null);
   const [toolImageLoaded, setToolImageLoaded] = useState(false);
   // Store how we drew the image to map between canvas and image space
@@ -99,6 +119,18 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
     toolImageRef.current = img;
   }, [toolAsset.image]);
 
+  // Load hand foreground image for proper masking preview
+  useEffect(() => {
+    if (!handAsset.imageFg) return;
+    const img = new Image();
+    img.onload = () => {
+      handFgImageRef.current = img;
+      setHandFgImageLoaded(true);
+    };
+    img.src = handAsset.imageFg;
+    handFgImageRef.current = img;
+  }, [handAsset.imageFg]);
+
   // Draw preview on canvas
   useEffect(() => {
     if (!handImageLoaded || !previewCanvasRef.current || !handImageRef.current) return;
@@ -110,13 +142,13 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Fit hand image with padding and draw (no canvas mirroring; we handle mirror in coordinates)
+    // Fit hand image with padding and draw; apply mirror and user scale.
     const pad = 20;
     const iw = handImageRef.current.naturalWidth || handImageRef.current.width;
     const ih = handImageRef.current.naturalHeight || handImageRef.current.height;
     const availW = canvas.width - pad * 2;
     const availH = canvas.height - pad * 2;
-    const s = Math.min(availW / iw, availH / ih);
+    const s = Math.min(availW / iw, availH / ih) * scale;
     const dw = iw * s;
     const dh = ih * s;
     const dx = Math.round((canvas.width - dw) / 2);
@@ -124,7 +156,15 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
     drawInfoRef.current = { dx, dy, s, iw, ih };
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.drawImage(handImageRef.current, dx, dy, dw, dh);
+    if (mirror) {
+      ctx.save();
+      ctx.translate(dx + dw, dy);
+      ctx.scale(-1, 1);
+      ctx.drawImage(handImageRef.current, 0, 0, dw, dh);
+      ctx.restore();
+    } else {
+      ctx.drawImage(handImageRef.current, dx, dy, dw, dh);
+    }
 
     // Draw nib anchor crosshair (mirror-safe)
     const anchorX = mirror ? (iw - nibAnchor.x) : nibAnchor.x;
@@ -137,15 +177,30 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
       const ti = toolImageRef.current;
       const tiw = ti.naturalWidth || ti.width;
       const tih = ti.naturalHeight || ti.height;
-      // Preview tool scale relative to hand preview scale so it looks natural (reduced size)
-      const st = Math.min(0.8, Math.max(0.15, (handAsset.sizePx.h / Math.max(1, tih)) * 0.15));
+      // Preview tool scale relative to hand preview scale so it looks natural (include user scale)
+      const st = Math.min(0.8, Math.max(0.15, (handAsset.sizePx.h / Math.max(1, tih)) * 0.15)) * scale;
       const tipX = toolAsset.tipAnchor.x;
       const tipY = toolAsset.tipAnchor.y;
-      const drawX = Math.round(nibX - tipX * st);
-      const drawY = Math.round(nibY - tipY * st);
       const dwTool = Math.round(tiw * st);
       const dhTool = Math.round(tih * st);
-      ctx.drawImage(ti, drawX, drawY, dwTool, dhTool);
+      if (mirror) {
+        // Mirror tool for preview so it matches mirrored hand
+        ctx.save();
+        ctx.translate(Math.round(nibX), Math.round(nibY));
+        ctx.scale(-1, 1);
+        ctx.drawImage(
+          ti,
+          Math.round(-tipX * st),
+          Math.round(-tipY * st),
+          dwTool,
+          dhTool
+        );
+        ctx.restore();
+      } else {
+        const drawX = Math.round(nibX - tipX * st);
+        const drawY = Math.round(nibY - tipY * st);
+        ctx.drawImage(ti, drawX, drawY, dwTool, dhTool);
+      }
     } else {
       // Fallback marker
       ctx.fillStyle = '#ff0000';
@@ -154,7 +209,21 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
       ctx.fill();
     }
 
-  }, [handImageLoaded, toolImageLoaded, nibAnchor, mirror, scale, handAsset.sizePx, toolAsset.tipAnchor.x, toolAsset.tipAnchor.y]);
+    // Draw foreground overlay (thumb/fingers) to properly mask the tool
+    if (handFgImageLoaded && handFgImageRef.current) {
+      if (mirror) {
+        ctx.save();
+        ctx.translate(dx + dw, dy);
+        ctx.scale(-1, 1);
+        ctx.drawImage(handFgImageRef.current, 0, 0, dw, dh);
+        ctx.restore();
+      } else {
+        ctx.drawImage(handFgImageRef.current, dx, dy, dw, dh);
+      }
+    }
+
+    // Crosshair removed to avoid slight offset; tool tip indicates nib.
+  }, [handImageLoaded, handFgImageLoaded, toolImageLoaded, nibAnchor, mirror, scale, calibrationOffset, handAsset.sizePx, toolAsset.tipAnchor.x, toolAsset.tipAnchor.y]);
 
   // Handle canvas click for nib positioning
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -182,6 +251,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
     y: calibrationOffset.y
   };
   onLiveChange?.({ nibAnchor: next, extraOffset });
+  forceUpdate(prev => prev + 1);
   };
 
   if (!isOpen) return null;
@@ -195,6 +265,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
       initialHeight={600}
       minWidth={600}
       minHeight={400}
+      footerText="Drag edges/corners to resize • ESC to close"
     >
 
         <div className="grid grid-cols-2 gap-6 h-full">
@@ -233,6 +304,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                         y: calibrationOffset.y
                       };
                       onLiveChange?.({ nibAnchor: next, extraOffset });
+                      forceUpdate(prev => prev + 1);
                     }}
                     className="w-full p-2 bg-gray-700 text-white rounded text-sm"
                   />
@@ -252,6 +324,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                         y: calibrationOffset.y
                       };
                       onLiveChange?.({ nibAnchor: next, extraOffset });
+                      forceUpdate(prev => prev + 1);
                     }}
                     className="w-full p-2 bg-gray-700 text-white rounded text-sm"
                   />
@@ -283,6 +356,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                         calibrationOffset: { x: v, y: calibrationOffset.y },
                         extraOffset: { x: v, y: calibrationOffset.y }
                       });
+                      forceUpdate(prev => prev + 1);
                     }}
                     className="w-full"
                   />
@@ -307,6 +381,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                         calibrationOffset: { x: calibrationOffset.x, y: v },
                         extraOffset: { x: calibrationOffset.x, y: v }
                       });
+                      forceUpdate(prev => prev + 1);
                     }}
                     className="w-full"
                   />
@@ -340,6 +415,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                         y: calibrationOffset.y
                       }
                     });
+                    forceUpdate(prev => prev + 1);
                   }}
                   className="w-full"
                 />
@@ -377,6 +453,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                           y: calibrationOffset.y
                         }
                       });
+                      forceUpdate(prev => prev + 1);
                     }}
                     className="w-full"
                   />
@@ -399,28 +476,10 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                             y: calibrationOffset.y
                           }
                         });
+                        forceUpdate(prev => prev + 1);
                       }}
                     />
                     Mirror (Left/Right)
-                  </label>
-                  <label className="flex items-center gap-2 text-xs text-gray-300">
-                    <input
-                      type="checkbox"
-                      checked={showForeground}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setShowForeground(checked);
-                        // Send live update for foreground visibility changes
-                        onLiveChange?.({ 
-                          showForeground: checked,
-                          extraOffset: {
-                            x: calibrationOffset.x,
-                            y: calibrationOffset.y
-                          }
-                        });
-                      }}
-                    />
-                    Show Foreground
                   </label>
                 </div>
               </div>
@@ -440,16 +499,25 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
         <div className="px-4 py-3 border-t border-gray-700 flex justify-end gap-2">
           <button
             onClick={() => {
-              const defaultNibAnchor = { 
-                x: toolAsset.tipAnchor.x, 
-                y: toolAsset.tipAnchor.y 
-              };
+              let defaultNibAnchor = { x: handAsset.gripBase.x, y: handAsset.gripBase.y };
+              try {
+                const comp = HandToolCompositor.composeHandTool(
+                  handAsset,
+                  toolAsset,
+                  { x: 0, y: 0 },
+                  0,
+                  1
+                );
+                defaultNibAnchor = {
+                  x: comp.finalTipPosition.x - comp.handPosition.x,
+                  y: comp.finalTipPosition.y - comp.handPosition.y,
+                };
+              } catch {}
               setTipBacktrackPx(0);
               setCalibrationOffset({ x: 0, y: 0 });
               setNibAnchor(defaultNibAnchor);
               setScale(1);
               setMirror(false);
-              setShowForeground(true);
               
               // Send live update for reset
               onLiveChange?.({ 
@@ -458,37 +526,19 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                 nibAnchor: defaultNibAnchor,
                 scale: 1,
                 mirror: false,
-                showForeground: true,
                 extraOffset: { x: 0, y: 0 }
               });
+              forceUpdate(prev => prev + 1);
             }}
             className="px-3 py-1 bg-gray-700 rounded text-white hover:bg-gray-600"
           >
             Reset to Defaults
           </button>
           <button
-            onClick={() => {
-              // Convert nibAnchor to extraOffset for the restored renderer
-              // extraOffset represents how much to move the hand from its natural grip position
-              const extraOffset = {
-                x: calibrationOffset.x,
-                y: calibrationOffset.y
-              };
-              
-              onApply({
-                tipBacktrackPx,
-                calibrationOffset,
-                nibAnchor,
-                scale,
-                mirror,
-                showForeground,
-                extraOffset, // Pass the extraOffset for the restored renderer
-              });
-              onClose();
-            }}
+            onClick={onClose}
             className="px-3 py-1 bg-blue-600 rounded text-white hover:bg-blue-700"
           >
-            Apply Settings
+            Close
           </button>
         </div>
     </AssetLibraryPopup>

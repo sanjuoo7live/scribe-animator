@@ -1,6 +1,7 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
 import { useAppStore } from '../../store/appStore';
+import { FONT_FAMILIES } from '../../constants/fonts';
 
 interface TextPropertiesModalProps {
   isOpen: boolean;
@@ -131,21 +132,6 @@ const TextPropertiesModal: React.FC<TextPropertiesModalProps> = ({
     updateObject(textObj.id, { properties: newProperties });
   };
 
-  const fontFamilies = [
-    'Arial',
-    'Times New Roman',
-    'Courier New',
-    'Helvetica',
-    'Georgia',
-    'Verdana',
-    'Tahoma',
-    'Trebuchet MS',
-    'Impact',
-    'Comic Sans MS',
-    'Lucida Console',
-    'Palatino Linotype'
-  ];
-
   const portalTarget = typeof document !== 'undefined' ? document.body : null;
   // Debug: render trace
   // eslint-disable-next-line no-console
@@ -225,7 +211,7 @@ const TextPropertiesModal: React.FC<TextPropertiesModalProps> = ({
               onChange={(e) => updateProperty('fontFamily', e.target.value)}
               className="w-full p-3 bg-gray-700 text-white rounded border border-gray-600 focus:border-blue-500 focus:outline-none"
             >
-              {fontFamilies.map(font => (
+              {FONT_FAMILIES.map((font: string) => (
                 <option key={font} value={font} style={{ fontFamily: font }}>
                   {font}
                 </option>

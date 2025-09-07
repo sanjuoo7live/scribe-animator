@@ -6,11 +6,10 @@ import { clampNumber } from '../validation';
 import { patchSceneObject } from '../domain/patch';
 import useThrottledCallback from '../hooks/useThrottledCallback';
 import { isIconText } from '../utils/iconDetection';
-
-const fonts = ['Arial', 'Helvetica', 'Times New Roman'];
+import { FONT_FAMILIES } from '../../../constants/fonts';
 
 const TextEditorComponent: React.FC = () => {
-  const [id, text, fontSize, fontFamily] = (useAppStore as any)(
+  const [id, text, fontSize, fontFamily, fill] = (useAppStore as any)(
     useShallow((state: any) => {
       const obj = state.currentProject?.objects.find(
         (o: any) => o.id === state.selectedObject
@@ -21,15 +20,17 @@ const TextEditorComponent: React.FC = () => {
           '',
           PROPERTY_RANGES.fontSize.default,
           'Arial',
+          '#000000',
         ] as const;
       return [
         obj.id,
         obj.properties?.text || '',
         obj.properties?.fontSize ?? PROPERTY_RANGES.fontSize.default,
         obj.properties?.fontFamily || 'Arial',
+        obj.properties?.fill || '#000000',
       ] as const;
     })
-  ) as [string, string, number, string];
+  ) as [string, string, number, string, string];
 
   const [textLocal, setTextLocal] = React.useState(text);
   React.useEffect(() => setTextLocal(text), [text]);
@@ -76,6 +77,14 @@ const TextEditorComponent: React.FC = () => {
     [id]
   );
 
+  const handleFillColor = React.useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const val = e.target.value;
+      if (id) patchSceneObject(id, { properties: { fill: val } });
+    },
+    [id]
+  );
+
   return (
     <div className="space-y-4">
       <div>
@@ -109,6 +118,25 @@ const TextEditorComponent: React.FC = () => {
           onChange={handleSize}
           className="w-full"
         />
+        <div className="text-xs text-gray-500 mt-1">{fontSize}px</div>
+      </div>
+      <div>
+        <label className="block text-xs text-gray-400 mb-1">Fill Color</label>
+        <div className="flex items-center gap-2">
+          <input
+            type="color"
+            value={fill}
+            onChange={handleFillColor}
+            className="w-8 h-8 rounded border border-gray-600 cursor-pointer"
+          />
+          <input
+            type="text"
+            value={fill}
+            onChange={handleFillColor}
+            className="flex-1 p-2 bg-gray-700 text-white rounded text-sm border border-gray-600 focus:border-blue-500 focus:outline-none"
+            placeholder="#000000"
+          />
+        </div>
       </div>
       {!isIcon && (
         <div>
@@ -118,7 +146,7 @@ const TextEditorComponent: React.FC = () => {
             onChange={handleFont}
             className="w-full p-2 bg-gray-700 text-white rounded text-sm"
           >
-            {fonts.map((f) => (
+            {FONT_FAMILIES.map((f) => (
               <option key={f} value={f}>
                 {f}
               </option>

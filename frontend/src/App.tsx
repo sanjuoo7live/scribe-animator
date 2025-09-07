@@ -72,10 +72,12 @@ const App: React.FC = () => {
     }
   }, [currentProject, setProject]);
 
-  // Auto-open properties panel when an object is selected
+  // Auto-open properties panel when an object is selected, auto-hide when deselected
   React.useEffect(() => {
     if (selectedObject) {
       setShowRightPanel(true);
+    } else {
+      setShowRightPanel(false);
     }
   }, [selectedObject]);
 

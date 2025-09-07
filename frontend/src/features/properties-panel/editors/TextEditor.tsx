@@ -5,6 +5,7 @@ import PROPERTY_RANGES from '../domain/constants';
 import { clampNumber } from '../validation';
 import { patchSceneObject } from '../domain/patch';
 import useThrottledCallback from '../hooks/useThrottledCallback';
+import { isIconText } from '../utils/iconDetection';
 
 const fonts = ['Arial', 'Helvetica', 'Times New Roman'];
 
@@ -32,6 +33,9 @@ const TextEditorComponent: React.FC = () => {
 
   const [textLocal, setTextLocal] = React.useState(text);
   React.useEffect(() => setTextLocal(text), [text]);
+
+  // Determine if this is an icon
+  const isIcon = isIconText(textLocal || text);
 
   const commitText = React.useCallback(() => {
     if (id) patchSceneObject(id, { properties: { text: textLocal } });
@@ -75,7 +79,9 @@ const TextEditorComponent: React.FC = () => {
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-xs text-gray-400 mb-1">Content</label>
+        <label className="block text-xs text-gray-400 mb-1">
+          {isIcon ? 'Icon' : 'Content'}
+        </label>
         <textarea
           value={textLocal}
           onChange={handleTextChange}
@@ -87,10 +93,13 @@ const TextEditorComponent: React.FC = () => {
             }
           }}
           className="w-full p-2 bg-gray-700 text-white rounded text-sm"
+          placeholder={isIcon ? 'Enter icon or emoji' : 'Enter text content'}
         />
       </div>
       <div>
-        <label className="block text-xs text-gray-400 mb-1">Font Size</label>
+        <label className="block text-xs text-gray-400 mb-1">
+          {isIcon ? 'Size' : 'Font Size'}
+        </label>
         <input
           type="range"
           min={PROPERTY_RANGES.fontSize.min}
@@ -101,20 +110,22 @@ const TextEditorComponent: React.FC = () => {
           className="w-full"
         />
       </div>
-      <div>
-        <label className="block text-xs text-gray-400 mb-1">Font</label>
-        <select
-          value={fontFamily}
-          onChange={handleFont}
-          className="w-full p-2 bg-gray-700 text-white rounded text-sm"
-        >
-          {fonts.map((f) => (
-            <option key={f} value={f}>
-              {f}
-            </option>
-          ))}
-        </select>
-      </div>
+      {!isIcon && (
+        <div>
+          <label className="block text-xs text-gray-400 mb-1">Font</label>
+          <select
+            value={fontFamily}
+            onChange={handleFont}
+            className="w-full p-2 bg-gray-700 text-white rounded text-sm"
+          >
+            {fonts.map((f) => (
+              <option key={f} value={f}>
+                {f}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
     </div>
   );
 };

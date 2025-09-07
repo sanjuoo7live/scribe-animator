@@ -24,11 +24,11 @@ const ShapeEditorComponent: React.FC = () => {
     })
   ) as [string, number, number, string, string, number];
 
-  const [fillLocal, setFillLocal] = React.useState(fill);
+  const [fillLocal, setFillLocal] = React.useState(fill === 'transparent' ? '#ffffff' : fill);
   const [strokeLocal, setStrokeLocal] = React.useState(stroke);
   const [widthLocal, setWidthLocal] = React.useState(String(width));
   const [heightLocal, setHeightLocal] = React.useState(String(height));
-  React.useEffect(() => setFillLocal(fill), [fill]);
+  React.useEffect(() => setFillLocal(fill === 'transparent' ? '#ffffff' : fill), [fill]);
   React.useEffect(() => setStrokeLocal(stroke), [stroke]);
   React.useEffect(() => setWidthLocal(String(width)), [width]);
   React.useEffect(() => setHeightLocal(String(height)), [height]);
@@ -88,6 +88,11 @@ const ShapeEditorComponent: React.FC = () => {
     [id]
   );
 
+  const handleTransparent = React.useCallback(() => {
+    setFillLocal('#ffffff');
+    if (id) patchSceneObject(id, { properties: { fill: 'transparent' } });
+  }, [id]);
+
   const handleStroke = React.useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const val = e.target.value;
@@ -136,7 +141,19 @@ const ShapeEditorComponent: React.FC = () => {
       </div>
       <div>
         <label className="block text-xs text-gray-400 mb-1">Fill</label>
-        <input type="color" value={fillLocal} onChange={handleFill} />
+        <div className="flex items-center gap-2">
+          <input 
+            type="color" 
+            value={fillLocal === 'transparent' ? '#ffffff' : fillLocal} 
+            onChange={handleFill} 
+          />
+          <button
+            onClick={handleTransparent}
+            className="px-2 py-1 bg-gray-600 text-xs text-white rounded hover:bg-gray-500 transition-colors"
+          >
+            Transparent
+          </button>
+        </div>
       </div>
       <div>
         <label className="block text-xs text-gray-400 mb-1">Stroke</label>
@@ -153,6 +170,7 @@ const ShapeEditorComponent: React.FC = () => {
           onChange={handleStrokeWidth}
           className="w-full"
         />
+        <span className="text-xs text-gray-400">{strokeWidth}px</span>
       </div>
     </div>
   );

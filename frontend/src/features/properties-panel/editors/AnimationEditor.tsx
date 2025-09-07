@@ -96,6 +96,8 @@ const AnimationEditorComponent: React.FC = () => {
               commitStart();
             }
           }}
+          min={PROPERTY_RANGES.animationStart.min}
+          step={PROPERTY_RANGES.animationStart.step}
           className="w-full p-2 bg-gray-700 text-white rounded text-sm"
         />
       </div>
@@ -112,6 +114,8 @@ const AnimationEditorComponent: React.FC = () => {
               commitDuration();
             }
           }}
+          min={PROPERTY_RANGES.animationDuration.min}
+          step={PROPERTY_RANGES.animationDuration.step}
           className="w-full p-2 bg-gray-700 text-white rounded text-sm"
         />
       </div>

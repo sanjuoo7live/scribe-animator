@@ -8,6 +8,7 @@ import { SvgPathEditor } from './editors/SvgPathEditor';
 import { AnimationEditor } from './editors/AnimationEditor';
 import { LayerOrderEditor } from './editors/LayerOrderEditor';
 import CollapsibleSection from './CollapsibleSection';
+import { isIconText } from './utils/iconDetection';
 
 const PropertiesPanel: React.FC = () => {
   // Subscribe to only what we need to avoid broad re-renders
@@ -33,7 +34,7 @@ const PropertiesPanel: React.FC = () => {
         className="space-y-4 md:space-y-0 md:grid md:grid-cols-2 md:gap-4"
         data-testid="properties-grid"
       >
-        <CollapsibleSection title="Object Info">
+        <CollapsibleSection title="Object Info" defaultOpen={false}>
           <div className="space-y-2">
             <div>
               <label className="block text-xs text-gray-400 mb-1">Type</label>
@@ -55,11 +56,11 @@ const PropertiesPanel: React.FC = () => {
             </div>
           </div>
         </CollapsibleSection>
-        <CollapsibleSection title="Position">
+        <CollapsibleSection title="Position" defaultOpen={false}>
           <PositionEditor />
         </CollapsibleSection>
         {obj.type === 'text' && (
-          <CollapsibleSection title="Text">
+          <CollapsibleSection title={isIconText(obj.properties?.text || '') ? 'Icon' : 'Text'}>
             <TextEditor />
           </CollapsibleSection>
         )}

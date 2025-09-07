@@ -84,9 +84,10 @@ export const TextRenderer: React.FC<BaseRendererProps> = ({
       scaleX={animatedProps.scaleX ?? 1}
       scaleY={animatedProps.scaleY ?? 1}
       opacity={animatedProps.opacity ?? 1}
-      fill={isSelected ? '#4f46e5' : props.fill || '#000'}
-      stroke={props.strokeWidth > 0 ? (isSelected ? '#4f46e5' : props.stroke || '#000') : undefined}
-      strokeWidth={props.strokeWidth || 0}
+      fill={props.fill || '#000'}
+      stroke={isSelected ? '#4f46e5' : (props.strokeWidth > 0 ? props.stroke || '#000' : undefined)}
+      strokeWidth={isSelected ? 1 : (props.strokeWidth || 0)}
+      dash={isSelected ? [4, 4] : undefined}
       draggable={tool === 'select'}
       onClick={(e) => { e.cancelBubble = true; onClick(e); }}
       onDblClick={() => onDblClick?.(obj.id)}

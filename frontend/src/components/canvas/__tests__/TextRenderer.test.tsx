@@ -95,7 +95,10 @@ describe('TextRenderer', () => {
   it('applies selected styling when isSelected is true', () => {
     render(<TextRenderer {...defaultProps} isSelected={true} />);
     const call = MockText.mock.calls[0][0];
-    expect(call.fill).toBe('#4f46e5');
+    expect(call.stroke).toBe('#4f46e5');
+    expect(call.strokeWidth).toBe(1);
+    expect(call.dash).toEqual([4, 4]);
+    expect(call.fill).toBe('#000'); // Should preserve original color
   });
 
   it('renders with stroke when strokeWidth > 0', () => {

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { normalizeObject } from '../features/properties-panel/normalization';
 
 export interface SceneObject {
   id: string;
@@ -78,20 +79,31 @@ export const useAppStore = create<AppState>((set, get) => {
     const duration = Number(input?.duration ?? settings.duration ?? 30);
 
     const rawObjects = Array.isArray(input?.objects) ? input.objects : [];
-    const objects: SceneObject[] = rawObjects.map((obj: any, index: number) => ({
-      id: obj?.id ?? `obj-${Date.now()}-${index}`,
-      type: obj?.type ?? 'shape',
-      x: Number(obj?.x ?? 0),
-      y: Number(obj?.y ?? 0),
-      width: obj?.width,
-      height: obj?.height,
-      rotation: obj?.rotation,
-      properties: obj?.properties ?? {},
-      animationStart: obj?.animationStart,
-      animationDuration: obj?.animationDuration,
-      animationType: obj?.animationType,
-      animationEasing: obj?.animationEasing,
-    }));
+    const objects: SceneObject[] = rawObjects.map((obj: any, index: number) => {
+      const base: SceneObject = {
+        id: obj?.id ?? `obj-${Date.now()}-${index}`,
+        type: obj?.type ?? 'shape',
+        x: Number(obj?.x ?? 0),
+        y: Number(obj?.y ?? 0),
+        width: obj?.width,
+        height: obj?.height,
+        rotation: obj?.rotation,
+        properties: obj?.properties ?? {},
+        animationStart: obj?.animationStart,
+        animationDuration: obj?.animationDuration,
+        animationType: obj?.animationType,
+        animationEasing: obj?.animationEasing,
+      };
+      const norm = normalizeObject(base);
+      if (norm) {
+        if (norm.properties) {
+          base.properties = { ...base.properties, ...norm.properties } as any;
+          delete (norm as any).properties;
+        }
+        Object.assign(base, norm);
+      }
+      return base;
+    });
 
     return {
       id: String(input?.id ?? `project-${Date.now()}`),

@@ -1,5 +1,5 @@
 import React from 'react';
-import { shallow } from 'zustand/shallow';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../../store/appStore';
 import PROPERTY_RANGES from '../domain/constants';
 import { clampNumber } from '../validation';
@@ -7,22 +7,21 @@ import { patchSceneObject } from '../domain/patch';
 import useThrottledCallback from '../hooks/useThrottledCallback';
 
 const ImageEditorComponent: React.FC = () => {
-  const { id, width, height, opacity } = (useAppStore as any)(
-    (state: any) => {
+  const [id, width, height, opacity] = (useAppStore as any)(
+    useShallow((state: any) => {
       const obj = state.currentProject?.objects.find(
         (o: any) => o.id === state.selectedObject
       );
       if (!obj || obj.type !== 'image')
-        return { id: '', width: 0, height: 0, opacity: 1 };
-      return {
-        id: obj.id,
-        width: obj.width ?? 0,
-        height: obj.height ?? 0,
-        opacity: obj.properties?.opacity ?? 1,
-      };
-    },
-    shallow
-  ) as { id: string; width: number; height: number; opacity: number };
+        return ['', 0, 0, 1] as const;
+      return [
+        obj.id,
+        obj.width ?? 0,
+        obj.height ?? 0,
+        obj.properties?.opacity ?? 1,
+      ] as const;
+    })
+  ) as [string, number, number, number];
 
   const [widthLocal, setWidthLocal] = React.useState(String(width));
   const [heightLocal, setHeightLocal] = React.useState(String(height));

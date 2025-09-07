@@ -11,12 +11,15 @@ export function useThrottledCallback<T extends (...args: any[]) => void>(
   deps: React.DependencyList = []
 ): (...funcArgs: Parameters<T>) => void {
   const last = React.useRef(0);
-  const timeout = React.useRef<ReturnType<typeof setTimeout>>();
+  // Initialize with null to satisfy TS and guard clearTimeout
+  const timeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const cbRef = React.useRef(cb);
 
   React.useEffect(() => {
     cbRef.current = cb;
-    return () => clearTimeout(timeout.current);
+    return () => {
+      if (timeout.current !== null) clearTimeout(timeout.current);
+    };
   }, [cb, ...deps]);
 
   return React.useCallback(
@@ -27,7 +30,7 @@ export function useThrottledCallback<T extends (...args: any[]) => void>(
         last.current = now;
         cbRef.current(...args);
       } else {
-        clearTimeout(timeout.current);
+        if (timeout.current !== null) clearTimeout(timeout.current);
         timeout.current = setTimeout(() => {
           last.current = Date.now();
           cbRef.current(...args);

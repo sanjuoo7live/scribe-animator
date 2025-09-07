@@ -1,5 +1,5 @@
 import React from 'react';
-import { shallow } from 'zustand/shallow';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../../store/appStore';
 import PROPERTY_RANGES from '../domain/constants';
 import { clampNumber } from '../validation';
@@ -9,35 +9,28 @@ const types = ['none', 'fadeIn', 'slideIn', 'scaleIn', 'drawIn', 'pathFollow', '
 const easings = ['linear', 'easeIn', 'easeOut', 'easeInOut'];
 
 const AnimationEditorComponent: React.FC = () => {
-  const { id, start, duration, type, easing } = (useAppStore as any)(
-    (state: any) => {
+  const [id, start, duration, type, easing] = (useAppStore as any)(
+    useShallow((state: any) => {
       const obj = state.currentProject?.objects.find(
         (o: any) => o.id === state.selectedObject
       );
       if (!obj)
-        return {
-          id: '',
-          start: PROPERTY_RANGES.animationStart.default,
-          duration: PROPERTY_RANGES.animationDuration.default,
-          type: 'none',
-          easing: 'linear',
-        };
-      return {
-        id: obj.id,
-        start: obj.animationStart ?? PROPERTY_RANGES.animationStart.default,
-        duration: obj.animationDuration ?? PROPERTY_RANGES.animationDuration.default,
-        type: obj.animationType ?? 'none',
-        easing: obj.animationEasing ?? 'linear',
-      };
-    },
-    shallow
-  ) as {
-    id: string;
-    start: number;
-    duration: number;
-    type: string;
-    easing: string;
-  };
+        return [
+          '',
+          PROPERTY_RANGES.animationStart.default,
+          PROPERTY_RANGES.animationDuration.default,
+          'none',
+          'linear',
+        ] as const;
+      return [
+        obj.id,
+        obj.animationStart ?? PROPERTY_RANGES.animationStart.default,
+        obj.animationDuration ?? PROPERTY_RANGES.animationDuration.default,
+        obj.animationType ?? 'none',
+        obj.animationEasing ?? 'linear',
+      ] as const;
+    })
+  ) as [string, number, number, string, string];
 
   const [startLocal, setStartLocal] = React.useState(String(start));
   const [durationLocal, setDurationLocal] = React.useState(String(duration));

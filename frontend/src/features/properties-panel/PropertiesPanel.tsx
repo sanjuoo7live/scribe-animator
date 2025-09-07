@@ -1,6 +1,5 @@
 import React from 'react';
 import { useAppStore } from '../../store/appStore';
-import { normalizeObject } from './normalization';
 import { PositionEditor } from './editors/PositionEditor';
 import { TextEditor } from './editors/TextEditor';
 import { ShapeEditor } from './editors/ShapeEditor';
@@ -11,16 +10,12 @@ import { LayerOrderEditor } from './editors/LayerOrderEditor';
 import CollapsibleSection from './CollapsibleSection';
 
 const PropertiesPanel: React.FC = () => {
-  const { currentProject, selectedObject, updateObject } = useAppStore();
+  // Subscribe to only what we need to avoid broad re-renders
+  const currentProject = useAppStore((s) => s.currentProject);
+  const selectedObject = useAppStore((s) => s.selectedObject);
   const obj = currentProject?.objects.find((o) => o.id === selectedObject);
 
-  React.useEffect(() => {
-    if (!obj) return;
-    const norm = normalizeObject(obj);
-    if (norm) {
-      updateObject(obj.id, norm, { silent: true });
-    }
-  }, [obj?.id, obj?.type, obj?.animationType, obj?.animationEasing, updateObject]);
+  // Note: normalization now runs in store.addObject; the panel no longer writes
 
   if (!obj) {
     return (

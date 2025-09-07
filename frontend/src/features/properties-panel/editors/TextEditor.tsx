@@ -1,5 +1,5 @@
 import React from 'react';
-import { shallow } from 'zustand/shallow';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../../store/appStore';
 import PROPERTY_RANGES from '../domain/constants';
 import { clampNumber } from '../validation';
@@ -9,27 +9,26 @@ import useThrottledCallback from '../hooks/useThrottledCallback';
 const fonts = ['Arial', 'Helvetica', 'Times New Roman'];
 
 const TextEditorComponent: React.FC = () => {
-  const { id, text, fontSize, fontFamily } = (useAppStore as any)(
-    (state: any) => {
+  const [id, text, fontSize, fontFamily] = (useAppStore as any)(
+    useShallow((state: any) => {
       const obj = state.currentProject?.objects.find(
         (o: any) => o.id === state.selectedObject
       );
       if (!obj || obj.type !== 'text')
-        return {
-          id: '',
-          text: '',
-          fontSize: PROPERTY_RANGES.fontSize.default,
-          fontFamily: 'Arial',
-        };
-      return {
-        id: obj.id,
-        text: obj.properties?.text || '',
-        fontSize: obj.properties?.fontSize ?? PROPERTY_RANGES.fontSize.default,
-        fontFamily: obj.properties?.fontFamily || 'Arial',
-      };
-    },
-    shallow
-  ) as { id: string; text: string; fontSize: number; fontFamily: string };
+        return [
+          '',
+          '',
+          PROPERTY_RANGES.fontSize.default,
+          'Arial',
+        ] as const;
+      return [
+        obj.id,
+        obj.properties?.text || '',
+        obj.properties?.fontSize ?? PROPERTY_RANGES.fontSize.default,
+        obj.properties?.fontFamily || 'Arial',
+      ] as const;
+    })
+  ) as [string, string, number, string];
 
   const [textLocal, setTextLocal] = React.useState(text);
   React.useEffect(() => setTextLocal(text), [text]);

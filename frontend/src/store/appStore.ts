@@ -181,11 +181,23 @@ export const useAppStore = create<AppState>((set, get) => {
     addObject: (object) => set((state) => {
       const newHistory = saveToHistory();
       if (!state.currentProject) return { currentProject: null, history: newHistory };
+
+      // Normalize the object on insert so UI doesn't need to patch on mount
+      const applied = { ...object } as SceneObject;
+      const norm = normalizeObject(applied as any);
+      if (norm) {
+        if ((norm as any).properties) {
+          applied.properties = { ...(applied.properties || {}), ...(norm as any).properties } as any;
+          delete (norm as any).properties;
+        }
+        Object.assign(applied, norm);
+      }
+
       const prevObjects = Array.isArray(state.currentProject.objects) ? state.currentProject.objects : [];
       return {
         currentProject: {
           ...state.currentProject,
-          objects: [...prevObjects, object]
+          objects: [...prevObjects, applied]
         },
         history: newHistory
       };
@@ -195,10 +207,35 @@ export const useAppStore = create<AppState>((set, get) => {
       const newHistory = options?.silent || inTransaction ? state.history : saveToHistory();
       if (!state.currentProject) return { currentProject: null, history: newHistory };
       const prevObjects = Array.isArray(state.currentProject.objects) ? state.currentProject.objects : [];
+
+      const idx = prevObjects.findIndex((o) => o.id === id);
+      if (idx === -1) return { currentProject: state.currentProject, history: newHistory } as any;
+
+      const current = prevObjects[idx];
+      // Shallow equality check: if the provided updates don't change values, avoid triggering a store update
+      let changed = false;
+      for (const key of Object.keys(updates) as (keyof typeof updates)[]) {
+        if (key === 'properties') {
+          const nextProps = (updates as any).properties || {};
+          const prevProps = (current as any).properties || {};
+          for (const pk of Object.keys(nextProps)) {
+            if (prevProps[pk] !== nextProps[pk]) { changed = true; break; }
+          }
+          if (changed) break;
+        } else if ((current as any)[key] !== (updates as any)[key]) {
+          changed = true;
+          break;
+        }
+      }
+      if (!changed) {
+        return { currentProject: state.currentProject, history: newHistory } as any;
+      }
+
+      const nextObjects = prevObjects.map(obj => (obj.id === id ? { ...obj, ...updates } : obj));
       return {
         currentProject: {
           ...state.currentProject,
-          objects: prevObjects.map(obj => (obj.id === id ? { ...obj, ...updates } : obj))
+          objects: nextObjects
         },
         history: newHistory
       };

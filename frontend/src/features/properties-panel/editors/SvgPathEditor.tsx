@@ -1,5 +1,5 @@
 import React from 'react';
-import { shallow } from 'zustand/shallow';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../../store/appStore';
 import { FEATURE_FLAGS } from '../domain/flags';
 import { patchSceneObject } from '../domain/patch';
@@ -10,22 +10,21 @@ import { HandFollowerCalibrationModalLazy } from '../../../components/hands/lazy
 import { HAND_ASSETS, TOOL_ASSETS } from '../../../types/handAssets';
 
 const SvgPathEditorComponent: React.FC = () => {
-  const { id, handFollower } = (useAppStore as any)(
-    (state: any) => {
+  const [id, handFollower] = (useAppStore as any)(
+    useShallow((state: any) => {
       const obj = state.currentProject?.objects.find(
         (o: any) => o.id === state.selectedObject
       );
       if (!obj || obj.type !== 'svgPath')
-        return { id: '', handFollower: {} as any };
-      return {
-        id: obj.id,
-        handFollower: obj.properties?.handFollower || {},
-      };
-    },
-    shallow
-  ) as { id: string; handFollower: any };
+        return ['', null] as const;
+      return [
+        obj.id,
+        (obj.properties?.handFollower ?? null),
+      ] as const;
+    })
+  ) as [string, any | null];
 
-  const hf = handFollower || {};
+  const hf = handFollower || ({} as any);
   const [calibrateOpen, setCalibrateOpen] = React.useState(false);
 
   const handleToggle = React.useCallback(

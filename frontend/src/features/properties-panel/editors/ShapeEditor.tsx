@@ -1,50 +1,28 @@
 import React from 'react';
-import { shallow } from 'zustand/shallow';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../../store/appStore';
 import PROPERTY_RANGES from '../domain/constants';
 import { clampNumber } from '../validation';
 import { patchSceneObject } from '../domain/patch';
 
 const ShapeEditorComponent: React.FC = () => {
-  const {
-    id,
-    width,
-    height,
-    fill,
-    stroke,
-    strokeWidth,
-  } = (useAppStore as any)(
-    (state: any) => {
+  const [id, width, height, fill, stroke, strokeWidth] = (useAppStore as any)(
+    useShallow((state: any) => {
       const obj = state.currentProject?.objects.find(
         (o: any) => o.id === state.selectedObject
       );
       if (!obj || obj.type !== 'shape')
-        return {
-          id: '',
-          width: 0,
-          height: 0,
-          fill: '#ffffff',
-          stroke: '#000000',
-          strokeWidth: 2,
-        };
-      return {
-        id: obj.id,
-        width: obj.width ?? 0,
-        height: obj.height ?? 0,
-        fill: obj.properties?.fill || '#ffffff',
-        stroke: obj.properties?.stroke || '#000000',
-        strokeWidth: obj.properties?.strokeWidth ?? 2,
-      };
-    },
-    shallow
-  ) as {
-    id: string;
-    width: number;
-    height: number;
-    fill: string;
-    stroke: string;
-    strokeWidth: number;
-  };
+        return ['', 0, 0, '#ffffff', '#000000', 2] as const;
+      return [
+        obj.id,
+        obj.width ?? 0,
+        obj.height ?? 0,
+        obj.properties?.fill || '#ffffff',
+        obj.properties?.stroke || '#000000',
+        obj.properties?.strokeWidth ?? 2,
+      ] as const;
+    })
+  ) as [string, number, number, string, string, number];
 
   const [fillLocal, setFillLocal] = React.useState(fill);
   const [strokeLocal, setStrokeLocal] = React.useState(stroke);

@@ -1,20 +1,19 @@
 import React from 'react';
-import { shallow } from 'zustand/shallow';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../../store/appStore';
 import { clampNumber } from '../validation';
 import PROPERTY_RANGES from '../domain/constants';
 import { patchSceneObject } from '../domain/patch';
 
 const PositionEditorComponent: React.FC = () => {
-  const { id, x, y } = (useAppStore as any)(
-    (state: any) => {
+  const [id, x, y] = (useAppStore as any)(
+    useShallow((state: any) => {
       const obj = state.currentProject?.objects.find(
         (o: any) => o.id === state.selectedObject
       );
-      return obj ? { id: obj.id, x: obj.x, y: obj.y } : { id: '', x: 0, y: 0 };
-    },
-    shallow
-  ) as { id: string; x: number; y: number };
+      return [obj?.id ?? '', obj?.x ?? 0, obj?.y ?? 0] as const;
+    })
+  ) as [string, number, number];
 
   const { min: minX, max: maxX } = PROPERTY_RANGES.x;
   const { min: minY, max: maxY } = PROPERTY_RANGES.y;

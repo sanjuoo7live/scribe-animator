@@ -55,8 +55,8 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
   );
   const [nibAnchor, setNibAnchor] = useState(
     initialSettings?.nibAnchor ?? { 
-      x: handAsset.sizePx.w * 0.75, // Default nib position
-      y: handAsset.sizePx.h * 0.87 
+      x: toolAsset.tipAnchor.x, // Use tool's tip position as default
+      y: toolAsset.tipAnchor.y
     }
   );
   const [scale, setScale] = useState(initialSettings?.scale ?? 1);
@@ -137,8 +137,8 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
       const ti = toolImageRef.current;
       const tiw = ti.naturalWidth || ti.width;
       const tih = ti.naturalHeight || ti.height;
-      // Preview tool scale relative to hand preview scale so it looks natural
-      const st = Math.min(1.25, Math.max(0.25, (handAsset.sizePx.h / Math.max(1, tih)) * 0.22));
+      // Preview tool scale relative to hand preview scale so it looks natural (reduced size)
+      const st = Math.min(0.8, Math.max(0.15, (handAsset.sizePx.h / Math.max(1, tih)) * 0.15));
       const tipX = toolAsset.tipAnchor.x;
       const tipY = toolAsset.tipAnchor.y;
       const drawX = Math.round(nibX - tipX * st);
@@ -154,7 +154,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
       ctx.fill();
     }
 
-  }, [handImageLoaded, toolImageLoaded, nibAnchor, mirror, handAsset.sizePx, toolAsset.tipAnchor.x, toolAsset.tipAnchor.y]);
+  }, [handImageLoaded, toolImageLoaded, nibAnchor, mirror, scale, handAsset.sizePx, toolAsset.tipAnchor.x, toolAsset.tipAnchor.y]);
 
   // Handle canvas click for nib positioning
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -211,7 +211,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                 onClick={handleCanvasClick}
               />
               <p className="text-xs text-gray-400 mt-2">
-                Click on the hand image to set nib position (red crosshairs)
+                Click on the hand image to set tool tip position
               </p>
             </div>
 
@@ -333,7 +333,13 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                   onChange={(e) => {
                     const v = Number(e.target.value);
                     setTipBacktrackPx(v);
-                    onLiveChange?.({ tipBacktrackPx: v });
+                    onLiveChange?.({ 
+                      tipBacktrackPx: v,
+                      extraOffset: {
+                        x: calibrationOffset.x,
+                        y: calibrationOffset.y
+                      }
+                    });
                   }}
                   className="w-full"
                 />
@@ -360,7 +366,18 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                     max="2.0"
                     step="0.1"
                     value={scale}
-                    onChange={(e) => setScale(Number(e.target.value))}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setScale(v);
+                      // Send live update for scale changes
+                      onLiveChange?.({ 
+                        scale: v,
+                        extraOffset: {
+                          x: calibrationOffset.x,
+                          y: calibrationOffset.y
+                        }
+                      });
+                    }}
                     className="w-full"
                   />
                   <div className="text-xs text-gray-500 text-center">{scale.toFixed(1)}x</div>
@@ -371,7 +388,18 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                     <input
                       type="checkbox"
                       checked={mirror}
-                      onChange={(e) => setMirror(e.target.checked)}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setMirror(checked);
+                        // Send live update for mirror changes
+                        onLiveChange?.({ 
+                          mirror: checked,
+                          extraOffset: {
+                            x: calibrationOffset.x,
+                            y: calibrationOffset.y
+                          }
+                        });
+                      }}
                     />
                     Mirror (Left/Right)
                   </label>
@@ -379,7 +407,18 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                     <input
                       type="checkbox"
                       checked={showForeground}
-                      onChange={(e) => setShowForeground(e.target.checked)}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setShowForeground(checked);
+                        // Send live update for foreground visibility changes
+                        onLiveChange?.({ 
+                          showForeground: checked,
+                          extraOffset: {
+                            x: calibrationOffset.x,
+                            y: calibrationOffset.y
+                          }
+                        });
+                      }}
                     />
                     Show Foreground
                   </label>
@@ -401,15 +440,27 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
         <div className="px-4 py-3 border-t border-gray-700 flex justify-end gap-2">
           <button
             onClick={() => {
+              const defaultNibAnchor = { 
+                x: toolAsset.tipAnchor.x, 
+                y: toolAsset.tipAnchor.y 
+              };
               setTipBacktrackPx(0);
               setCalibrationOffset({ x: 0, y: 0 });
-              setNibAnchor({ 
-                x: handAsset.sizePx.w * 0.75, 
-                y: handAsset.sizePx.h * 0.87 
-              });
+              setNibAnchor(defaultNibAnchor);
               setScale(1);
               setMirror(false);
               setShowForeground(true);
+              
+              // Send live update for reset
+              onLiveChange?.({ 
+                tipBacktrackPx: 0,
+                calibrationOffset: { x: 0, y: 0 },
+                nibAnchor: defaultNibAnchor,
+                scale: 1,
+                mirror: false,
+                showForeground: true,
+                extraOffset: { x: 0, y: 0 }
+              });
             }}
             className="px-3 py-1 bg-gray-700 rounded text-white hover:bg-gray-600"
           >

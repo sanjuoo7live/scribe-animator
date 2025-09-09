@@ -341,6 +341,7 @@ const CanvasEditorRefactored: React.FC = () => {
     setTextPropertiesModalId(null);
   }, []);
 
+
   const { handleMouseDown, handleMouseMove, handleMouseUp } = usePointerEvents(
     tool,
     handleCanvasClick,
@@ -552,7 +553,7 @@ const CanvasEditorRefactored: React.FC = () => {
         onDragMove: handleObjectDragMove,
         onTransformEnd: handleObjectTransform,
         onDblClick: (id: string) => {
-          // Handle double-click actions
+          // Double-click opens only the Text properties modal
           if (obj.type === 'text') {
             openTextPropertiesModal(id);
           }
@@ -813,6 +814,7 @@ const CanvasEditorRefactored: React.FC = () => {
             textObjId={textPropertiesModalId}
           />
         )}
+
       </div>
     </CanvasProvider>
   );

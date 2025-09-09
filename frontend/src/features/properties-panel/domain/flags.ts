@@ -1,8 +1,8 @@
 export const FEATURE_FLAGS = {
-  handSmoothing: false,
-  cornerLifts: false,
+  handSmoothing: true,
+  cornerLifts: true,
   uploads: false,
-  calibrators: false,
+  calibrators: true,
 } as const;
 
 export type FeatureFlag = keyof typeof FEATURE_FLAGS;

@@ -17,7 +17,6 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
   const [scale, setScale] = useState<number>(initialScale);
   const [mirror, setMirror] = useState(false);
   // Foreground always on now; control removed
-  const [loadingPreset, setLoadingPreset] = useState(false);
 
   const hands = useMemo(() => {
     // Keep original URLs with BACKEND_BASE placeholder for later resolution
@@ -96,47 +95,7 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
     throw lastErr || new Error('No working backend base for /api/assets');
   };
 
-  const applyDirectDemoPreset = async () => {
-    try {
-      setLoadingPreset(true);
-      const base = await resolveWorkingBase();
-      const HAND_BG_URL = `${base}/api/assets/hand_bg.png`;
-      const HAND_FG_URL = `${base}/api/assets/hand_fg.png`;
-      const TOOL_URL = `${base}/api/assets/tool.png`;
-
-      const [hb, tb] = await Promise.all([measureImage(HAND_BG_URL), measureImage(TOOL_URL)]);
-
-      const demoHand: HandAsset = {
-        id: 'demo-hand-right',
-        name: 'Demo Right Hand',
-        imageBg: HAND_BG_URL,
-        imageFg: HAND_FG_URL,
-        sizePx: { w: hb.w, h: hb.h },
-        gripBase: { x: Math.round(hb.w * 0.46), y: Math.round(hb.h * 0.55) },
-        gripForward: { x: Math.round(hb.w * 0.66), y: Math.round(hb.h * 0.56) },
-        naturalTiltDeg: -5,
-        mirrorable: true,
-      };
-      const demoTool: ToolAsset = {
-        id: 'demo-tool-pen',
-        name: 'Demo Pen',
-        image: TOOL_URL,
-        sizePx: { w: tb.w, h: tb.h },
-        socketBase: { x: Math.round(tb.w * 0.62), y: Math.round(tb.h * 0.50) },
-        socketForward: { x: Math.round(tb.w * 0.94), y: Math.round(tb.h * 0.50) },
-        tipAnchor: { x: Math.round(tb.w * 0.10), y: Math.round(tb.h * 0.66) },
-        rotationOffsetDeg: 0,
-      };
-
-      // Apply directly, mirroring the Run Direct Demo asset selection
-      onApply({ hand: demoHand, tool: demoTool, scale: 0.35, mirror });
-    } catch (e) {
-      console.error('Failed to apply direct demo preset', e);
-      alert('Failed to load demo assets from backend. Ensure the backend is running and assets exist under /api/assets');
-    } finally {
-      setLoadingPreset(false);
-    }
-  };
+  // Removed Direct Demo Preset functionality
 
   return (
     <AssetLibraryPopup
@@ -150,21 +109,6 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
       footerText="Select hand and tool combinations • Drag header to move • Press ESC to close"
     >
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
-        {/* One-click direct demo preset */}
-        <div className="space-y-2">
-          <button
-            type="button"
-            onClick={applyDirectDemoPreset}
-            disabled={loadingPreset}
-            className={`w-full p-2 rounded border text-sm ${loadingPreset ? 'bg-gray-700 border-gray-600 text-gray-400' : 'bg-emerald-600 hover:bg-emerald-500 border-emerald-400 text-white'}`}
-          >
-            ▶ Use Direct Demo Preset (backend images)
-          </button>
-          <div className="text-xs text-gray-400">
-            Loads hand_bg.png, hand_fg.png, and tool.png from your backend /api/assets just like "Run Direct Demo".
-          </div>
-        </div>
-
         {/* Hand and Tool Selection */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>

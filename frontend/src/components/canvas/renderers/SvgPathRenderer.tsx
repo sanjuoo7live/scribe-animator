@@ -212,6 +212,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
   const drawOptions = obj.properties?.drawOptions || null;
   // Fill strategy wiring
   const fillKind: 'afterAll' | 'perPath' | 'batched' = (drawOptions?.fillStrategy?.kind as any) || 'afterAll';
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const mode: 'standard' | 'preview' | 'batched' = (drawOptions?.mode as any) || (fillKind === 'perPath' ? 'preview' : fillKind === 'batched' ? 'batched' : 'standard');
   const batchesN: number = Math.max(2, Number(drawOptions?.fillStrategy?.batchesN || 4));
   // const previewStrokeColor = drawOptions?.previewStroke?.color || '#3b82f6';
@@ -296,7 +297,8 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
       }
     }
 
-    if (handFollowerSettings.mode === 'professional' && handFollowerSettings.handAsset && handFollowerSettings.toolAsset) {
+    // Render follower whenever enabled and assets are present. Do not require a specific mode.
+    if (handFollowerSettings.handAsset && handFollowerSettings.toolAsset) {
       const userBacktrack = typeof handFollowerSettings.tipBacktrackPx === 'number' ? handFollowerSettings.tipBacktrackPx : null;
       const cap = (activePath.strokeLinecap || activePath.lineCap || 'round') as 'round'|'butt'|'square';
       const logicalW = (activePath.strokeWidth ?? 3);

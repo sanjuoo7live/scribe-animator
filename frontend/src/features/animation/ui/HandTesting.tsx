@@ -3,9 +3,11 @@ import { useAppStore } from '../../../store/appStore';
 import { HAND_ASSETS, TOOL_ASSETS, HAND_TOOL_COMPATIBILITY, HandAsset as ProHandAsset, ToolAsset as ProToolAsset, Size2D } from '../../../types/handAssets';
 import { HandToolCompositor } from '../../../utils/handToolCompositor';
 import ThreeLayerDemo from '../../../components/shared/ThreeLayerDemo';
+import { HandPresetTest } from '../../../components/hands/HandPresetTest';
+import { ToolPresetTest } from '../../../components/tools/ToolPresetTest';
 
 const HandTesting: React.FC = () => {
-  const [testingMode, setTestingMode] = useState<'simple' | 'professional' | 'demo'>('demo');
+  const [testingMode, setTestingMode] = useState<'simple' | 'professional' | 'demo' | 'presets' | 'tools'>('demo');
   
   // Professional mode (three-layer system)
   const [selectedHand, setSelectedHand] = useState<string>('hand_right_pen_grip');
@@ -332,7 +334,7 @@ http://localhost:3001/api/assets/tool.png`);
       {/* Mode Selection */}
       <div className="space-y-4">
         <div className="text-sm font-semibold text-gray-300">Testing Mode</div>
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-5 gap-2">
           <button
             onClick={() => setTestingMode('simple')}
             className={`p-2 rounded-lg border transition-all text-xs ${
@@ -365,6 +367,28 @@ http://localhost:3001/api/assets/tool.png`);
           >
             <div className="font-semibold">🎯 Demo</div>
             <div className="opacity-75">How it works</div>
+          </button>
+          <button
+            onClick={() => setTestingMode('presets')}
+            className={`p-2 rounded-lg border transition-all text-xs ${
+              testingMode === 'presets'
+                ? 'bg-green-600 border-green-500 text-white'
+                : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600'
+            }`}
+          >
+            <div className="font-semibold">📁 Presets</div>
+            <div className="opacity-75">Phase 0 & 1</div>
+          </button>
+          <button
+            onClick={() => setTestingMode('tools')}
+            className={`p-2 rounded-lg border transition-all text-xs ${
+              testingMode === 'tools'
+                ? 'bg-cyan-600 border-cyan-500 text-white'
+                : 'bg-gray-700 border-gray-600 text-gray-300 hover:bg-gray-600'
+            }`}
+          >
+            <div className="font-semibold">🔧 Tools</div>
+            <div className="opacity-75">Library</div>
           </button>
         </div>
       </div>
@@ -570,6 +594,22 @@ http://localhost:3001/api/assets/tool.png`);
       {/* Three-Layer Demo Mode */}
       {testingMode === 'demo' && (
         <ThreeLayerDemo />
+      )}
+
+      {/* Hand Preset Testing Mode */}
+      {testingMode === 'presets' && (
+        <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-600">
+          <div className="text-lg font-semibold mb-4">📁 Hand Preset Manager (Phase 0 & 1)</div>
+          <HandPresetTest />
+        </div>
+      )}
+
+      {/* Tool Preset Testing Mode */}
+      {testingMode === 'tools' && (
+        <div className="bg-gray-800/50 rounded-lg p-4 border border-gray-600">
+          <div className="text-lg font-semibold mb-4">🔧 Independent Tools Library</div>
+          <ToolPresetTest />
+        </div>
       )}
     </div>
   );

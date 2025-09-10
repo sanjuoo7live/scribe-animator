@@ -48,6 +48,7 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
   const prevAngleRef = useRef<number | undefined>(undefined);
   const lastProgressRef = useRef<number>(-1);
   const lastUpdateTsRef = useRef<number>(0);
+  const bootLoggedRef = useRef(false);
 
   const smoothAngle = (prev: number | undefined, next: number, factor = 0.35) => {
     if (prev === undefined) return next;
@@ -141,18 +142,22 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
   }, [toolAsset, scale]);
 
   // Initialize assets and add inner group once
-  // Initialize assets and add inner group once
-  // Only create the group and load assets when pathData, handAsset, or toolAsset changes
+  // Only create the group and load assets when core inputs change (assets/path/visibility).
+  // DO NOT depend on getFrenetFramePosition or pathMatrix here to avoid remount loops.
   useEffect(() => {
-    // When mounting into an external layer, mountRef is not used.
-    // Only block when neither a wrapper ref nor an external layer exists.
-    if ((!mountLayer && !mountRef.current) || !pathData || !handAsset || !toolAsset || !visible) return;
+    // Defer until required inputs are present. Do not block on mountRef; we'll attach when available.
+    if (!pathData || !handAsset || !toolAsset || !visible) return;
     let cancelled = false;
     const setup = async () => {
       HandToolCompositor.resetDebugState();
       const renderer = new ThreeLayerHandRenderer();
       rendererRef.current = renderer;
+      if (!bootLoggedRef.current) {
+        console.log('🤚 [FOLLOWER BOOT] setup start', { hasMountLayer: !!mountLayer, visible, progress });
+        bootLoggedRef.current = true;
+      }
       await renderer.loadAssets(handAsset, toolAsset);
+      console.log('🤚 [FOLLOWER BOOT] assets loaded');
       // Initial position
       const initProg = progress <= 0 ? 0.0001 : progress;
       const p = getFrenetFramePosition(initProg, tipBacktrackPx);
@@ -179,21 +184,51 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
         // nibAnchor affects both tool pivot offset and compositor math
         nibAnchor,
       });
+      console.log('🤚 [FOLLOWER BOOT] group created', { posX: Math.round(posX), posY: Math.round(posY), angle: Number((angle*180/Math.PI).toFixed(1)) });
       if (cancelled) { group.destroy(); return; }
       innerGroupRef.current = group;
-      if (mountLayer) {
-        // Mount directly into provided layer
-        mountLayer.add(group);
-        try { group.moveToTop(); } catch {}
-        try { mountLayer.batchDraw(); } catch {}
-        try { mountLayer.getStage()?.batchDraw(); } catch {}
-      } else {
-        // Default: mount inside wrapper Group in render tree
-        mountRef.current!.add(group);
-        // Ensure the hand sits above other content in the same layer
-        try { mountRef.current!.moveToTop(); } catch {}
-        mountRef.current!.getLayer()?.batchDraw();
-      }
+
+      const attach = () => {
+        if (cancelled) return;
+        if (mountLayer) {
+          try {
+            const st = mountLayer.getStage();
+            if (!st) {
+              // Stage not ready yet; retry next frame
+              requestAnimationFrame(attach);
+              return;
+            }
+            mountLayer.add(group);
+            try { group.moveToTop(); } catch {}
+            try { mountLayer.draw(); } catch {}
+            try { mountLayer.batchDraw(); } catch {}
+            try { st.draw(); } catch {}
+            try { st.batchDraw(); } catch {}
+            // Nudge one more paint on next frame to guarantee first-visibility
+            requestAnimationFrame(() => { try { st.batchDraw(); } catch {} });
+            console.log('🤚 [FOLLOWER BOOT] attached to overlay layer');
+            return;
+          } catch (err) {
+            console.warn('🤚 [FOLLOWER BOOT] overlay attach failed; falling back to wrapper', err);
+          }
+        }
+        if (mountRef.current) {
+          mountRef.current.add(group);
+          try { mountRef.current.moveToTop(); } catch {}
+          const layer = mountRef.current.getLayer();
+          try { layer?.draw(); } catch {}
+          try { layer?.batchDraw(); } catch {}
+          const st = mountRef.current.getStage();
+          try { st?.draw(); } catch {}
+          try { st?.batchDraw(); } catch {}
+          requestAnimationFrame(() => { try { st?.batchDraw(); } catch {} });
+          console.log('🤚 [FOLLOWER BOOT] attached to wrapper group');
+          return;
+        }
+        // Ref not ready yet; try on next frame
+        requestAnimationFrame(attach);
+      };
+      attach();
     };
     setup();
     return () => {
@@ -206,7 +241,7 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
       rendererRef.current = null;
       prevAngleRef.current = undefined;
     };
-  }, [getFrenetFramePosition, handAsset, toolAsset, displayScale, visible, mirror, showForeground, pathData, mountLayer]);
+  }, [handAsset, toolAsset, pathData, visible, mountLayer]);
   // Only update position on progress and calibration changes
   useEffect(() => {
     if (!rendererRef.current || !innerGroupRef.current || !pathData || !visible) return;
@@ -251,8 +286,9 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
   }, [progress, tipBacktrackPx, handAsset, toolAsset, displayScale, visible, mirror, showForeground, extraOffset, pathData, nibAnchor, pathMatrix, mountLayer]);
 
   if (!visible) return null;
-  // If mounting to an external layer, render nothing
-  if (mountLayer) return null;
+  // Always render a local wrapper group as a safe fallback; when an external
+  // mountLayer is provided we still attach the composed group there, leaving
+  // this wrapper empty.
   return <Group ref={mountRef} listening={listening} />;
 };
 

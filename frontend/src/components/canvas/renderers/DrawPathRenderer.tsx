@@ -15,27 +15,29 @@ const ToolFollower: React.FC<{
   penOffset?: { x: number; y: number };
   penScale?: number;
 }> = ({ x, y, angle, penType = 'pen', handAsset, handOffset, handScale = 1, penOffset, penScale = 1 }) => {
-  // Helper functions for pen and hand assets (image paths)
+  // Helper functions for pen and hand assets (using new preset system)
   const getPenAsset = (penType: string): string => {
+    // Use tool preset system - fallback to basic tool images
     switch (penType) {
-      case 'pencil': return '/assets/tools/pencil.svg';
-      case 'marker': return '/assets/tools/marker.svg';
-      case 'brush': return '/assets/tools/brush.svg';
-      default: return '/assets/tools/pen.svg';
+      case 'pencil': return '/assets/tools/pencil_yellow_standard/tool.png';
+      case 'marker': return '/assets/tools/pen_black_thick/tool.png'; // Use thick pen as marker substitute
+      case 'brush': return '/assets/tools/pen_black_thick/tool.png'; // Use thick pen as brush substitute
+      default: return '/assets/tools/pen_black_slim/tool.png'; // Default to slim pen
     }
   };
 
   const getHandAsset = (handAsset: string | undefined): string | null => {
     if (!handAsset || handAsset === 'none') return null;
+    // Use hand preset system - fallback to basic hand images
     const map: Record<string, string> = {
-      'right-light': '/assets/tools/hand-right-light.svg',
-      'right-medium': '/assets/tools/hand-right-medium.svg',
-      'right-dark': '/assets/tools/hand-right-dark.svg',
-      'left-light': '/assets/tools/hand-left-light.svg',
-      'left-medium': '/assets/tools/hand-left-medium.svg',
-      'left-dark': '/assets/tools/hand-left-dark.svg',
+      'right-light': '/assets/hands/Right_hand_pen/fg.png',
+      'right-medium': '/assets/hands/Right_hand_pen/fg.png',
+      'right-dark': '/assets/hands/Right_hand_pen/fg.png',
+      'left-light': '/assets/hands/Right_hand_pen/fg.png', // Could be mirrored in CSS
+      'left-medium': '/assets/hands/Right_hand_pen/fg.png',
+      'left-dark': '/assets/hands/Right_hand_pen/fg.png',
     };
-    // fallback to right-light
+    // fallback to right hand
     const key = handAsset in map ? handAsset : 'right-light';
     return map[key];
   };

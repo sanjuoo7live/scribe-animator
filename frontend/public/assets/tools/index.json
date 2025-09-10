@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "sets": [
+    {
+      "id": "pen_black_thick",
+      "path": "pen_black_thick/preset.json"
+    },
+    {
+      "id": "pen_black_slim",
+      "path": "pen_black_slim/preset.json"
+    },
+    {
+      "id": "pencil_yellow_standard",
+      "path": "pencil_yellow_standard/preset.json"
+    }
+  ]
+}

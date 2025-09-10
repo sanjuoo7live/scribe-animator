@@ -34,12 +34,12 @@ export class HandAssetManager {
       isCustom: false
     },
     
-    // Fallback SVG Assets (for compatibility)
+    // Fallback Hand Assets (using preset system)
     {
       id: 'right-light-pencil',
       name: 'Right Hand (Light) - Pencil',
-      imagePath: '/assets/tools/hand-right-light.svg',
-      imageType: 'svg',
+      imagePath: '/assets/hands/Right_hand_pen/fg.png',
+      imageType: 'png',
       tipAnchor: { x: 0.7, y: 0.8 }, // Normalized coordinates
       rotationOffset: -45, // Degrees
       scale: 1.0,
@@ -48,8 +48,8 @@ export class HandAssetManager {
     {
       id: 'right-medium-pencil',
       name: 'Right Hand (Medium) - Pencil',
-      imagePath: '/assets/tools/hand-right-medium.svg',
-      imageType: 'svg',
+      imagePath: '/assets/hands/Right_hand_pen/fg.png',
+      imageType: 'png',
       tipAnchor: { x: 0.7, y: 0.8 },
       rotationOffset: -45,
       scale: 1.0,
@@ -58,20 +58,20 @@ export class HandAssetManager {
     {
       id: 'right-dark-pencil',
       name: 'Right Hand (Dark) - Pencil',
-      imagePath: '/assets/tools/hand-right-dark.svg',
-      imageType: 'svg',
+      imagePath: '/assets/hands/Right_hand_pen/fg.png',
+      imageType: 'png',
       tipAnchor: { x: 0.7, y: 0.8 },
       rotationOffset: -45,
       scale: 1.0,
       category: 'hand'
     },
     
-    // Left Hand Assets
+    // Left Hand Assets (mirrored from right hand)
     {
       id: 'left-light-pencil',
       name: 'Left Hand (Light) - Pencil',
-      imagePath: '/assets/tools/hand-left-light.svg',
-      imageType: 'svg',
+      imagePath: '/assets/hands/Right_hand_pen/fg.png',
+      imageType: 'png',
       tipAnchor: { x: 0.3, y: 0.8 }, // Mirrored for left hand
       rotationOffset: 45, // Opposite rotation for left hand
       scale: 1.0,
@@ -80,8 +80,8 @@ export class HandAssetManager {
     {
       id: 'left-medium-pencil',
       name: 'Left Hand (Medium) - Pencil',
-      imagePath: '/assets/tools/hand-left-medium.svg',
-      imageType: 'svg',
+      imagePath: '/assets/hands/Right_hand_pen/fg.png',
+      imageType: 'png',
       tipAnchor: { x: 0.3, y: 0.8 },
       rotationOffset: 45,
       scale: 1.0,
@@ -90,20 +90,20 @@ export class HandAssetManager {
     {
       id: 'left-dark-pencil',
       name: 'Left Hand (Dark) - Pencil',
-      imagePath: '/assets/tools/hand-left-dark.svg',
-      imageType: 'svg',
+      imagePath: '/assets/hands/Right_hand_pen/fg.png',
+      imageType: 'png',
       tipAnchor: { x: 0.3, y: 0.8 },
       rotationOffset: 45,
       scale: 1.0,
       category: 'hand'
     },
 
-    // Tool Only Assets (for minimal hand follower)
+    // Tool Only Assets (using preset system)
     {
       id: 'pencil-only',
       name: 'Pencil Only',
-      imagePath: '/assets/tools/pencil.svg',
-      imageType: 'svg',
+      imagePath: '/assets/tools/pencil_yellow_standard/tool.png',
+      imageType: 'png',
       tipAnchor: { x: 0.5, y: 1.0 }, // Tip of pencil
       rotationOffset: 0,
       scale: 0.8,
@@ -112,8 +112,8 @@ export class HandAssetManager {
     {
       id: 'pen-only',
       name: 'Pen Only',
-      imagePath: '/assets/tools/pen.svg',
-      imageType: 'svg',
+      imagePath: '/assets/tools/pen_black_slim/tool.png',
+      imageType: 'png',
       tipAnchor: { x: 0.5, y: 1.0 },
       rotationOffset: 0,
       scale: 0.8,
@@ -122,8 +122,8 @@ export class HandAssetManager {
     {
       id: 'marker-only',
       name: 'Marker Only',
-      imagePath: '/assets/tools/marker.svg',
-      imageType: 'svg',
+      imagePath: '/assets/tools/pen_black_thick/tool.png',
+      imageType: 'png',
       tipAnchor: { x: 0.5, y: 1.0 },
       rotationOffset: 0,
       scale: 0.8,
@@ -132,8 +132,8 @@ export class HandAssetManager {
     {
       id: 'brush-only',
       name: 'Brush Only',
-      imagePath: '/assets/tools/brush.svg',
-      imageType: 'svg',
+      imagePath: '/assets/tools/pen_black_thick/tool.png',
+      imageType: 'png',
       tipAnchor: { x: 0.5, y: 1.0 },
       rotationOffset: 0,
       scale: 0.8,

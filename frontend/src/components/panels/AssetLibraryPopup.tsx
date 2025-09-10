@@ -37,48 +37,44 @@ const AssetLibraryPopup: React.FC<AssetLibraryPopupProps> = ({
   const [resizeStart, setResizeStart] = useState({ x: 0, y: 0, width: 0, height: 0, posX: 0, posY: 0 });
   const popupRef = useRef<HTMLDivElement>(null);
 
+  // Initialize position/size only once per open
+  const didInitRef = useRef(false);
+  useEffect(() => {
+    if (!isOpen) { didInitRef.current = false; return; }
+    if (didInitRef.current) return;
+    const nextWidth = typeof initialWidth === 'number'
+      ? Math.min(window.innerWidth, Math.max(minWidth || 400, initialWidth))
+      : size.width;
+    const nextHeight = typeof initialHeight === 'number'
+      ? Math.min(window.innerHeight, Math.max(minHeight || 400, initialHeight))
+      : size.height;
+    setSize({ width: nextWidth, height: nextHeight });
+    const nextX = typeof initialX === 'number'
+      ? Math.max(0, Math.min(window.innerWidth - nextWidth, initialX))
+      : position.x;
+    const nextY = typeof initialY === 'number'
+      ? Math.max(0, Math.min(window.innerHeight - nextHeight, initialY))
+      : position.y;
+    setPosition({ x: nextX, y: nextY });
+    didInitRef.current = true;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, initialX, initialY, initialWidth, initialHeight, minWidth, minHeight]);
+
   // Handle ESC key
   useEffect(() => {
-    if (isOpen) {
-      // Apply initial size first
-      const nextWidth = typeof initialWidth === 'number'
-        ? Math.min(window.innerWidth, Math.max(minWidth || 400, initialWidth))
-        : size.width;
-      const nextHeight = typeof initialHeight === 'number'
-        ? Math.min(window.innerHeight, Math.max(minHeight || 400, initialHeight))
-        : size.height;
-      if (nextWidth !== size.width || nextHeight !== size.height) {
-        setSize({ width: nextWidth, height: nextHeight });
-      }
-
-      // Then position with clamping based on size
-      const nextX = typeof initialX === 'number'
-        ? Math.max(0, Math.min(window.innerWidth - nextWidth, initialX))
-        : position.x;
-      const nextY = typeof initialY === 'number'
-        ? Math.max(0, Math.min(window.innerHeight - nextHeight, initialY))
-        : position.y;
-      if (nextX !== position.x || nextY !== position.y) {
-        setPosition({ x: nextX, y: nextY });
-      }
-    }
-
+    if (!isOpen) return;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && isOpen) {
+      if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
         onClose();
       }
     };
-
-    if (isOpen) {
-      document.addEventListener('keydown', handleKeyDown, true);
-    }
-
+    document.addEventListener('keydown', handleKeyDown, true);
     return () => {
       document.removeEventListener('keydown', handleKeyDown, true);
     };
-  }, [isOpen, onClose, initialX, initialY, initialWidth, initialHeight, minWidth, minHeight, size.width, size.height, position.x, position.y]);
+  }, [isOpen, onClose]);
 
   // Handle dragging
   const handleMouseDown = (e: React.MouseEvent) => {

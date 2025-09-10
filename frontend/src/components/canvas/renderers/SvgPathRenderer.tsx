@@ -84,6 +84,13 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
   const groupScaleY = (obj.properties?.scaleY ?? 1) * (animatedProps.scaleY ?? 1);
 
   const debug = !!obj.properties?.debug?.logRenderer;
+  // Global quick toggle for hand debug via URL or localStorage
+  const handDebug = React.useMemo(() => {
+    try {
+      const q = typeof window !== 'undefined' ? window.location.search : '';
+      return (typeof localStorage !== 'undefined' && localStorage.getItem('HAND_DEBUG') === '1') || /(?:^|[?&])handdebug=1(?:&|$)/i.test(q);
+    } catch { return false; }
+  }, []);
   const debugLog = React.useCallback((level: 'log' | 'warn' | 'error', ...args: any[]) => {
     if (debug) (console as any)[level](...args);
   }, [debug]);
@@ -277,12 +284,35 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
       }
     }
 
-    if (!activePath?.d) return { node: null, activePath: null };
+    // Fallback: if drawable paths are not yet ready (e.g., immediately after
+    // vectorization), try to grab the first available raw path so the hand can
+    // mount on first play. This will be replaced automatically once
+    // drawablePaths populate.
+    if (!activePath?.d) {
+      const raw = Array.isArray(obj.properties?.paths) && obj.properties.paths.length > 0
+        ? String(obj.properties.paths[0]?.d || '')
+        : '';
+      if (raw) {
+        activePath = {
+          d: raw,
+          len: getPathTotalLength(raw) || 0,
+          index: 0,
+          transform: ((obj.properties?.paths[0] as any)?.transform as number[] | undefined) || [1,0,0,1,0,0],
+          stroke: (obj.properties?.paths[0] as any)?.stroke,
+          strokeWidth: (obj.properties?.paths[0] as any)?.strokeWidth,
+          fill: (obj.properties?.paths[0] as any)?.fill,
+          fillRule: (obj.properties?.paths[0] as any)?.fillRule,
+        } as any;
+        localProgress = 0;
+      } else {
+        return { node: null, activePath: null };
+      }
+    }
 
     const cpActive = activePath as CachedParsedPath;
 
     // Simple debug logging to avoid interference
-    if (debug && activePath) {
+    if ((debug || handDebug) && activePath) {
       const now = Date.now();
       const lastLogKey = `hand-debug-${obj.id}`;
       const lastLogTime = (window as any)[lastLogKey] || 0;
@@ -335,7 +365,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
             }
 
             // 🔍 Add curvature analysis logging
-            if (debug) {
+            if (debug || handDebug) {
               // eslint-disable-next-line no-console
               console.log('🎯 [HAND DEBUG] Curvature Analysis', {
                 id: obj.id,
@@ -352,7 +382,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
           }
         }
       } catch (error) {
-        if (debug) {
+        if (debug || handDebug) {
           console.error('🤚 [HAND DEBUG] Curvature calculation error:', error);
         }
       }
@@ -395,7 +425,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
             toolAsset={handFollowerSettings.toolAsset}
             scale={handFollowerSettings.scale || 1}
             visible={handFollowerSettings.visible !== false}
-            debug={!!handFollowerSettings.debug}
+            debug={!!handFollowerSettings.debug || handDebug}
             mirror={!!handFollowerSettings.mirror}
             showForeground={handFollowerSettings.showForeground !== false}
             extraOffset={handFollowerSettings.calibrationOffset || handFollowerSettings.offset || { x: 0, y: 0 }}
@@ -431,6 +461,36 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
 
   const handNode = handFollowerMemo.node;
   const activeLutPath = handFollowerMemo.activePath;
+
+  // One-time boot log for this object when follower is enabled
+  React.useEffect(() => {
+    if (!obj.properties?.handFollower?.enabled) return;
+    const key = `hand-boot-${obj.id}`;
+    if ((window as any)[key]) return;
+    (window as any)[key] = true;
+    console.log('🤚 [HAND BOOT] Init', {
+      id: obj.id,
+      hasOverlay: !!overlayLayer,
+      paths: Array.isArray(obj.properties?.paths) ? obj.properties.paths.length : 0,
+      totalLen,
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [obj.id, obj.properties?.handFollower?.enabled]);
+
+  // Log when follower node is null on first enable
+  React.useEffect(() => {
+    if (!obj.properties?.handFollower?.enabled) return;
+    const key = `hand-null-${obj.id}`;
+    if (!handNode && !(window as any)[key]) {
+      (window as any)[key] = true;
+      console.warn('🤚 [HAND WARN] Follower node null on first render', {
+        id: obj.id,
+        hasOverlay: !!overlayLayer,
+        totalLen,
+        drawablePaths: drawablePaths.length,
+      });
+    }
+  }, [handNode, obj.properties?.handFollower?.enabled, obj.id, overlayLayer, totalLen, drawablePaths.length]);
 
   // Build LUT lazily outside render to avoid blocking
   React.useEffect(() => {

@@ -102,7 +102,7 @@ export class HandAssetManager {
     {
       id: 'pencil-only',
       name: 'Pencil Only',
-      imagePath: '/assets/tools/pencil_yellow_standard/tool.png',
+      imagePath: '/assets/tools/pencil_yellow_standard/image.png',
       imageType: 'png',
       tipAnchor: { x: 0.5, y: 1.0 }, // Tip of pencil
       rotationOffset: 0,
@@ -112,7 +112,7 @@ export class HandAssetManager {
     {
       id: 'pen-only',
       name: 'Pen Only',
-      imagePath: '/assets/tools/pen_black_slim/tool.png',
+      imagePath: '/assets/tools/pen_black_slim/image.png',
       imageType: 'png',
       tipAnchor: { x: 0.5, y: 1.0 },
       rotationOffset: 0,
@@ -122,7 +122,7 @@ export class HandAssetManager {
     {
       id: 'marker-only',
       name: 'Marker Only',
-      imagePath: '/assets/tools/pen_black_thick/tool.png',
+      imagePath: '/assets/tools/pen_black_thick/image.png',
       imageType: 'png',
       tipAnchor: { x: 0.5, y: 1.0 },
       rotationOffset: 0,
@@ -132,7 +132,7 @@ export class HandAssetManager {
     {
       id: 'brush-only',
       name: 'Brush Only',
-      imagePath: '/assets/tools/pen_black_thick/tool.png',
+      imagePath: '/assets/tools/pen_black_thick/image.png',
       imageType: 'png',
       tipAnchor: { x: 0.5, y: 1.0 },
       rotationOffset: 0,

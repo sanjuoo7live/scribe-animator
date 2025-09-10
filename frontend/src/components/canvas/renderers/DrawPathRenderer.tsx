@@ -19,10 +19,10 @@ const ToolFollower: React.FC<{
   const getPenAsset = (penType: string): string => {
     // Use tool preset system - fallback to basic tool images
     switch (penType) {
-      case 'pencil': return '/assets/tools/pencil_yellow_standard/tool.png';
-      case 'marker': return '/assets/tools/pen_black_thick/tool.png'; // Use thick pen as marker substitute
-      case 'brush': return '/assets/tools/pen_black_thick/tool.png'; // Use thick pen as brush substitute
-      default: return '/assets/tools/pen_black_slim/tool.png'; // Default to slim pen
+      case 'pencil': return '/assets/tools/pencil_yellow_standard/image.png';
+      case 'marker': return '/assets/tools/pen_black_thick/image.png'; // Use thick pen as marker substitute
+      case 'brush': return '/assets/tools/pen_black_thick/image.png'; // Use thick pen as brush substitute
+      default: return '/assets/tools/pen_black_slim/image.png'; // Default to slim pen
     }
   };
 

@@ -44,7 +44,10 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
 
   // Preview canvas
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const previewWrapRef = useRef<HTMLDivElement>(null);
+  const [previewSize, setPreviewSize] = useState<{ w: number; h: number }>({ w: 420, h: 420 });
   const [images, setImages] = useState<{ bg?: HTMLImageElement; fg?: HTMLImageElement; tool?: HTMLImageElement }>({});
+  const [handThumbs, setHandThumbs] = useState<Record<string, string>>({});
 
   // Load presets from manifest
   useEffect(() => {
@@ -62,9 +65,9 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
         }
         if (!mounted) return;
         setPresets(loaded);
-        // Initial selection: preserve prior if compatible, else first
-        const initialId = loaded.find(p => p.id === initialHand?.id)?.id || loaded[0]?.id || null;
-        setSelectedPresetId(initialId);
+        // Flow: wait for explicit click unless caller passed an initial hand
+        const initialId = loaded.find(p => p.id === initialHand?.id)?.id || null;
+        if (initialId) setSelectedPresetId(initialId);
 
         // Load optional tool presets
         const toolEntries = await ToolPresetManager.getAvailablePresets();
@@ -89,6 +92,30 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
     return () => { mounted = false; };
   }, [open, initialHand?.id]);
 
+  // Responsive preview sizing without feedback loops (window resize + initial mount)
+  useEffect(() => {
+    const update = () => {
+      const wrap = previewWrapRef.current;
+      const canvas = canvasRef.current;
+      if (!wrap || !canvas) return;
+      const rect = wrap.getBoundingClientRect();
+      const side = Math.max(260, Math.floor(Math.min(rect.width, rect.height)));
+      const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
+      // CSS size
+      canvas.style.width = side + 'px';
+      canvas.style.height = side + 'px';
+      // Pixel buffer size
+      const pxW = side * dpr;
+      const pxH = side * dpr;
+      if (canvas.width !== pxW) canvas.width = pxW;
+      if (canvas.height !== pxH) canvas.height = pxH;
+      setPreviewSize({ w: pxW, h: pxH });
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, [open]);
+
   // Load hand images when preset changes
   useEffect(() => {
     if (!selectedPreset) return;
@@ -104,6 +131,50 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
       .then(([bg, fg]) => setImages(prev => ({ ...prev, bg, fg })))
       .catch(() => setImages({}));
   }, [selectedPreset]);
+
+  // Build miniature composite thumbnails for hands so they are centered and not cropped
+  useEffect(() => {
+    if (!open || presets.length === 0) return;
+    let cancelled = false;
+    const build = async () => {
+      const out: Record<string, string> = {};
+      for (const p of presets) {
+        try {
+          const loadImg = (src: string) => new Promise<HTMLImageElement>((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => resolve(img);
+            img.onerror = reject;
+            img.src = src;
+          });
+          const [bg, fg] = await Promise.all([
+            loadImg(HandPresetManager.getAssetPath(p, 'bg')),
+            loadImg(HandPresetManager.getAssetPath(p, 'fg')),
+          ]);
+          const side = 120;
+          const pad = 8;
+          const cvs = document.createElement('canvas');
+          cvs.width = side; cvs.height = side;
+          const ctx = cvs.getContext('2d');
+          if (!ctx) continue;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0,0,side,side);
+          const s = Math.min((side - 2*pad)/bg.width, (side - 2*pad)/bg.height);
+          const dw = Math.floor(bg.width * s);
+          const dh = Math.floor(bg.height * s);
+          const dx = Math.floor((side - dw)/2);
+          const dy = Math.floor((side - dh)/2);
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          ctx.drawImage(bg, dx, dy, dw, dh);
+          ctx.drawImage(fg, dx, dy, dw, dh);
+          out[p.id] = cvs.toDataURL('image/png');
+        } catch {}
+      }
+      if (!cancelled) setHandThumbs(out);
+    };
+    build();
+    return () => { cancelled = true; };
+  }, [open, presets]);
 
   // Load tool image independently (or fallback to hand-bound tool)
   useEffect(() => {
@@ -122,7 +193,7 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
     img.src = src;
   }, [selectedToolId, tools, selectedPreset]);
 
-  // Draw composite preview
+  // Draw composite preview (uses current canvas size; no resizing here)
   useEffect(() => {
     if (!canvasRef.current || !selectedPreset || !images.bg || !images.fg || !images.tool) return;
     const canvas = canvasRef.current;
@@ -145,20 +216,20 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
     if (!toolAsset) toolAsset = HandPresetManager.presetToLegacyToolAsset(selectedPreset);
 
     // Compute a preview scale that fits nicely
-    const margin = 40;
+    const margin = Math.max(16, Math.floor(Math.min(canvas.width, canvas.height) * 0.06));
     const fitScale = Math.min(
       (canvas.width - margin) / selectedPreset.dimensions.width,
       (canvas.height - margin) / selectedPreset.dimensions.height
     );
     const s = Math.max(0.1, Math.min(1.5, fitScale));
 
-    const target = { x: canvas.width * 0.55, y: canvas.height * 0.6 };
+    const target = { x: canvas.width * 0.5, y: canvas.height * 0.5 };
     const comp = HandToolCompositor.composeHandTool(
       handAsset,
       toolAsset,
       target,
       0,
-      s
+      s * 0.9
     );
 
     // Helper to draw an image with the given transform (top-left origin)
@@ -197,7 +268,7 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
     ctx.lineTo(tip.x, tip.y + 6);
     ctx.stroke();
     ctx.restore();
-  }, [selectedPreset, images.bg, images.fg, images.tool, selectedToolId, tools]);
+  }, [selectedPreset, images.bg, images.fg, images.tool, selectedToolId, tools, previewSize.w, previewSize.h]);
 
   // Filtered list
   const filteredPresets = useMemo(() => {
@@ -223,7 +294,10 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
     >
       <div className="h-full flex flex-col">
         {/* Content area */}
-        <div className="flex-1 grid grid-cols-3 gap-6 p-4 overflow-auto">
+        <div
+          className="flex-1 grid gap-6 p-4 overflow-auto"
+          style={{ gridTemplateColumns: 'minmax(0, 1fr) 440px' }}
+        >
           {/* Library + Filters */}
           <div className="col-span-2">
             <div className="flex items-center justify-between mb-3">
@@ -253,74 +327,92 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
             </div>
 
             {/* Presets grid */}
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <div
+              className="grid gap-3"
+              style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))' }}
+            >
               {loading && <div className="text-gray-400 text-sm">Loading presets…</div>}
               {error && <div className="text-red-400 text-sm">{error}</div>}
               {!loading && !error && filteredPresets.map(p => (
-                <button key={p.id}
-                        onClick={() => setSelectedPresetId(p.id)}
-                        className={`text-left bg-gray-800 border rounded p-2 hover:bg-gray-700 ${selectedPresetId===p.id?'border-blue-500':'border-gray-700'}`}>
-                  <div className="aspect-square w-full bg-gray-900 rounded mb-2 overflow-hidden flex items-center justify-center">
+                <button
+                  key={p.id}
+                  onClick={() => setSelectedPresetId(p.id)}
+                  className={`text-left bg-gray-800/60 border rounded-lg p-3 hover:bg-gray-700 transition-colors ${selectedPresetId===p.id?'border-blue-500 shadow-[0_0_0_2px_rgba(59,130,246,0.3)]':'border-gray-700'}`}
+                >
+                  <div className="w-24 h-24 bg-white rounded-md mb-2 overflow-hidden flex items-center justify-center mx-auto">
                     <img
-                      src={HandPresetManager.getAssetPath(p, 'thumbnail')}
+                      src={handThumbs[p.id] || HandPresetManager.getAssetPath(p, 'thumbnail')}
                       alt={p.title}
-                      className="object-cover w-full h-full"
+                      className="max-w-full max-h-full object-contain"
                       onError={(e)=>{ (e.target as HTMLImageElement).style.display='none'; }}
                     />
                   </div>
-                  <div className="text-sm text-gray-200 truncate">{p.title}</div>
-                  <div className="text-[11px] text-gray-400">{p.style} • {p.handedness}</div>
+                  <div className="text-[12px] text-gray-200 truncate">{p.title}</div>
+                  <div className="text-[10px] text-gray-400">{p.style} • {p.handedness}</div>
                 </button>
               ))}
             </div>
 
-            {/* Tools section */}
+            {/* Tools section: only after a hand is selected */}
             <div className="mt-6">
               <h4 className="text-gray-200 font-semibold mb-2">Tool Options</h4>
-              {tools.length > 0 ? (
-                <div className="grid grid-cols-3 gap-3">
+              {!selectedPreset && (
+                <div className="text-gray-400 text-sm">Pick a hand to view tools</div>
+              )}
+              {selectedPreset && tools.length > 0 ? (
+                <div
+                  className="grid gap-3"
+                  style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))' }}
+                >
                   {tools.map(t => (
-                    <button key={t.id}
-                            onClick={() => setSelectedToolId(t.id)}
-                            className={`text-left bg-gray-800 border rounded p-2 hover:bg-gray-700 ${selectedToolId===t.id?'border-green-500':'border-gray-700'}`}>
-                      <div className="aspect-square w-full bg-gray-900 rounded mb-2 overflow-hidden flex items-center justify-center">
+                    <button
+                      key={t.id}
+                      onClick={() => setSelectedToolId(t.id)}
+                      className={`text-left bg-gray-800/60 border rounded-lg p-3 hover:bg-gray-700 transition-colors ${selectedToolId===t.id?'border-green-500 shadow-[0_0_0_2px_rgba(16,185,129,0.3)]':'border-gray-700'}`}
+                    >
+                      <div className="w-20 h-20 bg-white rounded-md mb-2 overflow-hidden flex items-center justify-center mx-auto">
                         <img
                           src={ToolPresetManager.getAssetPath(t, 'thumbnail')}
                           alt={t.title}
-                          className="object-cover w-full h-full"
-                          onError={(e)=>{ (e.target as HTMLImageElement).style.display='none'; }}
+                          className="max-w-full max-h-full object-contain"
+                          onError={(e)=>{
+                            // Fallback to main image if thumbnail missing
+                            const img = e.target as HTMLImageElement;
+                            img.onerror = null;
+                            img.src = ToolPresetManager.getAssetPath(t, 'image');
+                          }}
                         />
                       </div>
-                      <div className="text-sm text-gray-200 capitalize">{t.type}</div>
-                      <div className="text-[11px] text-gray-400 truncate">{t.title}</div>
+                      <div className="text-[12px] text-gray-200 capitalize">{t.type}</div>
+                      <div className="text-[10px] text-gray-400 truncate">{t.title}</div>
                     </button>
                   ))}
                 </div>
-              ) : (
+              ) : selectedPreset ? (
                 <div className="grid grid-cols-3 gap-3">
                   {selectedPreset && (
                     <div className="bg-gray-800 border border-blue-500 rounded p-3">
-                      <div className="aspect-square w-full bg-gray-900 rounded mb-2 overflow-hidden flex items-center justify-center">
+                      <div className="w-20 h-20 bg-gray-900 rounded mb-1 overflow-hidden flex items-center justify-center mx-auto">
                         <img
                           src={HandPresetManager.getAssetPath(selectedPreset, 'tool')}
                           alt={selectedPreset.tool.type}
-                          className="object-contain w-full h-full"
+                          className="max-w-full max-h-full object-contain"
                         />
                       </div>
-                      <div className="text-sm text-gray-200 capitalize">{selectedPreset.tool.type}</div>
-                      <div className="text-[11px] text-gray-400">Preset’s tool (no tool library)</div>
+                      <div className="text-[12px] text-gray-200 capitalize">{selectedPreset.tool.type}</div>
+                      <div className="text-[10px] text-gray-400">Preset’s tool (no tool library)</div>
                     </div>
                   )}
                 </div>
-              )}
+              ) : null}
             </div>
           </div>
 
           {/* Preview */}
-          <div>
+          <div className="flex flex-col self-start">
             <h3 className="text-gray-200 font-semibold mb-3">Preview</h3>
-            <div className="bg-gray-800 border border-gray-700 rounded p-3">
-              <canvas ref={canvasRef} width={420} height={420} className="w-full h-[420px] bg-[#F5E6D3] rounded" />
+            <div ref={previewWrapRef} className="bg-gray-800 border border-gray-700 rounded p-3 min-h-[280px] w-full flex items-center justify-center">
+              <canvas ref={canvasRef} className="bg-[#F5E6D3] rounded block" />
             </div>
             <div className="mt-3 flex gap-2">
               <button
@@ -344,7 +436,7 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
               if (!selectedLegacy.hand || !selectedLegacy.tool) return;
               onApply({ hand: selectedLegacy.hand, tool: selectedLegacy.tool, scale, mirror: false });
             }}
-            disabled={!selectedLegacy.hand || !selectedLegacy.tool}
+            disabled={!selectedLegacy.hand || !selectedLegacy.tool || (!!tools.length && !selectedToolId)}
           >Apply Selection</button>
         </div>
       </div>

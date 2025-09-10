@@ -20,8 +20,14 @@ export class ToolPresetManager {
       const res = await fetch('/assets/tools/index.json');
       if (!res.ok) throw new Error(String(res.status));
       this.manifest = await res.json();
+      if (!this.manifest || !Array.isArray(this.manifest.sets)) {
+        console.warn('[ToolPresetManager] Invalid tools manifest shape at /assets/tools/index.json');
+        return null;
+      }
+      console.log('[ToolPresetManager] Loaded tools manifest:', this.manifest.sets.length);
       return this.manifest!;
-    } catch {
+    } catch (err) {
+      console.warn('[ToolPresetManager] Tools manifest not found or failed to load:', err);
       // No tools library yet — allow callers to treat as optional
       return null;
     }
@@ -44,8 +50,10 @@ export class ToolPresetManager {
       const preset: ToolPreset = await res.json();
       if (preset.schemaVersion !== 1) return null;
       this.cache.set(id, preset);
+      console.log('[ToolPresetManager] Loaded tool preset:', id);
       return preset;
-    } catch {
+    } catch (err) {
+      console.warn('[ToolPresetManager] Failed to load tool preset', id, err);
       return null;
     }
   }
@@ -73,4 +81,3 @@ export class ToolPresetManager {
 
   static clearCache() { this.cache.clear(); this.manifest = null; this.tried = false; }
 }
-

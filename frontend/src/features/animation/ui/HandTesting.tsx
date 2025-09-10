@@ -570,8 +570,8 @@ http://localhost:3001/api/assets/tool.png`);
               <input
                 type="range"
                 min="0.1"
-                max="1.5"
-                step="0.05"
+                max="5"
+                step="0.1"
                 value={handScale}
                 onChange={(e) => setHandScale(parseFloat(e.target.value))}
                 className="w-full"

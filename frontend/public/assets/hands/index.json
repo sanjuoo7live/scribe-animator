@@ -12,6 +12,10 @@
     {
       "id": "right_hand_pencil",
       "path": "right_hand_pencil/preset.json"
+    },
+    {
+      "id": "hand_with_wrist",
+      "path": "hand_with_wrist/preset.json"
     }
   ]
 }

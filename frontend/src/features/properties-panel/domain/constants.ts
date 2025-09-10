@@ -19,7 +19,7 @@ export const PROPERTY_RANGES: Record<string, RangeConfig> = {
   fontSize: { min: 8, max: 72, step: 1, default: 16, unit: 'px' },
   animationStart: { min: 0, step: 0.1, default: 0, unit: 's' },
   animationDuration: { min: 0.1, step: 0.1, default: 5, unit: 's' },
-  handScale: { min: 0.5, max: 2, step: 0.1, default: 1 },
+  handScale: { min: 0.1, max: 5, step: 0.1, default: 1 },
   smoothingStrength: { min: 0.05, max: 0.5, step: 0.05, default: 0.15 },
   jitterIntensity: { min: 0, max: 0.1, step: 0.01, default: 0.02 },
   cornerLiftAngle: { min: 15, max: 60, step: 5, default: 30, unit: 'deg' },

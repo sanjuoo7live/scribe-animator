@@ -98,8 +98,13 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
       const wrap = previewWrapRef.current;
       const canvas = canvasRef.current;
       if (!wrap || !canvas) return;
-      const rect = wrap.getBoundingClientRect();
-      const side = Math.max(260, Math.floor(Math.min(rect.width, rect.height)));
+
+      // Use the inner content box of the wrapper so padding doesn't offset the canvas
+      const style = window.getComputedStyle(wrap);
+      const width = wrap.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+      const height = wrap.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom);
+      const side = Math.max(260, Math.floor(Math.min(width, height)));
+
       const dpr = Math.max(1, Math.floor(window.devicePixelRatio || 1));
       // CSS size
       canvas.style.width = side + 'px';
@@ -215,21 +220,61 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
     }
     if (!toolAsset) toolAsset = HandPresetManager.presetToLegacyToolAsset(selectedPreset);
 
-    // Compute a preview scale that fits nicely
+    // Compute a preview scale that fits the entire composite bounding box centered in the canvas
     const margin = Math.max(16, Math.floor(Math.min(canvas.width, canvas.height) * 0.06));
-    const fitScale = Math.min(
-      (canvas.width - margin) / selectedPreset.dimensions.width,
-      (canvas.height - margin) / selectedPreset.dimensions.height
-    );
-    const s = Math.max(0.1, Math.min(1.5, fitScale));
 
-    const target = { x: canvas.width * 0.5, y: canvas.height * 0.5 };
+    // 1. Compose at tip at origin, scale 1
+    const baseComp = HandToolCompositor.composeHandTool(handAsset, toolAsset, { x: 0, y: 0 }, 0, 1);
+
+    // 2. Get all corners of hand/tool at scale 1
+    const getCorners = (
+      pos: { x: number; y: number },
+      rot: number,
+      scale: number,
+      w: number,
+      h: number
+    ) => {
+      const cos = Math.cos(rot);
+      const sin = Math.sin(rot);
+      const pts = [
+        { x: 0, y: 0 },
+        { x: w, y: 0 },
+        { x: w, y: h },
+        { x: 0, y: h },
+      ];
+      return pts.map(p => ({
+        x: pos.x + (p.x * cos - p.y * sin) * scale,
+        y: pos.y + (p.x * sin + p.y * cos) * scale,
+      }));
+    };
+    const handPts = getCorners(baseComp.handPosition, baseComp.handRotation, baseComp.handScale, images.bg.width, images.bg.height);
+    const toolPts = getCorners(baseComp.toolPosition, baseComp.toolRotation, baseComp.toolScale, images.tool.width, images.tool.height);
+    const allPts = handPts.concat(toolPts);
+    const xs = allPts.map(p => p.x);
+    const ys = allPts.map(p => p.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const boundsW = maxX - minX;
+    const boundsH = maxY - minY;
+
+    // 3. Fit scale to bounding box
+    const fitScale = Math.min(
+      (canvas.width - margin) / boundsW,
+      (canvas.height - margin) / boundsH
+    );
+
+    // 4. Center the bounding box in the canvas
+    const offsetX = (canvas.width - (boundsW * fitScale)) / 2 - (minX * fitScale);
+    const offsetY = (canvas.height - (boundsH * fitScale)) / 2 - (minY * fitScale);
+    const target = { x: offsetX, y: offsetY };
     const comp = HandToolCompositor.composeHandTool(
       handAsset,
       toolAsset,
       target,
       0,
-      s * 0.9
+      fitScale
     );
 
     // Helper to draw an image with the given transform (top-left origin)
@@ -409,12 +454,22 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
           </div>
 
           {/* Preview */}
-          <div className="flex flex-col self-start">
-            <h3 className="text-gray-200 font-semibold mb-3">Preview</h3>
-            <div ref={previewWrapRef} className="bg-gray-800 border border-gray-700 rounded p-3 min-h-[280px] w-full flex items-center justify-center">
-              <canvas ref={canvasRef} className="bg-[#F5E6D3] rounded block" />
+          <div className="flex flex-col items-center justify-center w-full">
+            <h3 className="text-gray-200 font-semibold mb-3 self-start">Preview</h3>
+            <div
+              ref={previewWrapRef}
+              className="bg-gray-800 border border-gray-700 rounded flex items-center justify-center"
+              style={{ width: 320, height: 320, minWidth: 220, minHeight: 220, maxWidth: 420, maxHeight: 420 }}
+            >
+              <canvas
+                ref={canvasRef}
+                className="bg-[#F5E6D3] rounded block mx-auto my-auto"
+                width={300}
+                height={300}
+                style={{ display: 'block', margin: 'auto', maxWidth: '100%', maxHeight: '100%' }}
+              />
             </div>
-            <div className="mt-3 flex gap-2">
+            <div className="mt-3 flex gap-2 w-full">
               <button
                 type="button"
                 className="flex-1 px-3 py-2 bg-gray-700 rounded text-sm"

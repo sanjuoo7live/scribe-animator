@@ -95,8 +95,17 @@ const SvgPathEditorComponent: React.FC = () => {
   const handleOffsetX = React.useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const x = Number(e.target.value) || 0;
-      const cur = hf.offset || { x: 0, y: 0 };
-      patchSceneObject(id, { properties: { handFollower: { ...hf, offset: { ...cur, x } } } });
+      const cur = hf.offset || hf.calibrationOffset || { x: 0, y: 0 };
+      const newOffset = { ...cur, x };
+      patchSceneObject(id, { 
+        properties: { 
+          handFollower: { 
+            ...hf, 
+            offset: newOffset,
+            calibrationOffset: newOffset  // Keep both in sync
+          } 
+        } 
+      });
     },
     [id, hf]
   );
@@ -104,8 +113,17 @@ const SvgPathEditorComponent: React.FC = () => {
   const handleOffsetY = React.useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const y = Number(e.target.value) || 0;
-      const cur = hf.offset || { x: 0, y: 0 };
-      patchSceneObject(id, { properties: { handFollower: { ...hf, offset: { ...cur, y } } } });
+      const cur = hf.offset || hf.calibrationOffset || { x: 0, y: 0 };
+      const newOffset = { ...cur, y };
+      patchSceneObject(id, { 
+        properties: { 
+          handFollower: { 
+            ...hf, 
+            offset: newOffset,
+            calibrationOffset: newOffset  // Keep both in sync
+          } 
+        } 
+      });
     },
     [id, hf]
   );
@@ -178,7 +196,7 @@ const SvgPathEditorComponent: React.FC = () => {
               <label className="block text-xs text-gray-400 mb-1">Offset X (temp)</label>
               <input
                 type="number"
-                value={hf.offset?.x ?? 0}
+                value={(hf.calibrationOffset?.x ?? hf.offset?.x ?? 0)}
                 onChange={handleOffsetX}
                 className="w-full p-2 bg-gray-700 text-white rounded text-sm"
               />
@@ -187,7 +205,7 @@ const SvgPathEditorComponent: React.FC = () => {
               <label className="block text-xs text-gray-400 mb-1">Offset Y (temp)</label>
               <input
                 type="number"
-                value={hf.offset?.y ?? 0}
+                value={(hf.calibrationOffset?.y ?? hf.offset?.y ?? 0)}
                 onChange={handleOffsetY}
                 className="w-full p-2 bg-gray-700 text-white rounded text-sm"
               />

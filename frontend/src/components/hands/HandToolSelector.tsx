@@ -5,13 +5,15 @@ import { HandPreset, ToolPreset } from '../../types/handPresets';
 import { HandPresetManager } from '../../utils/handPresetManager';
 import { HandToolCompositor } from '../../utils/handToolCompositor';
 import { ToolPresetManager } from '../../utils/toolPresetManager';
+import { HandFollowerCalibrationModalLazy } from './lazy';
+import { CalibrationData, loadCalibration, saveCalibration } from '../../utils/calibrationService';
 
 interface Props {
   open: boolean;
   initialHand?: HandAsset | null;
   initialTool?: ToolAsset | null;
   initialScale?: number;
-  onApply: (sel: { hand: HandAsset | null; tool: ToolAsset | null; scale: number; mirror: boolean }) => void;
+  onApply: (sel: { hand: HandAsset | null; tool: ToolAsset | null; scale: number; mirror: boolean; calibrated?: CalibrationData }) => void;
   onClose: () => void;
 }
 
@@ -48,6 +50,8 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
   const [previewSize, setPreviewSize] = useState<{ w: number; h: number }>({ w: 420, h: 420 });
   const [images, setImages] = useState<{ bg?: HTMLImageElement; fg?: HTMLImageElement; tool?: HTMLImageElement }>({});
   const [handThumbs, setHandThumbs] = useState<Record<string, string>>({});
+  const [calibrateOpen, setCalibrateOpen] = useState(false);
+  const [calib, setCalib] = useState<CalibrationData | null>(null);
 
   // Load presets from manifest
   useEffect(() => {
@@ -197,6 +201,23 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
     img.onerror = () => setImages(prev => ({ ...prev, tool: undefined }));
     img.src = src;
   }, [selectedToolId, tools, selectedPreset]);
+
+  // Load saved calibration for the current hand+tool selection
+  useEffect(() => {
+    const run = async () => {
+      if (!selectedPreset) { setCalib(null); return; }
+      const hand = HandPresetManager.presetToLegacyHandAsset(selectedPreset);
+      let tool: ToolAsset | null = null;
+      if (selectedToolId) {
+        const t = tools.find(t => t.id === selectedToolId);
+        if (t) tool = ToolPresetManager.presetToLegacyToolAsset(t);
+      }
+      if (!tool) tool = HandPresetManager.presetToLegacyToolAsset(selectedPreset);
+      const loaded = await loadCalibration(hand.id, tool.id);
+      setCalib(loaded);
+    };
+    run();
+  }, [selectedPreset, selectedToolId, tools]);
 
   // Draw composite preview (uses current canvas size; no resizing here)
   useEffect(() => {
@@ -473,7 +494,7 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
               <button
                 type="button"
                 className="flex-1 px-3 py-2 bg-gray-700 rounded text-sm"
-                onClick={() => alert('Calibration opens from Properties Panel for now.')}
+                onClick={() => setCalibrateOpen(true)}
               >
                 Calibrate…
               </button>
@@ -489,12 +510,35 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
             className="px-3 py-1 bg-blue-600 rounded disabled:opacity-50"
             onClick={() => {
               if (!selectedLegacy.hand || !selectedLegacy.tool) return;
-              onApply({ hand: selectedLegacy.hand, tool: selectedLegacy.tool, scale, mirror: false });
+              onApply({ hand: selectedLegacy.hand, tool: selectedLegacy.tool, scale, mirror: false, calibrated: calib || undefined });
             }}
             disabled={!selectedLegacy.hand || !selectedLegacy.tool || (!!tools.length && !selectedToolId)}
           >Apply Selection</button>
         </div>
       </div>
+      <React.Suspense fallback={null}>
+        {calibrateOpen && selectedLegacy.hand && selectedLegacy.tool && (
+          <HandFollowerCalibrationModalLazy
+            isOpen={calibrateOpen}
+            onClose={() => setCalibrateOpen(false)}
+            handAsset={selectedLegacy.hand}
+            toolAsset={selectedLegacy.tool}
+            initialSettings={{
+              tipBacktrackPx: calib?.tipBacktrackPx ?? 0,
+              calibrationOffset: calib?.calibrationOffset || { x: 0, y: 0 },
+              nibAnchor: calib?.nibAnchor,
+              mirror: !!calib?.mirror,
+              showForeground: calib?.showForeground !== false,
+            }}
+            onApply={async (settings: any) => {
+              const ok = await saveCalibration(selectedLegacy.hand!.id, selectedLegacy.tool!.id, settings);
+              if (!ok) alert('Failed to save calibration');
+              setCalib(settings);
+            }}
+            onLiveChange={() => {}}
+          />
+        )}
+      </React.Suspense>
     </AssetLibraryPopup>
   );
 };

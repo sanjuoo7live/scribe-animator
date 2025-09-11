@@ -92,41 +92,7 @@ const SvgPathEditorComponent: React.FC = () => {
     });
   }, [id, hf]);
 
-  const handleOffsetX = React.useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const x = Number(e.target.value) || 0;
-      const cur = hf.offset || hf.calibrationOffset || { x: 0, y: 0 };
-      const newOffset = { ...cur, x };
-      patchSceneObject(id, { 
-        properties: { 
-          handFollower: { 
-            ...hf, 
-            offset: newOffset,
-            calibrationOffset: newOffset  // Keep both in sync
-          } 
-        } 
-      });
-    },
-    [id, hf]
-  );
-
-  const handleOffsetY = React.useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const y = Number(e.target.value) || 0;
-      const cur = hf.offset || hf.calibrationOffset || { x: 0, y: 0 };
-      const newOffset = { ...cur, y };
-      patchSceneObject(id, { 
-        properties: { 
-          handFollower: { 
-            ...hf, 
-            offset: newOffset,
-            calibrationOffset: newOffset  // Keep both in sync
-          } 
-        } 
-      });
-    },
-    [id, hf]
-  );
+  // Offsets are now edited exclusively inside the Calibration modal
 
   if (!id) return null;
 
@@ -190,27 +156,7 @@ const SvgPathEditorComponent: React.FC = () => {
               onChange={handleScale}
             />
           </div>
-          {/* Offsets */}
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">Offset X (temp)</label>
-              <input
-                type="number"
-                value={(hf.calibrationOffset?.x ?? hf.offset?.x ?? 0)}
-                onChange={handleOffsetX}
-                className="w-full p-2 bg-gray-700 text-white rounded text-sm"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-gray-400 mb-1">Offset Y (temp)</label>
-              <input
-                type="number"
-                value={(hf.calibrationOffset?.y ?? hf.offset?.y ?? 0)}
-                onChange={handleOffsetY}
-                className="w-full p-2 bg-gray-700 text-white rounded text-sm"
-              />
-            </div>
-          </div>
+          {/* Offsets moved into Calibration modal */}
 
           {/* Advanced Calibration */}
           <div className="mt-1">
@@ -261,7 +207,6 @@ const SvgPathEditorComponent: React.FC = () => {
               tipBacktrackPx: hf?.tipBacktrackPx ?? 0,
               calibrationOffset: hf?.calibrationOffset || hf?.offset || { x: 0, y: 0 },
               nibAnchor: hf?.nibAnchor || undefined,
-              scale: hf?.scale ?? PROPERTY_RANGES.handScale.default,
               mirror: !!hf?.mirror,
               showForeground: hf?.showForeground !== false,
             }}
@@ -278,7 +223,6 @@ const SvgPathEditorComponent: React.FC = () => {
                 nextHF.offset = partial.extraOffset;
               }
               if (partial.nibAnchor) nextHF.nibAnchor = partial.nibAnchor;
-              if (partial.scale !== undefined) nextHF.scale = partial.scale;
               if (partial.mirror !== undefined) nextHF.mirror = !!partial.mirror;
               patchSceneObject(id, { properties: { handFollower: nextHF } });
             }}
@@ -293,7 +237,7 @@ const SvgPathEditorComponent: React.FC = () => {
           initialHand={hf?.handAsset || null}
           initialTool={hf?.toolAsset || null}
           initialScale={hf?.scale ?? PROPERTY_RANGES.handScale.default}
-          onApply={({ hand, tool, scale, mirror }) => {
+          onApply={({ hand, tool, scale, mirror, calibrated }) => {
             patchSceneObject(id, {
               properties: {
                 handFollower: {
@@ -303,6 +247,10 @@ const SvgPathEditorComponent: React.FC = () => {
                   toolAsset: tool,
                   scale,
                   mirror: !!mirror,
+                  // Apply saved calibration defaults if available
+                  ...(calibrated?.nibAnchor ? { nibAnchor: calibrated.nibAnchor } : {}),
+                  ...(calibrated?.calibrationOffset ? { calibrationOffset: calibrated.calibrationOffset, offset: calibrated.calibrationOffset } : {}),
+                  ...(typeof calibrated?.tipBacktrackPx === 'number' ? { tipBacktrackPx: calibrated.tipBacktrackPx } : {}),
                 },
               },
             });

@@ -16,6 +16,10 @@
     {
       "id": "hand_with_wrist",
       "path": "hand_with_wrist/preset.json"
+    },
+    {
+      "id": "hand_with_sleeve",
+      "path": "hand_with_sleeve/preset.json"
     }
   ]
 }

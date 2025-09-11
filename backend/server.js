@@ -13,7 +13,7 @@ app.use(express.json());
 
 // Create necessary directories
 const createDirs = async () => {
-  const dirs = ['./data', './data/projects', './data/assets', './data/videos'];
+  const dirs = ['./data', './data/projects', './data/assets', './data/videos', './data/calibrations', './data/calibrations/hand_tool'];
   for (const dir of dirs) {
     try {
       await fs.mkdir(dir, { recursive: true });
@@ -259,6 +259,43 @@ app.post('/api/render/:id', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ error: 'Failed to start rendering' });
+  }
+});
+
+// Calibration persistence (hand + tool pair)
+// Files stored at ./data/calibrations/hand_tool/<handId>__<toolId>.json
+app.get('/api/calibration/hand-tool/:handId/:toolId', async (req, res) => {
+  try {
+    const { handId, toolId } = req.params;
+    const file = path.join('./data/calibrations/hand_tool', `${handId}__${toolId}.json`);
+    const data = await fs.readFile(file, 'utf8');
+    res.json(JSON.parse(data));
+  } catch (err) {
+    return res.status(404).json({ error: 'Calibration not found' });
+  }
+});
+
+app.post('/api/calibration/hand-tool', async (req, res) => {
+  try {
+    const { handId, toolId, calibration } = req.body || {};
+    if (!handId || !toolId || typeof calibration !== 'object') {
+      return res.status(400).json({ error: 'handId, toolId and calibration object are required' });
+    }
+    const safeHand = String(handId).replace(/[^a-zA-Z0-9_\-]/g, '');
+    const safeTool = String(toolId).replace(/[^a-zA-Z0-9_\-]/g, '');
+    const file = path.join('./data/calibrations/hand_tool', `${safeHand}__${safeTool}.json`);
+    const payload = {
+      handId: safeHand,
+      toolId: safeTool,
+      savedAt: new Date().toISOString(),
+      version: 1,
+      ...calibration,
+    };
+    await fs.writeFile(file, JSON.stringify(payload, null, 2), 'utf8');
+    res.json(payload);
+  } catch (err) {
+    console.error('Failed to save calibration', err);
+    return res.status(500).json({ error: 'Failed to save calibration' });
   }
 });
 

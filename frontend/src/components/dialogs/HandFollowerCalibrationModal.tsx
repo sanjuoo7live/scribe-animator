@@ -14,7 +14,6 @@ interface HandFollowerCalibrationModalProps {
     tipBacktrackPx?: number;
     calibrationOffset?: { x: number; y: number };
     nibAnchor?: { x: number; y: number }; // pixel coordinates in hand image
-    scale?: number;
     mirror?: boolean;
     showForeground?: boolean;
   };
@@ -22,7 +21,6 @@ interface HandFollowerCalibrationModalProps {
     tipBacktrackPx: number;
     calibrationOffset: { x: number; y: number };
     nibAnchor: { x: number; y: number };
-    scale: number;
     mirror: boolean;
     showForeground: boolean;
     extraOffset?: { x: number; y: number }; // Add extraOffset for the restored renderer
@@ -31,7 +29,6 @@ interface HandFollowerCalibrationModalProps {
     tipBacktrackPx: number;
     calibrationOffset: { x: number; y: number };
     nibAnchor: { x: number; y: number };
-    scale: number;
     mirror: boolean;
     showForeground: boolean;
     extraOffset?: { x: number; y: number }; // Add extraOffset for live updates
@@ -74,7 +71,6 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
       return { x: handAsset.gripBase.x, y: handAsset.gripBase.y };
     }
   });
-  const [scale, setScale] = useState(initialSettings?.scale ?? 1);
   const [mirror, setMirror] = useState(initialSettings?.mirror ?? false);
   // Removed local Show Foreground control (managed in Properties Panel)
   
@@ -148,7 +144,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
     const ih = handImageRef.current.naturalHeight || handImageRef.current.height;
     const availW = canvas.width - pad * 2;
     const availH = canvas.height - pad * 2;
-    const s = Math.min(availW / iw, availH / ih) * scale;
+    const s = Math.min(availW / iw, availH / ih);
     const dw = iw * s;
     const dh = ih * s;
     const dx = Math.round((canvas.width - dw) / 2);
@@ -178,7 +174,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
       const tiw = ti.naturalWidth || ti.width;
       const tih = ti.naturalHeight || ti.height;
       // Preview tool scale relative to hand preview scale so it looks natural (include user scale)
-      const st = Math.min(0.8, Math.max(0.15, (handAsset.sizePx.h / Math.max(1, tih)) * 0.15)) * scale;
+      const st = Math.min(0.8, Math.max(0.15, (handAsset.sizePx.h / Math.max(1, tih)) * 0.15));
       const tipX = toolAsset.tipAnchor.x;
       const tipY = toolAsset.tipAnchor.y;
       const dwTool = Math.round(tiw * st);
@@ -223,7 +219,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
     }
 
     // Crosshair removed to avoid slight offset; tool tip indicates nib.
-  }, [handImageLoaded, handFgImageLoaded, toolImageLoaded, nibAnchor, mirror, scale, calibrationOffset, handAsset.sizePx, toolAsset.tipAnchor.x, toolAsset.tipAnchor.y]);
+  }, [handImageLoaded, handFgImageLoaded, toolImageLoaded, nibAnchor, mirror, calibrationOffset, handAsset.sizePx, toolAsset.tipAnchor.x, toolAsset.tipAnchor.y]);
 
   // Handle canvas click for nib positioning
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -430,36 +426,10 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
               </div>
             </div>
 
-            {/* Appearance */}
+            {/* Mirror */}
             <div className="bg-gray-700/40 p-3 rounded">
               <h4 className="text-sm font-semibold text-gray-300 mb-2">Appearance</h4>
               <div className="space-y-2">
-                <div>
-                  <label className="block text-xs text-gray-400 mb-1">Scale</label>
-                  <input
-                    type="range"
-                    min="0.5"
-                    max="2.0"
-                    step="0.1"
-                    value={scale}
-                    onChange={(e) => {
-                      const v = Number(e.target.value);
-                      setScale(v);
-                      // Send live update for scale changes
-                      onLiveChange?.({ 
-                        scale: v,
-                        extraOffset: {
-                          x: calibrationOffset.x,
-                          y: calibrationOffset.y
-                        }
-                      });
-                      forceUpdate(prev => prev + 1);
-                    }}
-                    className="w-full"
-                  />
-                  <div className="text-xs text-gray-500 text-center">{scale.toFixed(1)}x</div>
-                </div>
-
                 <div className="flex items-center gap-4">
                   <label className="flex items-center gap-2 text-xs text-gray-300">
                     <input
@@ -499,6 +469,22 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
         <div className="px-4 py-3 border-t border-gray-700 flex justify-end gap-2">
           <button
             onClick={() => {
+              onApply?.({
+                tipBacktrackPx,
+                calibrationOffset,
+                nibAnchor,
+                mirror,
+                showForeground: true,
+                extraOffset: { x: calibrationOffset.x, y: calibrationOffset.y },
+              });
+              onClose();
+            }}
+            className="px-3 py-1 bg-green-600 rounded text-white hover:bg-green-700"
+          >
+            Save Calibration
+          </button>
+          <button
+            onClick={() => {
               let defaultNibAnchor = { x: handAsset.gripBase.x, y: handAsset.gripBase.y };
               try {
                 const comp = HandToolCompositor.composeHandTool(
@@ -516,7 +502,6 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
               setTipBacktrackPx(0);
               setCalibrationOffset({ x: 0, y: 0 });
               setNibAnchor(defaultNibAnchor);
-              setScale(1);
               setMirror(false);
               
               // Send live update for reset
@@ -524,7 +509,6 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                 tipBacktrackPx: 0,
                 calibrationOffset: { x: 0, y: 0 },
                 nibAnchor: defaultNibAnchor,
-                scale: 1,
                 mirror: false,
                 extraOffset: { x: 0, y: 0 }
               });

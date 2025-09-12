@@ -536,7 +536,7 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
               showForeground: calib?.showForeground !== false,
               toolRotationOffsetDeg: calib?.toolRotationOffsetDeg ?? 0,
               baseScale: scale,
-              nibLock: !!calib?.nibLock,
+              nibLock: calib?.nibLock !== false,
             }}
             onApply={async (settings: any) => {
               const ok = await saveCalibration(selectedLegacy.hand!.id, selectedLegacy.tool!.id, settings);

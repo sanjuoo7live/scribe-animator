@@ -212,7 +212,7 @@ const SvgPathEditorComponent: React.FC = () => {
               showForeground: hf?.showForeground !== false,
               toolRotationOffsetDeg: hf?.toolRotationOffsetDeg ?? 0,
               baseScale: hf?.scale ?? PROPERTY_RANGES.handScale.default,
-              nibLock: !!hf?.nibLock,
+              nibLock: hf?.nibLock !== false,
             }}
             onLiveChange={(partial: any) => {
               if (!id) return;
@@ -227,6 +227,7 @@ const SvgPathEditorComponent: React.FC = () => {
                 nextHF.offset = partial.extraOffset;
               }
               if (partial.nibAnchor) nextHF.nibAnchor = partial.nibAnchor;
+              if (partial.nibLock !== undefined) nextHF.nibLock = !!partial.nibLock;
               if (partial.mirror !== undefined) nextHF.mirror = !!partial.mirror;
               if (partial.toolRotationOffsetDeg !== undefined) nextHF.toolRotationOffsetDeg = partial.toolRotationOffsetDeg;
               patchSceneObject(id, { properties: { handFollower: nextHF } });

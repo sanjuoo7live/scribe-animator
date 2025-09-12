@@ -39,6 +39,7 @@ interface HandFollowerCalibrationModalProps {
     showForeground: boolean;
     toolRotationOffsetDeg?: number;
     extraOffset?: { x: number; y: number }; // Add extraOffset for live updates
+    nibLock?: boolean;
   }>) => void;
 }
 
@@ -80,7 +81,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
   });
   const [mirror, setMirror] = useState(initialSettings?.mirror ?? false);
   const [toolRotationOffsetDeg, setToolRotationOffsetDeg] = useState<number>(initialSettings?.toolRotationOffsetDeg ?? 0);
-  const [nibLock, setNibLock] = useState<boolean>(!!initialSettings?.nibLock);
+  const [nibLock] = useState<boolean>(initialSettings?.nibLock !== false);
   // Removed local Show Foreground control (managed in Properties Panel)
   
   // Force update counter to ensure live changes are reflected
@@ -136,7 +137,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
     handFgImageRef.current = img;
   }, [handAsset.imageFg]);
 
-  // Draw preview on canvas
+  // Draw preview on canvas using the same compositor math as the main canvas
   useEffect(() => {
     if (!handImageLoaded || !previewCanvasRef.current || !handImageRef.current) return;
 
@@ -147,95 +148,129 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
     // Clear canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Fit hand image with padding and draw; apply mirror and user scale.
-    const pad = 20;
-    const iw = handImageRef.current.naturalWidth || handImageRef.current.width;
-    const ih = handImageRef.current.naturalHeight || handImageRef.current.height;
-    const availW = canvas.width - pad * 2;
-    const availH = canvas.height - pad * 2;
-    const s = Math.min(availW / iw, availH / ih);
-    const dw = iw * s;
-    const dh = ih * s;
-    const dx = Math.round((canvas.width - dw) / 2);
-    const dy = Math.round((canvas.height - dh) / 2);
-    drawInfoRef.current = { dx, dy, s, iw, ih };
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-    if (mirror) {
-      ctx.save();
-      ctx.translate(dx + dw, dy);
-      ctx.scale(-1, 1);
-      ctx.drawImage(handImageRef.current, 0, 0, dw, dh);
-      ctx.restore();
-    } else {
-      ctx.drawImage(handImageRef.current, dx, dy, dw, dh);
-    }
+    // Choose active assets (mirrored or not) for geometry
+    const activeHand = mirror ? HandToolCompositor.mirrorHandAsset(handAsset) : handAsset;
+    const activeTool = mirror ? HandToolCompositor.mirrorToolAsset(toolAsset) : toolAsset;
 
-    // Draw nib anchor crosshair (mirror-safe)
-    const anchorX = mirror ? (iw - nibAnchor.x) : nibAnchor.x;
-    const anchorY = nibAnchor.y;
-    const nibX = dx + anchorX * s;
-    const nibY = dy + anchorY * s;
+    // 1) Compose at origin to measure bounds
+    const baseComp = HandToolCompositor.composeHandTool(activeHand, activeTool, { x: 0, y: 0 }, 0, 1);
 
-    // Draw tool: rotate around CENTER but keep nib pinned at nibX/nibY using compensation
-    if (toolImageLoaded && toolImageRef.current) {
-      const ti = toolImageRef.current;
-      const tiw = ti.naturalWidth || ti.width;
-      const tih = ti.naturalHeight || ti.height;
-      // Preview tool scale relative to hand preview scale so it looks natural
-      const st = Math.min(0.8, Math.max(0.15, (handAsset.sizePx.h / Math.max(1, tih)) * 0.15));
-      const cx = tiw / 2;
-      const cy = tih / 2;
-      const vx = toolAsset.tipAnchor.x - cx;
-      const vy = toolAsset.tipAnchor.y - cy;
-      const sx = st * (mirror ? -1 : 1);
-      const sy = st;
-      // Use total rotation for compensation so tip remains at nib
-      const totalRad = ((toolAsset.rotationOffsetDeg || 0) + toolRotationOffsetDeg) * Math.PI / 180;
-      const cosT = Math.cos(totalRad);
-      const sinT = Math.sin(totalRad);
-      const ux = (vx * sx) * cosT - (vy * sy) * sinT;
-      const uy = (vx * sx) * sinT + (vy * sy) * cosT;
-      const posX = Math.round(nibX - ux);
-      const posY = Math.round(nibY - uy);
-      const dwTool = Math.round(tiw * Math.abs(st));
-      const dhTool = Math.round(tih * st);
-      ctx.save();
-      ctx.translate(posX, posY);
-      // Rotate by total angle
-      ctx.rotate(totalRad);
-      if (mirror) ctx.scale(-1, 1);
-      ctx.drawImage(
-        ti,
-        Math.round(-cx * st),
-        Math.round(-cy * st),
-        dwTool,
-        dhTool
-      );
-      ctx.restore();
-    } else {
-      // Fallback marker
-      ctx.fillStyle = '#ff0000';
-      ctx.beginPath();
-      ctx.arc(nibX, nibY, 4, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    // Compute axis-aligned bounds for angle 0 with helper
+    const getCorners = (
+      pos: { x: number; y: number },
+      rot: number,
+      scale: number,
+      w: number,
+      h: number
+    ) => {
+      const cos = Math.cos(rot);
+      const sin = Math.sin(rot);
+      const pts = [
+        { x: 0, y: 0 },
+        { x: w, y: 0 },
+        { x: w, y: h },
+        { x: 0, y: h },
+      ];
+      return pts.map(p => ({
+        x: pos.x + (p.x * cos - p.y * sin) * scale,
+        y: pos.y + (p.x * sin + p.y * cos) * scale,
+      }));
+    };
+    const handPts = getCorners(baseComp.handPosition, baseComp.handRotation, baseComp.handScale, handImageRef.current.width, handImageRef.current.height);
+    const toolImg = toolImageRef.current;
+    const toolPts = toolImg ? getCorners(baseComp.toolPosition, baseComp.toolRotation, baseComp.toolScale, toolImg.width, toolImg.height) : [];
+    const allPts = handPts.concat(toolPts);
+    const xs = allPts.map(p => p.x);
+    const ys = allPts.map(p => p.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+    const boundsW = maxX - minX;
+    const boundsH = maxY - minY;
 
-    // Draw foreground overlay (thumb/fingers) to properly mask the tool
-    if (handFgImageLoaded && handFgImageRef.current) {
-      if (mirror) {
-        ctx.save();
-        ctx.translate(dx + dw, dy);
-        ctx.scale(-1, 1);
-        ctx.drawImage(handFgImageRef.current, 0, 0, dw, dh);
-        ctx.restore();
-      } else {
-        ctx.drawImage(handFgImageRef.current, dx, dy, dw, dh);
+    // 2) Fit to canvas
+    const margin = 24;
+    const fitScale = Math.min(
+      (canvas.width - margin) / Math.max(1, boundsW),
+      (canvas.height - margin) / Math.max(1, boundsH)
+    );
+    const offsetX = (canvas.width - boundsW * fitScale) / 2 - minX * fitScale;
+    const offsetY = (canvas.height - boundsH * fitScale) / 2 - minY * fitScale;
+
+    // 3) Compose at centered position with fit scale (bake nibAnchor as custom tip anchor)
+    let customTip: { x:number; y:number } | undefined;
+    if (nibAnchor) {
+      const base = HandToolCompositor.composeHandTool(activeHand, activeTool, { x: 0, y: 0 }, 0, 1);
+      const baseNib = {
+        x: base.finalTipPosition.x - base.handPosition.x,
+        y: base.finalTipPosition.y - base.handPosition.y,
+      };
+      const nibInHand = mirror ? { x: activeHand.sizePx.w - nibAnchor.x, y: nibAnchor.y } : nibAnchor;
+      const dxH = nibInHand.x - baseNib.x;
+      const dyH = nibInHand.y - baseNib.y;
+      if (Math.abs(dxH) + Math.abs(dyH) > 0.001) {
+        const rel = base.toolRotation - base.handRotation;
+        const cosR = Math.cos(rel), sinR = Math.sin(rel);
+        const dtX = dxH * cosR - dyH * sinR;
+        const dtY = dxH * sinR + dyH * cosR;
+        customTip = { x: activeTool.tipAnchor.x + dtX, y: activeTool.tipAnchor.y + dtY };
       }
     }
+    const comp = HandToolCompositor.composeHandTool(activeHand, activeTool, { x: offsetX, y: offsetY }, 0, fitScale, customTip);
 
-    // Crosshair removed to avoid slight offset; tool tip indicates nib.
-  }, [handImageLoaded, handFgImageLoaded, toolImageLoaded, nibAnchor, mirror, calibrationOffset, handAsset.sizePx, toolAsset.tipAnchor.x, toolAsset.tipAnchor.y, toolRotationOffsetDeg, toolAsset.rotationOffsetDeg]);
+    // Prepare mapping for click->image coords
+    drawInfoRef.current = { dx: comp.handPosition.x, dy: comp.handPosition.y, s: comp.handScale, iw: activeHand.sizePx.w, ih: activeHand.sizePx.h };
+
+    // 4) Draw background hand (top-left origin)
+    ctx.save();
+    ctx.translate(comp.handPosition.x, comp.handPosition.y);
+    ctx.rotate(comp.handRotation);
+    ctx.scale((mirror ? -1 : 1) * comp.handScale, comp.handScale);
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(handImageRef.current, 0, 0);
+    ctx.restore();
+
+    // 5) Draw tool pinned to tip, with optional extra rotation (nibAnchor is already baked in)
+    if (toolImageLoaded && toolImg) {
+      const centerX = toolImg.width / 2;
+      const centerY = toolImg.height / 2;
+      const vx = activeTool.tipAnchor.x - centerX;
+      const vy = activeTool.tipAnchor.y - centerY;
+      const sx = comp.toolScale * (mirror ? -1 : 1);
+      const sy = comp.toolScale;
+      const baseRot = comp.toolRotation; // radians
+      const totalRot = baseRot + (toolRotationOffsetDeg || 0) * Math.PI / 180;
+      const useRot = nibLock ? totalRot : baseRot;
+      const cosUse = Math.cos(useRot);
+      const sinUse = Math.sin(useRot);
+      const ux = (vx * sx) * cosUse - (vy * sy) * sinUse;
+      const uy = (vx * sx) * sinUse + (vy * sy) * cosUse;
+      let posX = comp.finalTipPosition.x - ux;
+      let posY = comp.finalTipPosition.y - uy;
+
+      // No world-space nudge here; customTip already applied
+
+      ctx.save();
+      ctx.translate(posX, posY);
+      ctx.rotate(totalRot);
+      ctx.scale(sx, sy);
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(toolImg, -centerX, -centerY);
+      ctx.restore();
+    }
+
+    // 6) Draw foreground hand overlay
+    if (handFgImageLoaded && handFgImageRef.current) {
+      ctx.save();
+      ctx.translate(comp.handPosition.x, comp.handPosition.y);
+      ctx.rotate(comp.handRotation);
+      ctx.scale((mirror ? -1 : 1) * comp.handScale, comp.handScale);
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(handFgImageRef.current, 0, 0);
+      ctx.restore();
+    }
+  }, [handImageLoaded, handFgImageLoaded, toolImageLoaded, nibAnchor, mirror, handAsset, toolAsset, toolRotationOffsetDeg, nibLock]);
 
   // Handle canvas click for nib positioning
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -299,7 +334,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
             </div>
 
             <div className="space-y-2">
-              <h4 className="text-sm font-semibold text-gray-400">Nib Coordinates</h4>
+              <h4 className="text-sm font-semibold text-gray-400">Hand Coordinates</h4>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">X (pixels)</label>
@@ -308,7 +343,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                     value={Math.round(nibAnchor.x)}
                     onChange={(e) => {
                       const v = Number(e.target.value);
-                      const next = { ...nibAnchor, x: v };
+                      const next = { ...nibAnchor, x: isFinite(v) ? v : 0 };
                       setNibAnchor(next);
                       // Convert to extraOffset for live updates
                       const extraOffset = {
@@ -328,7 +363,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                     value={Math.round(nibAnchor.y)}
                     onChange={(e) => {
                       const v = Number(e.target.value);
-                      const next = { ...nibAnchor, y: v };
+                      const next = { ...nibAnchor, y: isFinite(v) ? v : 0 };
                       setNibAnchor(next);
                       // Convert to extraOffset for live updates
                       const extraOffset = {
@@ -473,10 +508,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                   Rotates the tool image around the tip for perfect alignment.
                 </p>
               </div>
-              <label className="flex items-center gap-2 mt-2 text-xs text-gray-300">
-                <input type="checkbox" checked={nibLock} onChange={(e)=> setNibLock(e.target.checked)} />
-                Nib Lock (keep tip pinned)
-              </label>
+              {/* Nib lock is always ON; checkbox removed intentionally */}
             </div>
 
             {/* Mirror UI removed — mirror is managed in Properties Panel. */}
@@ -503,7 +535,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                 showForeground: true,
                 toolRotationOffsetDeg,
                 calibrationBaseScale: initialSettings?.baseScale ?? 1,
-                nibLock,
+                nibLock: true,
                 extraOffset: { x: calibrationOffset.x, y: calibrationOffset.y },
               });
               onClose();

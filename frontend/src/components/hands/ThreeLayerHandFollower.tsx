@@ -44,7 +44,7 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
   listening = false,
   mountLayer,
   toolRotationOffsetDeg,
-  nibLock,
+  nibLock = true,
 }) => {
   const mountRef = useRef<Konva.Group>(null);
   const innerGroupRef = useRef<Konva.Group | null>(null);

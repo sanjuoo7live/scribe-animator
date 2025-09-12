@@ -1,24 +1,24 @@
 {
   "handId": "hand_with_sleeve",
   "toolId": "pen_black_slim",
-  "savedAt": "2025-09-11T22:11:02.572Z",
+  "savedAt": "2025-09-12T23:13:50.014Z",
   "version": 1,
   "tipBacktrackPx": 0,
   "calibrationOffset": {
-    "x": -49,
-    "y": 152
+    "x": 14,
+    "y": 0
   },
   "nibAnchor": {
-    "x": -242,
-    "y": 459
+    "x": 139,
+    "y": -147
   },
   "mirror": false,
   "showForeground": true,
-  "toolRotationOffsetDeg": 96,
-  "calibrationBaseScale": 1.2,
+  "toolRotationOffsetDeg": 105,
+  "calibrationBaseScale": 2.9,
   "nibLock": true,
   "extraOffset": {
-    "x": -49,
-    "y": 152
+    "x": 14,
+    "y": 0
   }
 }

@@ -86,12 +86,31 @@ export class ThreeLayerHandRenderer {
     // add it again here to avoid double application and drift.
     const handForCalc = config.mirror ? HandToolCompositor.mirrorHandAsset(config.handAsset) : config.handAsset;
     const toolForCalc = config.mirror ? HandToolCompositor.mirrorToolAsset(config.toolAsset) : config.toolAsset;
+    // Map nibAnchor in hand space to a custom tip anchor in tool space
+    let customTip: { x: number; y: number } | undefined;
+    if (config.nibAnchor) {
+      const baseNib = this.computeBaseNibInHand(handForCalc, toolForCalc);
+      const nibInHand = config.mirror
+        ? { x: handForCalc.sizePx.w - config.nibAnchor.x, y: config.nibAnchor.y }
+        : config.nibAnchor;
+      const dxH = nibInHand.x - baseNib.x;
+      const dyH = nibInHand.y - baseNib.y;
+      if (Math.abs(dxH) + Math.abs(dyH) > 0.001) {
+        const base = HandToolCompositor.composeHandTool(handForCalc, toolForCalc, { x: 0, y: 0 }, 0, 1);
+        const rel = base.toolRotation - base.handRotation;
+        const cosR = Math.cos(rel), sinR = Math.sin(rel);
+        const dtX = dxH * cosR - dyH * sinR;
+        const dtY = dxH * sinR + dyH * cosR;
+        customTip = { x: toolForCalc.tipAnchor.x + dtX, y: toolForCalc.tipAnchor.y + dtY };
+      }
+    }
     this.composition = HandToolCompositor.composeHandTool(
       handForCalc,
       toolForCalc,
       config.pathPosition,
       config.pathAngle,
-      config.scale
+      config.scale,
+      customTip
     );
 
     // Use the composition positions directly for tool.
@@ -168,28 +187,29 @@ export class ThreeLayerHandRenderer {
       offsetY: centerY,
     });
 
-    // If a nibAnchor is provided (in hand image coordinates), nudge tool center using world delta
-    if (config.nibAnchor) {
-      const base = this.computeBaseNibInHand(handForCalc, toolForCalc);
-      const nibInHand = config.mirror
-        ? { x: handForCalc.sizePx.w - config.nibAnchor.x, y: config.nibAnchor.y }
-        : config.nibAnchor;
-      const dxHand = (nibInHand.x - base.x);
-      const dyHand = (nibInHand.y - base.y);
-      if (Math.abs(dxHand) + Math.abs(dyHand) > 0.01) {
-        const cosH = Math.cos(this.composition.handRotation);
-        const sinH = Math.sin(this.composition.handRotation);
-        const dxWorld = (dxHand * cosH - dyHand * sinH) * this.composition.handScale;
-        const dyWorld = (dxHand * sinH + dyHand * cosH) * this.composition.handScale;
-        if (config.nibLock) {
-          // Keep tip pinned: adjust center opposite to hand delta
-          toolNode.x(toolNode.x() - dxWorld);
-          toolNode.y(toolNode.y() - dyWorld);
-        } else {
-          // Center rotation mode: move tool along with nib anchor
-          toolNode.x(toolNode.x() + dxWorld);
-          toolNode.y(toolNode.y() + dyWorld);
-        }
+    // No post-nudge; nibAnchor is baked into composition via custom tip
+
+    // Final re-pin: compute actual tip from node after all adjustments and force it to target
+    const computeTip = (): {x:number;y:number} => {
+      const rot = (toolNode.rotation() * Math.PI) / 180;
+      const cos = Math.cos(rot), sin = Math.sin(rot);
+      const sX = toolNode.scaleX();
+      const sY = toolNode.scaleY();
+      const vX = config.toolAsset.tipAnchor.x - centerX;
+      const vY = config.toolAsset.tipAnchor.y - centerY;
+      return {
+        x: toolNode.x() + (vX * sX) * cos - (vY * sY) * sin,
+        y: toolNode.y() + (vX * sX) * sin + (vY * sY) * cos,
+      };
+    };
+    {
+      const actual = computeTip();
+      const desired = this.composition.finalTipPosition; // already equals pathPosition
+      const dx = actual.x - desired.x;
+      const dy = actual.y - desired.y;
+      if (Math.abs(dx) + Math.abs(dy) > 0.001) {
+        toolNode.x(toolNode.x() - dx);
+        toolNode.y(toolNode.y() - dy);
       }
     }
 
@@ -218,10 +238,17 @@ export class ThreeLayerHandRenderer {
     // Optional debug overlay (render only when debug is on)
     this.debugEnabled = !!config.debug;
     if (this.debugEnabled) {
-      const target = config.rawPathPosition
-        ? { x: config.rawPathPosition.x, y: config.rawPathPosition.y }
-        : { x: config.pathPosition.x, y: config.pathPosition.y };
-      const tip = { x: toolNode.x(), y: toolNode.y() };
+      // Use actual pathPosition as the target (includes any Frenet extraOffset)
+      const target = { x: config.pathPosition.x, y: config.pathPosition.y };
+      // Use actual tip (derived from node transform) for accurate debugging
+      const rot = (toolNode.rotation() * Math.PI) / 180;
+      const cos = Math.cos(rot), sin = Math.sin(rot);
+      const vX = config.toolAsset.tipAnchor.x - (config.toolAsset.sizePx.w / 2);
+      const vY = config.toolAsset.tipAnchor.y - (config.toolAsset.sizePx.h / 2);
+      const tip = {
+        x: toolNode.x() + (vX * toolNode.scaleX()) * cos - (vY * toolNode.scaleY()) * sin,
+        y: toolNode.y() + (vX * toolNode.scaleX()) * sin + (vY * toolNode.scaleY()) * cos,
+      };
       const errPts = [target.x, target.y, tip.x, tip.y];
       this.dbg.targetCircle = new Konva.Circle({ x: target.x, y: target.y, radius: 3, fill: 'magenta', opacity: 0.9 });
       this.dbg.tipCircle = new Konva.Circle({ x: tip.x, y: tip.y, radius: 3, fill: 'lime', opacity: 0.9 });
@@ -253,12 +280,32 @@ export class ThreeLayerHandRenderer {
     const handForCalc = config.mirror
       ? HandToolCompositor.mirrorHandAsset(config.handAsset)
       : config.handAsset;
+    // Recalculate composition (include nibAnchor as custom tip so hand stays gripping the tool)
+    const toolForCalc2 = (config.mirror ? HandToolCompositor.mirrorToolAsset(config.toolAsset) : config.toolAsset);
+    let customTip2: { x: number; y: number } | undefined;
+    if (config.nibAnchor) {
+      const baseNib = this.computeBaseNibInHand(handForCalc, toolForCalc2);
+      const nibInHand = config.mirror
+        ? { x: handForCalc.sizePx.w - config.nibAnchor.x, y: config.nibAnchor.y }
+        : config.nibAnchor;
+      const dxH = nibInHand.x - baseNib.x;
+      const dyH = nibInHand.y - baseNib.y;
+      if (Math.abs(dxH) + Math.abs(dyH) > 0.001) {
+        const base = HandToolCompositor.composeHandTool(handForCalc, toolForCalc2, { x: 0, y: 0 }, 0, 1);
+        const rel = base.toolRotation - base.handRotation;
+        const cosR = Math.cos(rel), sinR = Math.sin(rel);
+        const dtX = dxH * cosR - dyH * sinR;
+        const dtY = dxH * sinR + dyH * cosR;
+        customTip2 = { x: toolForCalc2.tipAnchor.x + dtX, y: toolForCalc2.tipAnchor.y + dtY };
+      }
+    }
     this.composition = HandToolCompositor.composeHandTool(
       handForCalc,
-      (config.mirror ? HandToolCompositor.mirrorToolAsset(config.toolAsset) : config.toolAsset),
+      toolForCalc2,
       config.pathPosition,
       config.pathAngle,
-      config.scale
+      config.scale,
+      customTip2
     );
 
     // Always pick the first three children as the image layers (bg, tool, fg)
@@ -288,18 +335,22 @@ export class ThreeLayerHandRenderer {
     handFg.setAttrs(handTransform as any);
 
     // Update tool: rotate about CENTER and compensate so the tip remains locked
+    // Match the logic used in createThreeLayerGroup so behavior is identical
     const extraDeg = config.toolRotationOffsetDeg || 0;
     const baseRot = this.composition.toolRotation; // radians
+    const totalRot = baseRot + (extraDeg * Math.PI) / 180; // radians
     const centerX = config.toolAsset.sizePx.w / 2;
     const centerY = config.toolAsset.sizePx.h / 2;
     const vx = config.toolAsset.tipAnchor.x - centerX;
     const vy = config.toolAsset.tipAnchor.y - centerY;
     const sx = this.composition.toolScale * (config.mirror ? -1 : 1);
     const sy = this.composition.toolScale;
-    const cosB = Math.cos(baseRot);
-    const sinB = Math.sin(baseRot);
-    const ux = (vx * sx) * cosB - (vy * sy) * sinB;
-    const uy = (vx * sx) * sinB + (vy * sy) * cosB;
+    // If nib is locked, compensate using the total rotation so the tip stays pinned
+    const useRot = config.nibLock ? totalRot : baseRot;
+    const cosUse = Math.cos(useRot);
+    const sinUse = Math.sin(useRot);
+    const ux = (vx * sx) * cosUse - (vy * sy) * sinUse;
+    const uy = (vx * sx) * sinUse + (vy * sy) * cosUse;
     let posX = this.composition.finalTipPosition.x - ux;
     let posY = this.composition.finalTipPosition.y - uy;
     toolNode.setAttrs({
@@ -312,23 +363,29 @@ export class ThreeLayerHandRenderer {
       offsetY: centerY,
     });
 
-    // Apply tool-only nudge from nib anchor in hand space
-    if (config.nibAnchor) {
-      const activeHand = handForCalc;
-      const activeTool = (config.mirror ? HandToolCompositor.mirrorToolAsset(config.toolAsset) : config.toolAsset);
-      const base = this.computeBaseNibInHand(activeHand, activeTool);
-      const nibInHand = config.mirror
-        ? { x: activeHand.sizePx.w - config.nibAnchor.x, y: config.nibAnchor.y }
-        : config.nibAnchor;
-      const dxHand = (nibInHand.x - base.x);
-      const dyHand = (nibInHand.y - base.y);
-      if (Math.abs(dxHand) + Math.abs(dyHand) > 0.01) {
-        const cosH = Math.cos(this.composition.handRotation);
-        const sinH = Math.sin(this.composition.handRotation);
-        const dxWorld = (dxHand * cosH - dyHand * sinH) * this.composition.handScale;
-        const dyWorld = (dxHand * sinH + dyHand * cosH) * this.composition.handScale;
-        toolNode.x(toolNode.x() + dxWorld);
-        toolNode.y(toolNode.y() + dyWorld);
+    // No post-nudge; nibAnchor already baked into composition
+
+    // Final re-pin: ensure actual tip equals desired path target after all adjustments
+    const computeTip = (): { x: number; y: number } => {
+      const rot = (toolNode.rotation() * Math.PI) / 180;
+      const cos = Math.cos(rot), sin = Math.sin(rot);
+      const sX = toolNode.scaleX();
+      const sY = toolNode.scaleY();
+      const vX = config.toolAsset.tipAnchor.x - centerX;
+      const vY = config.toolAsset.tipAnchor.y - centerY;
+      return {
+        x: toolNode.x() + (vX * sX) * cos - (vY * sY) * sin,
+        y: toolNode.y() + (vX * sX) * sin + (vY * sY) * cos,
+      };
+    };
+    {
+      const desired = this.composition.finalTipPosition;
+      const actual = computeTip();
+      const dx = actual.x - desired.x;
+      const dy = actual.y - desired.y;
+      if (Math.abs(dx) + Math.abs(dy) > 0.005) {
+        toolNode.x(toolNode.x() - dx);
+        toolNode.y(toolNode.y() - dy);
       }
     }
 
@@ -342,10 +399,16 @@ export class ThreeLayerHandRenderer {
     // Update debug overlay
     if (config.debug) {
       this.debugEnabled = true;
-      const target = config.rawPathPosition
-        ? { x: config.rawPathPosition.x, y: config.rawPathPosition.y }
-        : { x: config.pathPosition.x, y: config.pathPosition.y };
-      const tip = { x: toolNode.x(), y: toolNode.y() };
+      // Use actual pathPosition as the target (includes any Frenet extraOffset)
+      const target = { x: config.pathPosition.x, y: config.pathPosition.y };
+      const rotT = (toolNode.rotation() * Math.PI) / 180;
+      const cosT = Math.cos(rotT), sinT = Math.sin(rotT);
+      const vX2 = config.toolAsset.tipAnchor.x - (config.toolAsset.sizePx.w / 2);
+      const vY2 = config.toolAsset.tipAnchor.y - (config.toolAsset.sizePx.h / 2);
+      const tip = {
+        x: toolNode.x() + (vX2 * toolNode.scaleX()) * cosT - (vY2 * toolNode.scaleY()) * sinT,
+        y: toolNode.y() + (vX2 * toolNode.scaleX()) * sinT + (vY2 * toolNode.scaleY()) * cosT,
+      };
       if (!this.dbg.tipCircle || !this.dbg.targetCircle || !this.dbg.errorLine) {
         // Create if missing
         this.dbg.targetCircle = new Konva.Circle({ x: target.x, y: target.y, radius: 3, fill: 'magenta', opacity: 0.9 });

@@ -7,6 +7,9 @@ export interface CalibrationData {
   scale?: number;
   mirror?: boolean;
   showForeground?: boolean;
+  toolRotationOffsetDeg?: number;
+  calibrationBaseScale?: number;
+  nibLock?: boolean;
 }
 
 function apiBase() {
@@ -23,6 +26,7 @@ export async function loadCalibration(handId: string, toolId: string): Promise<C
     const res = await fetch(`${base}/api/calibration/hand-tool/${encodeURIComponent(handId)}/${encodeURIComponent(toolId)}`);
     if (!res.ok) return null;
     const data = await res.json();
+    if (data && data.exists === false) return null;
     // Normalize to the shape we expect
     const out: CalibrationData = {};
     if (typeof data.tipBacktrackPx === 'number') out.tipBacktrackPx = data.tipBacktrackPx;
@@ -31,7 +35,11 @@ export async function loadCalibration(handId: string, toolId: string): Promise<C
     if (typeof data.scale === 'number') out.scale = data.scale;
     if (typeof data.mirror === 'boolean') out.mirror = data.mirror;
     if (typeof data.showForeground === 'boolean') out.showForeground = data.showForeground;
-    return out;
+    if (typeof data.toolRotationOffsetDeg === 'number') out.toolRotationOffsetDeg = data.toolRotationOffsetDeg;
+    if (typeof data.calibrationBaseScale === 'number') out.calibrationBaseScale = data.calibrationBaseScale;
+    if (typeof data.nibLock === 'boolean') out.nibLock = data.nibLock;
+    // If nothing meaningful was present, treat as null
+    return Object.keys(out).length > 0 ? out : null;
   } catch {
     return null;
   }
@@ -51,4 +59,3 @@ export async function saveCalibration(handId: string, toolId: string, calibratio
     return false;
   }
 }
-

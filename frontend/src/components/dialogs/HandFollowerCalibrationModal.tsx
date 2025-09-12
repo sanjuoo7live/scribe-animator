@@ -16,6 +16,9 @@ interface HandFollowerCalibrationModalProps {
     nibAnchor?: { x: number; y: number }; // pixel coordinates in hand image
     mirror?: boolean;
     showForeground?: boolean;
+    toolRotationOffsetDeg?: number;
+    baseScale?: number; // current hand scale at time of calibration
+    nibLock?: boolean;
   };
   onApply?: (settings: {
     tipBacktrackPx: number;
@@ -23,6 +26,9 @@ interface HandFollowerCalibrationModalProps {
     nibAnchor: { x: number; y: number };
     mirror: boolean;
     showForeground: boolean;
+    toolRotationOffsetDeg?: number;
+    calibrationBaseScale?: number;
+    nibLock?: boolean;
     extraOffset?: { x: number; y: number }; // Add extraOffset for the restored renderer
   }) => void;
   onLiveChange?: (partial: Partial<{
@@ -31,6 +37,7 @@ interface HandFollowerCalibrationModalProps {
     nibAnchor: { x: number; y: number };
     mirror: boolean;
     showForeground: boolean;
+    toolRotationOffsetDeg?: number;
     extraOffset?: { x: number; y: number }; // Add extraOffset for live updates
   }>) => void;
 }
@@ -72,6 +79,8 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
     }
   });
   const [mirror, setMirror] = useState(initialSettings?.mirror ?? false);
+  const [toolRotationOffsetDeg, setToolRotationOffsetDeg] = useState<number>(initialSettings?.toolRotationOffsetDeg ?? 0);
+  const [nibLock, setNibLock] = useState<boolean>(!!initialSettings?.nibLock);
   // Removed local Show Foreground control (managed in Properties Panel)
   
   // Force update counter to ensure live changes are reflected
@@ -168,35 +177,42 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
     const nibX = dx + anchorX * s;
     const nibY = dy + anchorY * s;
 
-    // Draw tool aligned so tipAnchor sits at nib
+    // Draw tool: rotate around CENTER but keep nib pinned at nibX/nibY using compensation
     if (toolImageLoaded && toolImageRef.current) {
       const ti = toolImageRef.current;
       const tiw = ti.naturalWidth || ti.width;
       const tih = ti.naturalHeight || ti.height;
-      // Preview tool scale relative to hand preview scale so it looks natural (include user scale)
+      // Preview tool scale relative to hand preview scale so it looks natural
       const st = Math.min(0.8, Math.max(0.15, (handAsset.sizePx.h / Math.max(1, tih)) * 0.15));
-      const tipX = toolAsset.tipAnchor.x;
-      const tipY = toolAsset.tipAnchor.y;
-      const dwTool = Math.round(tiw * st);
+      const cx = tiw / 2;
+      const cy = tih / 2;
+      const vx = toolAsset.tipAnchor.x - cx;
+      const vy = toolAsset.tipAnchor.y - cy;
+      const sx = st * (mirror ? -1 : 1);
+      const sy = st;
+      // Use total rotation for compensation so tip remains at nib
+      const totalRad = ((toolAsset.rotationOffsetDeg || 0) + toolRotationOffsetDeg) * Math.PI / 180;
+      const cosT = Math.cos(totalRad);
+      const sinT = Math.sin(totalRad);
+      const ux = (vx * sx) * cosT - (vy * sy) * sinT;
+      const uy = (vx * sx) * sinT + (vy * sy) * cosT;
+      const posX = Math.round(nibX - ux);
+      const posY = Math.round(nibY - uy);
+      const dwTool = Math.round(tiw * Math.abs(st));
       const dhTool = Math.round(tih * st);
-      if (mirror) {
-        // Mirror tool for preview so it matches mirrored hand
-        ctx.save();
-        ctx.translate(Math.round(nibX), Math.round(nibY));
-        ctx.scale(-1, 1);
-        ctx.drawImage(
-          ti,
-          Math.round(-tipX * st),
-          Math.round(-tipY * st),
-          dwTool,
-          dhTool
-        );
-        ctx.restore();
-      } else {
-        const drawX = Math.round(nibX - tipX * st);
-        const drawY = Math.round(nibY - tipY * st);
-        ctx.drawImage(ti, drawX, drawY, dwTool, dhTool);
-      }
+      ctx.save();
+      ctx.translate(posX, posY);
+      // Rotate by total angle
+      ctx.rotate(totalRad);
+      if (mirror) ctx.scale(-1, 1);
+      ctx.drawImage(
+        ti,
+        Math.round(-cx * st),
+        Math.round(-cy * st),
+        dwTool,
+        dhTool
+      );
+      ctx.restore();
     } else {
       // Fallback marker
       ctx.fillStyle = '#ff0000';
@@ -219,7 +235,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
     }
 
     // Crosshair removed to avoid slight offset; tool tip indicates nib.
-  }, [handImageLoaded, handFgImageLoaded, toolImageLoaded, nibAnchor, mirror, calibrationOffset, handAsset.sizePx, toolAsset.tipAnchor.x, toolAsset.tipAnchor.y]);
+  }, [handImageLoaded, handFgImageLoaded, toolImageLoaded, nibAnchor, mirror, calibrationOffset, handAsset.sizePx, toolAsset.tipAnchor.x, toolAsset.tipAnchor.y, toolRotationOffsetDeg, toolAsset.rotationOffsetDeg]);
 
   // Handle canvas click for nib positioning
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -341,9 +357,9 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                   <label className="block text-xs text-gray-400 mb-1">Along Tangent (X)</label>
                   <input
                     type="range"
-                    min="-20"
-                    max="20"
-                    step="0.5"
+                    min="-1000"
+                    max="1000"
+                    step="1"
                     value={calibrationOffset.x}
                     onChange={(e) => {
                       const v = Number(e.target.value);
@@ -357,18 +373,18 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                     className="w-full"
                   />
                   <div className="flex justify-between text-xs text-gray-500">
-                    <span>-20px</span>
+                    <span>-1000px</span>
                     <span>{calibrationOffset.x.toFixed(1)}px</span>
-                    <span>+20px</span>
+                    <span>+1000px</span>
                   </div>
                 </div>
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">Left Normal (Y)</label>
                   <input
                     type="range"
-                    min="-20"
-                    max="20"
-                    step="0.5"
+                    min="-1000"
+                    max="1000"
+                    step="1"
                     value={calibrationOffset.y}
                     onChange={(e) => {
                       const v = Number(e.target.value);
@@ -382,9 +398,9 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                     className="w-full"
                   />
                   <div className="flex justify-between text-xs text-gray-500">
-                    <span>-20px</span>
+                    <span>-1000px</span>
                     <span>{calibrationOffset.y.toFixed(1)}px</span>
-                    <span>+20px</span>
+                    <span>+1000px</span>
                   </div>
                 </div>
               </div>
@@ -398,7 +414,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                 <input
                   type="range"
                   min="0"
-                  max="40"
+                  max="1000"
                   step="0.5"
                   value={tipBacktrackPx}
                   onChange={(e) => {
@@ -418,7 +434,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                 <div className="flex justify-between text-xs text-gray-500">
                   <span>0px (auto)</span>
                   <span>{tipBacktrackPx.toFixed(1)}px</span>
-                  <span>40px</span>
+                  <span>1000px</span>
                 </div>
                 <p className="text-xs text-gray-400 mt-1">
                   How far behind the ink tip should the nib sit (0 = automatic)
@@ -426,34 +442,44 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
               </div>
             </div>
 
-            {/* Mirror */}
-            <div className="bg-gray-700/40 p-3 rounded">
-              <h4 className="text-sm font-semibold text-gray-300 mb-2">Appearance</h4>
-              <div className="space-y-2">
-                <div className="flex items-center gap-4">
-                  <label className="flex items-center gap-2 text-xs text-gray-300">
-                    <input
-                      type="checkbox"
-                      checked={mirror}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setMirror(checked);
-                        // Send live update for mirror changes
-                        onLiveChange?.({ 
-                          mirror: checked,
-                          extraOffset: {
-                            x: calibrationOffset.x,
-                            y: calibrationOffset.y
-                          }
-                        });
-                        forceUpdate(prev => prev + 1);
-                      }}
-                    />
-                    Mirror (Left/Right)
-                  </label>
+            {/* Tool Rotation Offset */}
+            <div className="bg-purple-900/20 p-3 rounded">
+              <h4 className="text-sm font-semibold text-purple-300 mb-2">Tool Rotation</h4>
+              <div>
+                <label className="block text-xs text-gray-400 mb-1">Rotation Offset (degrees)</label>
+                <input
+                  type="range"
+                  min="-360"
+                  max="360"
+                  step="1"
+                  value={toolRotationOffsetDeg}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    setToolRotationOffsetDeg(v);
+                    onLiveChange?.({ 
+                      toolRotationOffsetDeg: v,
+                      extraOffset: { x: calibrationOffset.x, y: calibrationOffset.y },
+                    });
+                    forceUpdate(prev => prev + 1);
+                  }}
+                  className="w-full"
+                />
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>-360°</span>
+                  <span>{toolRotationOffsetDeg.toFixed(0)}°</span>
+                  <span>+360°</span>
                 </div>
+                <p className="text-xs text-gray-400 mt-1">
+                  Rotates the tool image around the tip for perfect alignment.
+                </p>
               </div>
+              <label className="flex items-center gap-2 mt-2 text-xs text-gray-300">
+                <input type="checkbox" checked={nibLock} onChange={(e)=> setNibLock(e.target.checked)} />
+                Nib Lock (keep tip pinned)
+              </label>
             </div>
+
+            {/* Mirror UI removed — mirror is managed in Properties Panel. */}
 
             {/* Frenet Frame Information */}
             <div className="mt-4 p-3 bg-yellow-900/20 rounded">
@@ -475,6 +501,9 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                 nibAnchor,
                 mirror,
                 showForeground: true,
+                toolRotationOffsetDeg,
+                calibrationBaseScale: initialSettings?.baseScale ?? 1,
+                nibLock,
                 extraOffset: { x: calibrationOffset.x, y: calibrationOffset.y },
               });
               onClose();
@@ -503,6 +532,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
               setCalibrationOffset({ x: 0, y: 0 });
               setNibAnchor(defaultNibAnchor);
               setMirror(false);
+              setToolRotationOffsetDeg(0);
               
               // Send live update for reset
               onLiveChange?.({ 
@@ -510,6 +540,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                 calibrationOffset: { x: 0, y: 0 },
                 nibAnchor: defaultNibAnchor,
                 mirror: false,
+                toolRotationOffsetDeg: 0,
                 extraOffset: { x: 0, y: 0 }
               });
               forceUpdate(prev => prev + 1);

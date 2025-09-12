@@ -214,7 +214,7 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
       }
       if (!tool) tool = HandPresetManager.presetToLegacyToolAsset(selectedPreset);
       const loaded = await loadCalibration(hand.id, tool.id);
-      setCalib(loaded);
+      setCalib(loaded && Object.keys(loaded).length ? loaded : null);
     };
     run();
   }, [selectedPreset, selectedToolId, tools]);
@@ -508,9 +508,14 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
           <button
             type="button"
             className="px-3 py-1 bg-blue-600 rounded disabled:opacity-50"
-            onClick={() => {
+            onClick={async () => {
               if (!selectedLegacy.hand || !selectedLegacy.tool) return;
-              onApply({ hand: selectedLegacy.hand, tool: selectedLegacy.tool, scale, mirror: false, calibrated: calib || undefined });
+              // If we don't have a calibration loaded in memory, try to fetch one before applying
+              let effective = calib;
+              if (!effective) {
+                effective = await loadCalibration(selectedLegacy.hand.id, selectedLegacy.tool.id);
+              }
+              onApply({ hand: selectedLegacy.hand, tool: selectedLegacy.tool, scale, mirror: false, calibrated: (effective && Object.keys(effective).length ? effective : undefined) });
             }}
             disabled={!selectedLegacy.hand || !selectedLegacy.tool || (!!tools.length && !selectedToolId)}
           >Apply Selection</button>
@@ -529,6 +534,9 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
               nibAnchor: calib?.nibAnchor,
               mirror: !!calib?.mirror,
               showForeground: calib?.showForeground !== false,
+              toolRotationOffsetDeg: calib?.toolRotationOffsetDeg ?? 0,
+              baseScale: scale,
+              nibLock: !!calib?.nibLock,
             }}
             onApply={async (settings: any) => {
               const ok = await saveCalibration(selectedLegacy.hand!.id, selectedLegacy.tool!.id, settings);

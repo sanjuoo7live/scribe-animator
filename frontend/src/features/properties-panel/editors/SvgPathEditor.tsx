@@ -8,6 +8,7 @@ import PROPERTY_RANGES from '../domain/constants';
 import { clampNumber } from '../validation';
 import useThrottledCallback from '../hooks/useThrottledCallback';
 import { HandFollowerCalibrationModalLazy } from '../../../components/hands/lazy';
+import { saveCalibration } from '../../../utils/calibrationService';
 import HandToolSelector from '../../../components/hands/HandToolSelector';
 import { HAND_ASSETS, TOOL_ASSETS } from '../../../types/handAssets';
 
@@ -209,6 +210,9 @@ const SvgPathEditorComponent: React.FC = () => {
               nibAnchor: hf?.nibAnchor || undefined,
               mirror: !!hf?.mirror,
               showForeground: hf?.showForeground !== false,
+              toolRotationOffsetDeg: hf?.toolRotationOffsetDeg ?? 0,
+              baseScale: hf?.scale ?? PROPERTY_RANGES.handScale.default,
+              nibLock: !!hf?.nibLock,
             }}
             onLiveChange={(partial: any) => {
               if (!id) return;
@@ -224,7 +228,28 @@ const SvgPathEditorComponent: React.FC = () => {
               }
               if (partial.nibAnchor) nextHF.nibAnchor = partial.nibAnchor;
               if (partial.mirror !== undefined) nextHF.mirror = !!partial.mirror;
+              if (partial.toolRotationOffsetDeg !== undefined) nextHF.toolRotationOffsetDeg = partial.toolRotationOffsetDeg;
               patchSceneObject(id, { properties: { handFollower: nextHF } });
+            }}
+            onApply={async (settings: any) => {
+              if (!id) return;
+              const nextHF = { ...hf } as any;
+              nextHF.tipBacktrackPx = settings.tipBacktrackPx;
+              nextHF.calibrationOffset = settings.calibrationOffset;
+              nextHF.offset = settings.calibrationOffset;
+              nextHF.nibAnchor = settings.nibAnchor;
+              nextHF.toolRotationOffsetDeg = settings.toolRotationOffsetDeg;
+              if (typeof settings.calibrationBaseScale === 'number') nextHF.calibrationBaseScale = settings.calibrationBaseScale;
+              if (typeof settings.nibLock === 'boolean') nextHF.nibLock = !!settings.nibLock;
+              patchSceneObject(id, { properties: { handFollower: nextHF } });
+              // Persist to backend if we have concrete hand/tool ids
+              try {
+                const handId = nextHF?.handAsset?.id;
+                const toolId = nextHF?.toolAsset?.id;
+                if (handId && toolId) {
+                  await saveCalibration(handId, toolId, settings);
+                }
+              } catch {}
             }}
           />
         )}
@@ -251,6 +276,7 @@ const SvgPathEditorComponent: React.FC = () => {
                   ...(calibrated?.nibAnchor ? { nibAnchor: calibrated.nibAnchor } : {}),
                   ...(calibrated?.calibrationOffset ? { calibrationOffset: calibrated.calibrationOffset, offset: calibrated.calibrationOffset } : {}),
                   ...(typeof calibrated?.tipBacktrackPx === 'number' ? { tipBacktrackPx: calibrated.tipBacktrackPx } : {}),
+                  ...(typeof calibrated?.toolRotationOffsetDeg === 'number' ? { toolRotationOffsetDeg: calibrated.toolRotationOffsetDeg } : {}),
                 },
               },
             });

@@ -15,6 +15,12 @@ export interface ThreeLayerHandConfig {
   extraOffset?: { x: number; y: number };
   // Nib anchor in HAND image coordinates (unmirrored). Used to nudge tool only.
   nibAnchor?: { x: number; y: number };
+  // Extra visual rotation in degrees applied to the tool sprite only.
+  // This does NOT affect composition math; nib stays locked and hand position does not change.
+  toolRotationOffsetDeg?: number;
+  // For debug only: raw path position before applying any Frenet extraOffset
+  rawPathPosition?: { x: number; y: number };
+  nibLock?: boolean;
 }
 
 export class ThreeLayerHandRenderer {
@@ -33,6 +39,8 @@ export class ThreeLayerHandRenderer {
     targetCircle: null as Konva.Circle | null,
     errorLine: null as Konva.Line | null,
   };
+  private lastScale: number | undefined;
+  private lastExtraOffset: { x: number; y: number } | undefined;
 
   /**
    * Load all three images for the hand-tool combination
@@ -129,21 +137,39 @@ export class ThreeLayerHandRenderer {
     });
 
     // Layer 2 (Middle): Tool (pen, brush, marker, etc.)
+    // Rotate visually around the TOOL CENTER, but compensate position so the tip stays locked.
+    const centerX = config.toolAsset.sizePx.w / 2;
+    const centerY = config.toolAsset.sizePx.h / 2;
+    const vx = config.toolAsset.tipAnchor.x - centerX;
+    const vy = config.toolAsset.tipAnchor.y - centerY;
+    const extraDeg = config.toolRotationOffsetDeg || 0;
+    // Determine whether to lock nib (total rotation) or center-only baseline
+    const baseRot = (toolRotDeg * Math.PI) / 180;
+    const totalRot = ((toolRotDeg + extraDeg) * Math.PI) / 180;
+    const sx = this.composition.toolScale * (config.mirror ? -1 : 1);
+    const sy = this.composition.toolScale;
+    const cosUse = config.nibLock ? Math.cos(totalRot) : Math.cos(baseRot);
+    const sinUse = config.nibLock ? Math.sin(totalRot) : Math.sin(baseRot);
+    // Transform center->tip vector with Scale(mirror) then chosen rotation
+    const ux = (vx * sx) * cosUse - (vy * sy) * sinUse;
+    const uy = (vx * sx) * sinUse + (vy * sy) * cosUse;
+    let posX = this.composition.finalTipPosition.x - ux;
+    let posY = this.composition.finalTipPosition.y - uy;
+
     const toolNode = new Konva.Image({
       image: this.toolImage,
-      // Pivot at tip so the tip stays glued to the path
-      x: this.composition.finalTipPosition.x,
-      y: this.composition.finalTipPosition.y,
-      rotation: toolRotDeg,
-      scaleX: (config.mirror ? -1 : 1) * this.composition.toolScale,
-      scaleY: this.composition.toolScale,
-      offsetX: config.toolAsset.tipAnchor.x,
-      offsetY: config.toolAsset.tipAnchor.y,
+      x: posX,
+      y: posY,
+      rotation: toolRotDeg + extraDeg,
+      scaleX: sx,
+      scaleY: sy,
+      // Pivot around the CENTER so extra rotation is about center of gravity
+      offsetX: centerX,
+      offsetY: centerY,
     });
 
-    // If a nibAnchor is provided (in hand image coordinates), nudge only the tool
+    // If a nibAnchor is provided (in hand image coordinates), nudge tool center using world delta
     if (config.nibAnchor) {
-      // Build or reuse base nib pos in hand space for the active handedness
       const base = this.computeBaseNibInHand(handForCalc, toolForCalc);
       const nibInHand = config.mirror
         ? { x: handForCalc.sizePx.w - config.nibAnchor.x, y: config.nibAnchor.y }
@@ -155,8 +181,15 @@ export class ThreeLayerHandRenderer {
         const sinH = Math.sin(this.composition.handRotation);
         const dxWorld = (dxHand * cosH - dyHand * sinH) * this.composition.handScale;
         const dyWorld = (dxHand * sinH + dyHand * cosH) * this.composition.handScale;
-        toolNode.x(toolNode.x() + dxWorld);
-        toolNode.y(toolNode.y() + dyWorld);
+        if (config.nibLock) {
+          // Keep tip pinned: adjust center opposite to hand delta
+          toolNode.x(toolNode.x() - dxWorld);
+          toolNode.y(toolNode.y() - dyWorld);
+        } else {
+          // Center rotation mode: move tool along with nib anchor
+          toolNode.x(toolNode.x() + dxWorld);
+          toolNode.y(toolNode.y() + dyWorld);
+        }
       }
     }
 
@@ -182,10 +215,12 @@ export class ThreeLayerHandRenderer {
     handGroup.add(toolNode);    // Middle layer
     handGroup.add(handFgNode);  // Top layer
 
-    // Optional debug overlay
+    // Optional debug overlay (render only when debug is on)
     this.debugEnabled = !!config.debug;
     if (this.debugEnabled) {
-      const target = { x: config.pathPosition.x, y: config.pathPosition.y };
+      const target = config.rawPathPosition
+        ? { x: config.rawPathPosition.x, y: config.rawPathPosition.y }
+        : { x: config.pathPosition.x, y: config.pathPosition.y };
       const tip = { x: toolNode.x(), y: toolNode.y() };
       const errPts = [target.x, target.y, tip.x, tip.y];
       this.dbg.targetCircle = new Konva.Circle({ x: target.x, y: target.y, radius: 3, fill: 'magenta', opacity: 0.9 });
@@ -194,6 +229,7 @@ export class ThreeLayerHandRenderer {
       handGroup.add(this.dbg.errorLine);
       handGroup.add(this.dbg.targetCircle);
       handGroup.add(this.dbg.tipCircle);
+      // Logs are handled in update only to reduce noise
     }
 
     return handGroup;
@@ -251,15 +287,29 @@ export class ThreeLayerHandRenderer {
     handBgNode.setAttrs(handTransform as any);
     handFg.setAttrs(handTransform as any);
 
-    // Update tool pivoting at tip so tip stays fixed when mirrored
+    // Update tool: rotate about CENTER and compensate so the tip remains locked
+    const extraDeg = config.toolRotationOffsetDeg || 0;
+    const baseRot = this.composition.toolRotation; // radians
+    const centerX = config.toolAsset.sizePx.w / 2;
+    const centerY = config.toolAsset.sizePx.h / 2;
+    const vx = config.toolAsset.tipAnchor.x - centerX;
+    const vy = config.toolAsset.tipAnchor.y - centerY;
+    const sx = this.composition.toolScale * (config.mirror ? -1 : 1);
+    const sy = this.composition.toolScale;
+    const cosB = Math.cos(baseRot);
+    const sinB = Math.sin(baseRot);
+    const ux = (vx * sx) * cosB - (vy * sy) * sinB;
+    const uy = (vx * sx) * sinB + (vy * sy) * cosB;
+    let posX = this.composition.finalTipPosition.x - ux;
+    let posY = this.composition.finalTipPosition.y - uy;
     toolNode.setAttrs({
-      x: this.composition.finalTipPosition.x,
-      y: this.composition.finalTipPosition.y,
-      rotation: (this.composition.toolRotation * 180) / Math.PI,
-      scaleX: (config.mirror ? -1 : 1) * this.composition.toolScale,
-      scaleY: this.composition.toolScale,
-      offsetX: config.toolAsset.tipAnchor.x,
-      offsetY: config.toolAsset.tipAnchor.y,
+      x: posX,
+      y: posY,
+      rotation: (baseRot * 180) / Math.PI + extraDeg,
+      scaleX: sx,
+      scaleY: sy,
+      offsetX: centerX,
+      offsetY: centerY,
     });
 
     // Apply tool-only nudge from nib anchor in hand space
@@ -292,7 +342,9 @@ export class ThreeLayerHandRenderer {
     // Update debug overlay
     if (config.debug) {
       this.debugEnabled = true;
-      const target = { x: config.pathPosition.x, y: config.pathPosition.y };
+      const target = config.rawPathPosition
+        ? { x: config.rawPathPosition.x, y: config.rawPathPosition.y }
+        : { x: config.pathPosition.x, y: config.pathPosition.y };
       const tip = { x: toolNode.x(), y: toolNode.y() };
       if (!this.dbg.tipCircle || !this.dbg.targetCircle || !this.dbg.errorLine) {
         // Create if missing
@@ -311,6 +363,29 @@ export class ThreeLayerHandRenderer {
         this.dbg.targetCircle.moveToTop();
         this.dbg.tipCircle.moveToTop();
       }
+
+      // Log when scale or offset changes, and also log error magnitude
+      const ex = config.extraOffset || { x: 0, y: 0 };
+      const scaleChanged = this.lastScale !== config.scale;
+      if (scaleChanged) {
+        try {
+          console.log('🧭 [DRIFT DEBUG:update]', {
+            scale: config.scale,
+            mirror: !!config.mirror,
+            extraOffset: ex,
+            tip,
+            target,
+            note: 'scale changed'
+          });
+        } catch {}
+        this.lastScale = config.scale;
+      }
+    }
+    else {
+      // Hide overlay entirely when debug is off
+      if (this.dbg.errorLine) this.dbg.errorLine.visible(false);
+      if (this.dbg.targetCircle) this.dbg.targetCircle.visible(false);
+      if (this.dbg.tipCircle) this.dbg.tipCircle.visible(false);
     }
   }
 

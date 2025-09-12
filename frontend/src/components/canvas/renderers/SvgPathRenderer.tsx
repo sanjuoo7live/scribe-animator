@@ -61,6 +61,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
 
   // Ensure rerender during playback by subscribing to the canvas clock
   const [clockTick, setClockTick] = React.useState(0);
+  const lastScaleRef = React.useRef<number | null>(null);
   React.useEffect(() => {
     if (!canvasCtx?.clock) return;
     const unsubscribe = canvasCtx.clock.subscribe(() => {
@@ -311,24 +312,14 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
 
     const cpActive = activePath as CachedParsedPath;
 
-    // Simple debug logging to avoid interference
-    if ((debug || handDebug) && activePath) {
-      const now = Date.now();
-      const lastLogKey = `hand-debug-${obj.id}`;
-      const lastLogTime = (window as any)[lastLogKey] || 0;
-
-      if (now - lastLogTime > 1000) { // Rate limit to once per second
-        (window as any)[lastLogKey] = now;
-        console.log('🤚 [HAND DEBUG] Hand Follower', {
-          pathIndex,
-          localProgress: `${(localProgress * 100).toFixed(1)}%`,
-          targetLen: `${targetLen.toFixed(1)} units`
-        });
-      }
-    }
+    // Removed periodic hand follower debug logs
 
     // Render follower whenever enabled and assets are present. Do not require a specific mode.
     if (handFollowerSettings.handAsset && handFollowerSettings.toolAsset) {
+      // Scale-aware calibration: scale offset/backtrack by ratio of current scale to calibration base scale
+      const currentScale = Number(handFollowerSettings.scale || 1);
+      const baseScale = Number(handFollowerSettings.calibrationBaseScale || currentScale || 1);
+      const scaleRatio = baseScale !== 0 ? (currentScale / baseScale) : 1;
       const userBacktrack = typeof handFollowerSettings.tipBacktrackPx === 'number' ? handFollowerSettings.tipBacktrackPx : null;
       const cap = (activePath.strokeLinecap || activePath.lineCap || 'round') as 'round'|'butt'|'square';
       const logicalW = (activePath.strokeWidth ?? 3);
@@ -337,8 +328,8 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
       const autoBacktrack = (capExt * previewScale) + 0.4 * logicalW;
       // Respect user-set backtrack even when not drawing; fall back to auto only when user hasn't set one
       let tipBacktrackPx = (userBacktrack !== null)
-        ? Math.max(0, userBacktrack)
-        : (draw ? Math.max(1, autoBacktrack) : 0);
+        ? Math.max(0, userBacktrack) // keep user-set backtrack absolute (world px)
+        : (draw ? Math.max(1, autoBacktrack) : 0); // auto already relates to stroke width
 
       try {
         if (draw && activePath?.d && activePath.len > 0) {
@@ -364,28 +355,10 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
               tipBacktrackPx *= damping;
             }
 
-            // 🔍 Add curvature analysis logging
-            if (debug || handDebug) {
-              // eslint-disable-next-line no-console
-              console.log('🎯 [HAND DEBUG] Curvature Analysis', {
-                id: obj.id,
-                p: `${(p * 100).toFixed(1)}%`,
-                tLen,
-                arc,
-                angles: { ang0, ang1, ang2 },
-                angleChanges: { d1, d2, totalAngleChange },
-                kappa,
-                damping,
-                tipBacktrackPx
-              });
-            }
+            // Removed verbose curvature analysis logs
           }
         }
-      } catch (error) {
-        if (debug || handDebug) {
-          console.error('🤚 [HAND DEBUG] Curvature calculation error:', error);
-        }
-      }
+      } catch (error) { /* suppress curvature logs */ }
 
       // Build world-space transform: Group(x,y,rot,scale) * PathLocalTransform
       const toRad = (deg: number) => (deg * Math.PI) / 180;
@@ -413,6 +386,28 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
       const groupM = trs(groupX, groupY, groupRotationDeg, groupScaleX, groupScaleY);
       const worldM = mul(groupM, pathM);
 
+      // Keep Frenet offset absolute in world px; do not scale by hand scale
+      const baseOffset = handFollowerSettings.calibrationOffset || handFollowerSettings.offset || { x: 0, y: 0 };
+      const scaledOffset = baseOffset;
+
+      if (debug || handDebug) {
+        const prev = lastScaleRef.current;
+        if (prev === null || prev !== currentScale) {
+          lastScaleRef.current = currentScale;
+          try {
+            console.log('🧭 [DRIFT INPUT]', {
+              prevScale: prev,
+              scale: currentScale,
+              calibrationBaseScale: baseScale,
+              scaleRatio,
+              offset: baseOffset,
+              backtrackPx: tipBacktrackPx,
+              mirror: !!handFollowerSettings.mirror,
+            });
+          } catch {}
+        }
+      }
+
       return {
         node: (
           <ThreeLayerHandFollower
@@ -428,8 +423,10 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
             debug={!!handFollowerSettings.debug || handDebug}
             mirror={!!handFollowerSettings.mirror}
             showForeground={handFollowerSettings.showForeground !== false}
-            extraOffset={handFollowerSettings.calibrationOffset || handFollowerSettings.offset || { x: 0, y: 0 }}
+            extraOffset={scaledOffset}
             nibAnchor={handFollowerSettings.nibAnchor}
+            nibLock={!!handFollowerSettings.nibLock}
+            toolRotationOffsetDeg={handFollowerSettings.toolRotationOffsetDeg}
             listening={false}
             mountLayer={overlayLayer}
           />
@@ -462,35 +459,7 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
   const handNode = handFollowerMemo.node;
   const activeLutPath = handFollowerMemo.activePath;
 
-  // One-time boot log for this object when follower is enabled
-  React.useEffect(() => {
-    if (!obj.properties?.handFollower?.enabled) return;
-    const key = `hand-boot-${obj.id}`;
-    if ((window as any)[key]) return;
-    (window as any)[key] = true;
-    console.log('🤚 [HAND BOOT] Init', {
-      id: obj.id,
-      hasOverlay: !!overlayLayer,
-      paths: Array.isArray(obj.properties?.paths) ? obj.properties.paths.length : 0,
-      totalLen,
-    });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [obj.id, obj.properties?.handFollower?.enabled]);
-
-  // Log when follower node is null on first enable
-  React.useEffect(() => {
-    if (!obj.properties?.handFollower?.enabled) return;
-    const key = `hand-null-${obj.id}`;
-    if (!handNode && !(window as any)[key]) {
-      (window as any)[key] = true;
-      console.warn('🤚 [HAND WARN] Follower node null on first render', {
-        id: obj.id,
-        hasOverlay: !!overlayLayer,
-        totalLen,
-        drawablePaths: drawablePaths.length,
-      });
-    }
-  }, [handNode, obj.properties?.handFollower?.enabled, obj.id, overlayLayer, totalLen, drawablePaths.length]);
+  // Removed boot and warn logs
 
   // Build LUT lazily outside render to avoid blocking
   React.useEffect(() => {

@@ -271,7 +271,8 @@ app.get('/api/calibration/hand-tool/:handId/:toolId', async (req, res) => {
     const data = await fs.readFile(file, 'utf8');
     res.json(JSON.parse(data));
   } catch (err) {
-    return res.status(404).json({ error: 'Calibration not found' });
+    // Return 200 with exists:false so the frontend doesn't get red 404 noise
+    return res.status(200).json({ exists: false });
   }
 });
 

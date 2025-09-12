@@ -19,6 +19,8 @@ interface Props {
   showForeground?: boolean;
   extraOffset?: { x: number; y: number };
   nibAnchor?: { x: number; y: number }; // Tool tip position in hand image coordinates
+  toolRotationOffsetDeg?: number; // visual-only rotation applied to tool sprite
+  nibLock?: boolean;
   listening?: boolean; // whether the wrapper Konva group should listen to events
   // Optional: mount directly into a Konva Layer instead of returning a wrapper Group
   mountLayer?: Konva.Layer | null;
@@ -41,6 +43,8 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
   nibAnchor,
   listening = false,
   mountLayer,
+  toolRotationOffsetDeg,
+  nibLock,
 }) => {
   const mountRef = useRef<Konva.Group>(null);
   const innerGroupRef = useRef<Konva.Group | null>(null);
@@ -153,11 +157,9 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
       const renderer = new ThreeLayerHandRenderer();
       rendererRef.current = renderer;
       if (!bootLoggedRef.current) {
-        console.log('🤚 [FOLLOWER BOOT] setup start', { hasMountLayer: !!mountLayer, visible, progress });
         bootLoggedRef.current = true;
       }
       await renderer.loadAssets(handAsset, toolAsset);
-      console.log('🤚 [FOLLOWER BOOT] assets loaded');
       // Initial position
       const initProg = progress <= 0 ? 0.0001 : progress;
       const p = getFrenetFramePosition(initProg, tipBacktrackPx);
@@ -175,6 +177,7 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
         handAsset,
         toolAsset,
         pathPosition: { x: posX, y: posY },
+        rawPathPosition: { x: p.x, y: p.y },
         pathAngle: angle,
         scale: displayScale,
         opacity: 1,
@@ -183,8 +186,10 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
         showForeground,
         // nibAnchor affects both tool pivot offset and compositor math
         nibAnchor,
+        extraOffset: extraOffset,
+        toolRotationOffsetDeg,
+        nibLock,
       });
-      console.log('🤚 [FOLLOWER BOOT] group created', { posX: Math.round(posX), posY: Math.round(posY), angle: Number((angle*180/Math.PI).toFixed(1)) });
       if (cancelled) { group.destroy(); return; }
       innerGroupRef.current = group;
 
@@ -266,6 +271,7 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
       handAsset,
       toolAsset,
       pathPosition: { x: posX, y: posY },
+      rawPathPosition: { x: p.x, y: p.y },
       pathAngle: angle,
       scale: displayScale,
       opacity: 1,
@@ -273,6 +279,9 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
       mirror,
       showForeground,
       nibAnchor,
+      extraOffset: extraOffset,
+      toolRotationOffsetDeg,
+      nibLock,
     });
     if (mountLayer) {
       try { innerGroupRef.current?.moveToTop(); } catch {}
@@ -283,7 +292,7 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
       try { mountRef.current?.getLayer()?.batchDraw(); } catch {}
       try { mountRef.current?.getStage()?.batchDraw(); } catch {}
     }
-  }, [progress, tipBacktrackPx, handAsset, toolAsset, displayScale, visible, mirror, showForeground, extraOffset, pathData, nibAnchor, pathMatrix, mountLayer]);
+  }, [progress, tipBacktrackPx, handAsset, toolAsset, displayScale, visible, mirror, showForeground, extraOffset, pathData, nibAnchor, pathMatrix, mountLayer, debug]);
 
   if (!visible) return null;
   // Always render a local wrapper group as a safe fallback; when an external

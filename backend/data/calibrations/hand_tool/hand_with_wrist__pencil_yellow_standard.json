@@ -1,7 +1,7 @@
 {
   "handId": "hand_with_wrist",
   "toolId": "pencil_yellow_standard",
-  "savedAt": "2025-09-13T10:14:08.934Z",
+  "savedAt": "2025-09-13T12:44:29.643Z",
   "version": 1,
   "tipBacktrackPx": 0,
   "calibrationOffset": {
@@ -9,12 +9,12 @@
     "y": 0
   },
   "nibAnchor": {
-    "x": -278,
-    "y": 459
+    "x": -283,
+    "y": 514
   },
   "mirror": false,
   "showForeground": true,
-  "toolRotationOffsetDeg": -2,
+  "toolRotationOffsetDeg": 0,
   "calibrationBaseScale": 1,
   "nibLock": true,
   "extraOffset": {

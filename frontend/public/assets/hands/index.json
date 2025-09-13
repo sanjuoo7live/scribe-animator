@@ -6,14 +6,6 @@
       "path": "Right_hand_pen/preset.json"
     },
     {
-      "id": "Right_hand_pen_arm",
-      "path": "Right_hand_pen_arm/preset.json"
-    },
-    {
-      "id": "right_hand_pencil",
-      "path": "right_hand_pencil/preset.json"
-    },
-    {
       "id": "hand_with_wrist",
       "path": "hand_with_wrist/preset.json"
     },

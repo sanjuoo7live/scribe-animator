@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "id": "hand_with_wrist",
-  "title": "Right · Photoreal · Medium · Wrist",
-  "handedness": "right",
+  "id": "Left_hand_pen",
+  "title": "Left · Photoreal · Medium · Pen",
+  "handedness": "left",
   "style": "photoreal",
   "skinTone": "medium",
 
@@ -15,13 +15,13 @@
 
   "dimensions": { "width": 1024, "height": 1024 },
   "anchors": {
-    "wrist": { "x": 400, "y": 950 },
-    "grip": { "x": 250, "y": 350 }
+    "wrist": { "x": 224, "y": 124 },
+    "grip": { "x": 553, "y": 461 }
   },
 
   "tool": {
-    "type": "pencil",
-    "tip": { "x": 120, "y": 200 },
+    "type": "pen",
+    "tip": { "x": 922, "y": 348 },
     "tipNormal": 0.0,
     "nibOffset": { "dx": 0, "dy": 0 },
     "lengthPx": 600,

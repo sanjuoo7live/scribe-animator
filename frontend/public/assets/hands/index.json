@@ -6,6 +6,14 @@
       "path": "Right_hand_pen/preset.json"
     },
     {
+      "id": "Left_hand_pen",
+      "path": "Left_hand_pen/preset.json"
+    },
+    {
+      "id": "Full_Men",
+      "path": "Full_Men/preset.json"
+    },
+    {
       "id": "hand_with_wrist",
       "path": "hand_with_wrist/preset.json"
     },

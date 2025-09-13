@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "id": "pen_fountain_black",
+  "title": "Black Fountain Pen",
+  "type": "pen",
+  "images": {
+    "image": "image.png",
+    "thumbnail": "thumbnail.png"
+  },
+  "dimensions": {
+    "width": 1024,
+    "height": 1024
+  },
+  "anchors": {
+    "socketBase": { "x": 635, "y": 512 },
+    "socketForward": { "x": 963, "y": 512 },
+    "tip": { "x": 102, "y": 676 }
+  },
+  "render": {
+    "rotationOffsetDeg": 0
+  },
+  "compat": {
+    "minAppVersion": "0.2.0"
+  },
+  "author": "Sudhir",
+  "license": "internal"
+}

@@ -10,6 +10,10 @@
       "path": "pen_black_angled/preset.json"
     },
     {
+      "id": "pen_fountain_black",
+      "path": "pen_fountain_black/preset.json"
+    },
+    {
       "id": "pencil_yellow_standard",
       "path": "pencil_yellow_standard/preset.json"
     }

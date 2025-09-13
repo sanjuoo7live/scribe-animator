@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "id": "hand_with_wrist",
-  "title": "Right · Photoreal · Medium · Wrist",
+  "id": "Full_Men",
+  "title": "Right · Photoreal · Medium · Full Hand",
   "handedness": "right",
   "style": "photoreal",
   "skinTone": "medium",
@@ -15,13 +15,13 @@
 
   "dimensions": { "width": 1024, "height": 1024 },
   "anchors": {
-    "wrist": { "x": 400, "y": 950 },
-    "grip": { "x": 250, "y": 350 }
+    "wrist": { "x": 800, "y": 900 },
+    "grip": { "x": 471, "y": 563 }
   },
 
   "tool": {
-    "type": "pencil",
-    "tip": { "x": 120, "y": 200 },
+    "type": "pen",
+    "tip": { "x": 102, "y": 676 },
     "tipNormal": 0.0,
     "nibOffset": { "dx": 0, "dy": 0 },
     "lengthPx": 600,

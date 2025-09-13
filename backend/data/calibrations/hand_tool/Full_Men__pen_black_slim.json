@@ -1,16 +1,16 @@
 {
-  "handId": "hand_with_sleeve",
-  "toolId": "pen_black_angled",
-  "savedAt": "2025-09-13T14:36:18.826Z",
+  "handId": "Full_Men",
+  "toolId": "pen_black_slim",
+  "savedAt": "2025-09-13T14:52:06.424Z",
   "version": 1,
   "tipBacktrackPx": 0,
   "calibrationOffset": {
-    "x": -73,
-    "y": 10
+    "x": -17,
+    "y": -112
   },
   "nibAnchor": {
     "x": 0,
-    "y": 0
+    "y": 645
   },
   "mirror": false,
   "showForeground": true,
@@ -18,7 +18,7 @@
   "calibrationBaseScale": 5,
   "nibLock": true,
   "extraOffset": {
-    "x": -73,
-    "y": 10
+    "x": -17,
+    "y": -112
   }
 }

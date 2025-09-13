@@ -12,6 +12,10 @@ export interface HandFollowerSettings {
   visible?: boolean;
   // Path-follow policy removed; hand always follows the currently drawing path
   
+  // Rotation behavior (used primarily during calibration/preview)
+  rotationMode?: 'none' | 'damped' | 'full';
+  rotationMaxDeg?: number; // for 'damped' mode, max degrees per update step
+
   // Phase 2: Natural Movement Settings
   smoothing?: {
     enabled: boolean;

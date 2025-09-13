@@ -213,6 +213,8 @@ const SvgPathEditorComponent: React.FC = () => {
               toolRotationOffsetDeg: hf?.toolRotationOffsetDeg ?? 0,
               baseScale: hf?.scale ?? PROPERTY_RANGES.handScale.default,
               nibLock: hf?.nibLock !== false,
+              rotationMode: (hf as any)?.rotationMode ?? 'full',
+              rotationMaxDeg: (hf as any)?.rotationMaxDeg ?? 45,
             }}
             onLiveChange={(partial: any) => {
               if (!id) return;
@@ -230,6 +232,8 @@ const SvgPathEditorComponent: React.FC = () => {
               if (partial.nibLock !== undefined) nextHF.nibLock = !!partial.nibLock;
               if (partial.mirror !== undefined) nextHF.mirror = !!partial.mirror;
               if (partial.toolRotationOffsetDeg !== undefined) nextHF.toolRotationOffsetDeg = partial.toolRotationOffsetDeg;
+              if (partial.rotationMode !== undefined) nextHF.rotationMode = partial.rotationMode;
+              if (partial.rotationMaxDeg !== undefined) nextHF.rotationMaxDeg = partial.rotationMaxDeg;
               patchSceneObject(id, { properties: { handFollower: nextHF } });
             }}
             onApply={async (settings: any) => {
@@ -242,6 +246,7 @@ const SvgPathEditorComponent: React.FC = () => {
               nextHF.toolRotationOffsetDeg = settings.toolRotationOffsetDeg;
               if (typeof settings.calibrationBaseScale === 'number') nextHF.calibrationBaseScale = settings.calibrationBaseScale;
               if (typeof settings.nibLock === 'boolean') nextHF.nibLock = !!settings.nibLock;
+              // rotationMode/maxDeg are calibration-preview only; keep if already set via live change
               patchSceneObject(id, { properties: { handFollower: nextHF } });
               // Persist to backend if we have concrete hand/tool ids
               try {

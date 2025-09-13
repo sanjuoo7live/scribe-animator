@@ -19,6 +19,8 @@ interface HandFollowerCalibrationModalProps {
     toolRotationOffsetDeg?: number;
     baseScale?: number; // current hand scale at time of calibration
     nibLock?: boolean;
+    rotationMode?: 'none' | 'damped' | 'full';
+    rotationMaxDeg?: number;
   };
   onApply?: (settings: {
     tipBacktrackPx: number;
@@ -40,6 +42,8 @@ interface HandFollowerCalibrationModalProps {
     toolRotationOffsetDeg?: number;
     extraOffset?: { x: number; y: number }; // Add extraOffset for live updates
     nibLock?: boolean;
+    rotationMode?: 'none' | 'damped' | 'full';
+    rotationMaxDeg?: number;
   }>) => void;
 }
 
@@ -82,6 +86,8 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
   const [mirror, setMirror] = useState(initialSettings?.mirror ?? false);
   const [toolRotationOffsetDeg, setToolRotationOffsetDeg] = useState<number>(initialSettings?.toolRotationOffsetDeg ?? 0);
   const [nibLock, setNibLock] = useState<boolean>(initialSettings?.nibLock !== false);
+  const [rotationMode, setRotationMode] = useState<'none' | 'damped' | 'full'>(initialSettings?.rotationMode ?? 'full');
+  const [rotationMaxDeg, setRotationMaxDeg] = useState<number>(initialSettings?.rotationMaxDeg ?? 45);
   // Removed local Show Foreground control (managed in Properties Panel)
   
   // Force update counter to ensure live changes are reflected
@@ -571,6 +577,50 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
             </div>
 
             {/* Mirror UI removed — mirror is managed in Properties Panel. */}
+
+            {/* Rotation Mode (calibration preview only) */}
+            <div className="mt-4 p-3 bg-gray-700 rounded">
+              <div className="text-sm font-semibold text-gray-200 mb-2">Rotation Mode (Calibration)</div>
+              <div className="grid grid-cols-3 gap-2 mb-2">
+                {(['none','damped','full'] as const).map(m => (
+                  <button
+                    key={m}
+                    type="button"
+                    className={`px-2 py-1 rounded text-xs border ${rotationMode===m? 'bg-blue-600 border-blue-500 text-white':'bg-gray-800 border-gray-600 text-gray-300 hover:bg-gray-600'}`}
+                    onClick={() => {
+                      setRotationMode(m);
+                      onLiveChange?.({ rotationMode: m });
+                    }}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+              {rotationMode === 'damped' && (
+                <div className="space-y-1">
+                  <label className="block text-xs text-gray-300">Max rotation per step (°)</label>
+                  <input
+                    type="range"
+                    min="5"
+                    max="90"
+                    step="1"
+                    value={rotationMaxDeg}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setRotationMaxDeg(v);
+                      onLiveChange?.({ rotationMaxDeg: v });
+                    }}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>5°</span>
+                    <span>{rotationMaxDeg.toFixed(0)}°</span>
+                    <span>90°</span>
+                  </div>
+                  <p className="text-[11px] text-gray-400">Limits sudden rotation; keeps arm grounded.</p>
+                </div>
+              )}
+            </div>
 
             {/* Frenet Frame Information */}
             <div className="mt-4 p-3 bg-yellow-900/20 rounded">

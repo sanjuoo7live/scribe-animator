@@ -24,6 +24,9 @@ interface Props {
   listening?: boolean; // whether the wrapper Konva group should listen to events
   // Optional: mount directly into a Konva Layer instead of returning a wrapper Group
   mountLayer?: Konva.Layer | null;
+  // Rotation behavior (mainly for calibration preview)
+  rotationMode?: 'none' | 'damped' | 'full';
+  rotationMaxDeg?: number; // degrees for damped mode per update
 }
 
 // React wrapper that mounts a Konva group composed by ThreeLayerHandRenderer
@@ -45,11 +48,14 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
   mountLayer,
   toolRotationOffsetDeg,
   nibLock = true,
+  rotationMode = 'full',
+  rotationMaxDeg = 45,
 }) => {
   const mountRef = useRef<Konva.Group>(null);
   const innerGroupRef = useRef<Konva.Group | null>(null);
   const rendererRef = useRef<ThreeLayerHandRenderer | null>(null);
   const prevAngleRef = useRef<number | undefined>(undefined);
+  const anchorAngleRef = useRef<number | undefined>(undefined); // baseline for damped absolute clamp
   const lastProgressRef = useRef<number>(-1);
   const lastUpdateTsRef = useRef<number>(0);
   const bootLoggedRef = useRef(false);
@@ -69,6 +75,37 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
     if (diff < -Math.PI) diff += 2 * Math.PI;
     const smoothed = a1 + diff * factor;
     return norm(smoothed);
+  };
+
+  const applyRotationMode = (prev: number | undefined, target: number): number => {
+    // Normalize helper
+    const norm = (a: number) => {
+      while (a > Math.PI) a -= 2 * Math.PI;
+      while (a < -Math.PI) a += 2 * Math.PI;
+      return a;
+    };
+    if (rotationMode === 'none') return 0; // fixed orientation during calibration preview
+    if (rotationMode === 'full') return smoothAngle(prev, target);
+    // damped: absolute clamp around an anchor baseline within ±rotationMaxDeg
+    const base = ((): number => {
+      if (anchorAngleRef.current === undefined) {
+        // Initialize baseline to current prev (if exists) or current target
+        anchorAngleRef.current = prev !== undefined ? norm(prev) : norm(target);
+      }
+      return anchorAngleRef.current as number;
+    })();
+    const maxAbs = Math.max(0, (rotationMaxDeg || 0) * Math.PI / 180);
+    const desired = smoothAngle(prev, target); // keep motion smooth
+    let aBase = norm(base);
+    let aDesired = norm(desired);
+    let delta = aDesired - aBase;
+    if (delta > Math.PI) delta -= 2 * Math.PI;
+    if (delta < -Math.PI) delta += 2 * Math.PI;
+    // Clamp absolute deviation around base
+    const clampedDelta = Math.max(-maxAbs, Math.min(maxAbs, delta));
+    const goal = norm(aBase + clampedDelta);
+    // Blend slightly toward goal for extra damping
+    return smoothAngle(prev, goal, 0.5);
   };
 
   // Get position and angle using Frenet frame (direct arc-length calculation)
@@ -163,7 +200,7 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
       // Initial position
       const initProg = progress <= 0 ? 0.0001 : progress;
       const p = getFrenetFramePosition(initProg, tipBacktrackPx);
-      const angle = smoothAngle(prevAngleRef.current, p.tangentAngle);
+      const angle = applyRotationMode(prevAngleRef.current, p.tangentAngle);
       prevAngleRef.current = angle;
       let posX = p.x, posY = p.y;
       if (extraOffset && (extraOffset.x || extraOffset.y)) {
@@ -255,9 +292,10 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
     if (!p) return;
     if (currentProgress < lastProgressRef.current) {
       prevAngleRef.current = undefined;
+      anchorAngleRef.current = undefined; // reset baseline when rewinding
     }
     lastProgressRef.current = currentProgress;
-    const angle = smoothAngle(prevAngleRef.current, p.tangentAngle);
+    const angle = applyRotationMode(prevAngleRef.current, p.tangentAngle);
     prevAngleRef.current = angle;
     let posX = p.x, posY = p.y;
     if (extraOffset && (extraOffset.x || extraOffset.y)) {
@@ -292,7 +330,12 @@ const ThreeLayerHandFollower: React.FC<Props> = ({
       try { mountRef.current?.getLayer()?.batchDraw(); } catch {}
       try { mountRef.current?.getStage()?.batchDraw(); } catch {}
     }
-  }, [progress, tipBacktrackPx, handAsset, toolAsset, displayScale, visible, mirror, showForeground, extraOffset, pathData, nibAnchor, pathMatrix, mountLayer, debug]);
+  }, [progress, tipBacktrackPx, handAsset, toolAsset, displayScale, visible, mirror, showForeground, extraOffset, pathData, nibAnchor, pathMatrix, mountLayer, debug, rotationMode, rotationMaxDeg]);
+
+  // Reset anchor baseline when mode changes
+  useEffect(() => {
+    anchorAngleRef.current = undefined;
+  }, [rotationMode]);
 
   if (!visible) return null;
   // Always render a local wrapper group as a safe fallback; when an external

@@ -413,30 +413,32 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
         }
       }
 
-      return {
-        node: (
-          <ThreeLayerHandFollower
-            key={`hand-follower-${obj.id}`}
-            pathData={activePath.d}
-            pathMatrix={worldM}
-            progress={localProgress}
-            tipBacktrackPx={tipBacktrackPx}
-            handAsset={handFollowerSettings.handAsset}
-            toolAsset={handFollowerSettings.toolAsset}
-            scale={handFollowerSettings.scale || 1}
-            visible={handFollowerSettings.visible !== false}
-            debug={!!handFollowerSettings.debug || handDebug}
-            mirror={!!handFollowerSettings.mirror}
-            showForeground={handFollowerSettings.showForeground !== false}
-            extraOffset={scaledOffset}
-            nibAnchor={handFollowerSettings.nibAnchor}
-            nibLock={!!handFollowerSettings.nibLock}
-            toolRotationOffsetDeg={handFollowerSettings.toolRotationOffsetDeg}
-            listening={false}
-            mountLayer={overlayLayer}
-          />
-        ),
-        activePath: cpActive
+          return {
+            node: (
+              <ThreeLayerHandFollower
+                key={`hand-follower-${obj.id}`}
+                pathData={activePath.d}
+                pathMatrix={worldM}
+                progress={localProgress}
+                tipBacktrackPx={tipBacktrackPx}
+                handAsset={handFollowerSettings.handAsset}
+                toolAsset={handFollowerSettings.toolAsset}
+                scale={handFollowerSettings.scale || 1}
+                visible={handFollowerSettings.visible !== false}
+                debug={!!handFollowerSettings.debug || handDebug}
+                mirror={!!handFollowerSettings.mirror}
+                showForeground={handFollowerSettings.showForeground !== false}
+                extraOffset={scaledOffset}
+                nibAnchor={handFollowerSettings.nibAnchor}
+                nibLock={!!handFollowerSettings.nibLock}
+                toolRotationOffsetDeg={handFollowerSettings.toolRotationOffsetDeg}
+                rotationMode={(handFollowerSettings as any).rotationMode}
+                rotationMaxDeg={(handFollowerSettings as any).rotationMaxDeg}
+                listening={false}
+                mountLayer={overlayLayer}
+              />
+            ),
+            activePath: cpActive
       };
     }
 

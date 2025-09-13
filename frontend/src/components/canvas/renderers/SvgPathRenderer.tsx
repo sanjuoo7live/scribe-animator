@@ -386,9 +386,14 @@ export const SvgPathRenderer: React.FC<BaseRendererProps> = ({
       const groupM = trs(groupX, groupY, groupRotationDeg, groupScaleX, groupScaleY);
       const worldM = mul(groupM, pathM);
 
-      // Keep Frenet offset absolute in world px; do not scale by hand scale
+      // Scale-aware Frenet offset: maintain same relative position across user scales
       const baseOffset = handFollowerSettings.calibrationOffset || handFollowerSettings.offset || { x: 0, y: 0 };
-      const scaledOffset = baseOffset;
+      // Offsets are authored at calibrationBaseScale in world-like units tied to the user scale.
+      // To preserve the same visual bias across user scale changes, scale proportionally.
+      const scaledOffset = {
+        x: baseOffset.x * (scaleRatio || 1),
+        y: baseOffset.y * (scaleRatio || 1),
+      };
 
       if (debug || handDebug) {
         const prev = lastScaleRef.current;

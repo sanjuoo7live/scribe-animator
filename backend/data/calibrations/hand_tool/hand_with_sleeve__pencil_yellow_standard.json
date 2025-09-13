@@ -1,7 +1,7 @@
 {
   "handId": "hand_with_sleeve",
-  "toolId": "pen_black_slim",
-  "savedAt": "2025-09-12T23:30:19.592Z",
+  "toolId": "pencil_yellow_standard",
+  "savedAt": "2025-09-13T07:37:16.185Z",
   "version": 1,
   "tipBacktrackPx": 0,
   "calibrationOffset": {
@@ -9,8 +9,8 @@
     "y": 0
   },
   "nibAnchor": {
-    "x": 139,
-    "y": -147
+    "x": 324,
+    "y": -210
   },
   "mirror": false,
   "showForeground": true,

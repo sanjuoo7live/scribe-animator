@@ -189,20 +189,20 @@ export class ThreeLayerHandRenderer {
 
     // No post-nudge; nibAnchor is baked into composition via custom tip
 
-    // Final re-pin: compute actual tip from node after all adjustments and force it to target
-    const computeTip = (): {x:number;y:number} => {
-      const rot = (toolNode.rotation() * Math.PI) / 180;
-      const cos = Math.cos(rot), sin = Math.sin(rot);
-      const sX = toolNode.scaleX();
-      const sY = toolNode.scaleY();
-      const vX = config.toolAsset.tipAnchor.x - centerX;
-      const vY = config.toolAsset.tipAnchor.y - centerY;
-      return {
-        x: toolNode.x() + (vX * sX) * cos - (vY * sY) * sin,
-        y: toolNode.y() + (vX * sX) * sin + (vY * sY) * cos,
+    // Final re-pin only when nibLock is enabled; otherwise allow center rotation to move tip
+    if (config.nibLock) {
+      const computeTip = (): { x: number; y: number } => {
+        const rot = (toolNode.rotation() * Math.PI) / 180;
+        const cos = Math.cos(rot), sin = Math.sin(rot);
+        const sX = toolNode.scaleX();
+        const sY = toolNode.scaleY();
+        const vX = config.toolAsset.tipAnchor.x - centerX;
+        const vY = config.toolAsset.tipAnchor.y - centerY;
+        return {
+          x: toolNode.x() + (vX * sX) * cos - (vY * sY) * sin,
+          y: toolNode.y() + (vX * sX) * sin + (vY * sY) * cos,
+        };
       };
-    };
-    {
       const actual = computeTip();
       const desired = this.composition.finalTipPosition; // already equals pathPosition
       const dx = actual.x - desired.x;
@@ -365,25 +365,25 @@ export class ThreeLayerHandRenderer {
 
     // No post-nudge; nibAnchor already baked into composition
 
-    // Final re-pin: ensure actual tip equals desired path target after all adjustments
-    const computeTip = (): { x: number; y: number } => {
-      const rot = (toolNode.rotation() * Math.PI) / 180;
-      const cos = Math.cos(rot), sin = Math.sin(rot);
-      const sX = toolNode.scaleX();
-      const sY = toolNode.scaleY();
-      const vX = config.toolAsset.tipAnchor.x - centerX;
-      const vY = config.toolAsset.tipAnchor.y - centerY;
-      return {
-        x: toolNode.x() + (vX * sX) * cos - (vY * sY) * sin,
-        y: toolNode.y() + (vX * sX) * sin + (vY * sY) * cos,
+    // Final re-pin only when nibLock is enabled
+    if (config.nibLock) {
+      const computeTip = (): { x: number; y: number } => {
+        const rot = (toolNode.rotation() * Math.PI) / 180;
+        const cos = Math.cos(rot), sin = Math.sin(rot);
+        const sX = toolNode.scaleX();
+        const sY = toolNode.scaleY();
+        const vX = config.toolAsset.tipAnchor.x - centerX;
+        const vY = config.toolAsset.tipAnchor.y - centerY;
+        return {
+          x: toolNode.x() + (vX * sX) * cos - (vY * sY) * sin,
+          y: toolNode.y() + (vX * sX) * sin + (vY * sY) * cos,
+        };
       };
-    };
-    {
       const desired = this.composition.finalTipPosition;
       const actual = computeTip();
       const dx = actual.x - desired.x;
       const dy = actual.y - desired.y;
-      if (Math.abs(dx) + Math.abs(dy) > 0.005) {
+      if (Math.abs(dx) + Math.abs(dy) > 0.001) {
         toolNode.x(toolNode.x() - dx);
         toolNode.y(toolNode.y() - dy);
       }

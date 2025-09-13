@@ -1,7 +1,7 @@
 {
   "handId": "hand_with_sleeve",
   "toolId": "pen_black_angled",
-  "savedAt": "2025-09-11T14:40:21.316Z",
+  "savedAt": "2025-09-13T08:06:27.790Z",
   "version": 1,
   "tipBacktrackPx": 0,
   "calibrationOffset": {
@@ -9,12 +9,14 @@
     "y": 0
   },
   "nibAnchor": {
-    "x": -21,
-    "y": -74
+    "x": 0,
+    "y": 0
   },
-  "scale": 1.4,
   "mirror": false,
   "showForeground": true,
+  "toolRotationOffsetDeg": 0,
+  "calibrationBaseScale": 5,
+  "nibLock": true,
   "extraOffset": {
     "x": 0,
     "y": 0

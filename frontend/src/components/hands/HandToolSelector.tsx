@@ -290,12 +290,33 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
     const offsetX = (canvas.width - (boundsW * fitScale)) / 2 - (minX * fitScale);
     const offsetY = (canvas.height - (boundsH * fitScale)) / 2 - (minY * fitScale);
     const target = { x: offsetX, y: offsetY };
+    // Apply calibration nibAnchor as custom tip if available
+    let customTip: { x:number; y:number } | undefined;
+    if (calib?.nibAnchor) {
+      try {
+        const base = HandToolCompositor.composeHandTool(handAsset, toolAsset, { x: 0, y: 0 }, 0, 1);
+        const baseNib = {
+          x: base.finalTipPosition.x - base.handPosition.x,
+          y: base.finalTipPosition.y - base.handPosition.y,
+        };
+        const dxH = calib.nibAnchor.x - baseNib.x;
+        const dyH = calib.nibAnchor.y - baseNib.y;
+        if (Math.abs(dxH) + Math.abs(dyH) > 0.001) {
+          const rel = base.toolRotation - base.handRotation;
+          const cosR = Math.cos(rel), sinR = Math.sin(rel);
+          const dtX = dxH * cosR - dyH * sinR;
+          const dtY = dxH * sinR + dyH * cosR;
+          customTip = { x: toolAsset.tipAnchor.x + dtX, y: toolAsset.tipAnchor.y + dtY };
+        }
+      } catch {}
+    }
     const comp = HandToolCompositor.composeHandTool(
       handAsset,
       toolAsset,
       target,
       0,
-      fitScale
+      fitScale,
+      customTip
     );
 
     // Helper to draw an image with the given transform (top-left origin)
@@ -314,9 +335,31 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
       ctx.restore();
     };
 
-    // Draw BG → TOOL → FG per z-order
+    // Draw BG → TOOL → FG per z-order. Apply extra rotation offset if present and keep tip pinned.
     drawTransformed(images.bg, comp.handPosition, comp.handRotation, comp.handScale);
-    drawTransformed(images.tool, comp.toolPosition, comp.toolRotation, comp.toolScale);
+    {
+      const centerX = images.tool.width / 2;
+      const centerY = images.tool.height / 2;
+      const vx = toolAsset.tipAnchor.x - centerX;
+      const vy = toolAsset.tipAnchor.y - centerY;
+      const baseRot = comp.toolRotation; // radians
+      const extraDeg = calib?.toolRotationOffsetDeg || 0;
+      const totalRot = baseRot + (extraDeg * Math.PI) / 180;
+      const sx = comp.toolScale;
+      const sy = comp.toolScale;
+      const cosT = Math.cos(totalRot), sinT = Math.sin(totalRot);
+      const ux = (vx * sx) * cosT - (vy * sy) * sinT;
+      const uy = (vx * sx) * sinT + (vy * sy) * cosT;
+      const posX = comp.finalTipPosition.x - ux;
+      const posY = comp.finalTipPosition.y - uy;
+      ctx.save();
+      ctx.translate(posX, posY);
+      ctx.rotate(totalRot);
+      ctx.scale(sx, sy);
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(images.tool, -centerX, -centerY);
+      ctx.restore();
+    }
     drawTransformed(images.fg, comp.handPosition, comp.handRotation, comp.handScale);
 
     // Crosshair at tip
@@ -334,7 +377,7 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
     ctx.lineTo(tip.x, tip.y + 6);
     ctx.stroke();
     ctx.restore();
-  }, [selectedPreset, images.bg, images.fg, images.tool, selectedToolId, tools, previewSize.w, previewSize.h]);
+  }, [selectedPreset, images.bg, images.fg, images.tool, selectedToolId, tools, previewSize.w, previewSize.h, calib]);
 
   // Filtered list
   const filteredPresets = useMemo(() => {
@@ -402,7 +445,14 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
               {!loading && !error && filteredPresets.map(p => (
                 <button
                   key={p.id}
-                  onClick={() => setSelectedPresetId(p.id)}
+                  onClick={() => {
+                    setSelectedPresetId(p.id);
+                    // Auto-pick a matching library tool by type for correct preview/grip
+                    try {
+                      const match = tools.find(t => t.type === p.tool.type);
+                      setSelectedToolId(match ? match.id : null);
+                    } catch { setSelectedToolId(null); }
+                  }}
                   className={`text-left bg-gray-800/60 border rounded-lg p-3 hover:bg-gray-700 transition-colors ${selectedPresetId===p.id?'border-blue-500 shadow-[0_0_0_2px_rgba(59,130,246,0.3)]':'border-gray-700'}`}
                 >
                   <div className="w-24 h-24 bg-white rounded-md mb-2 overflow-hidden flex items-center justify-center mx-auto">
@@ -490,16 +540,19 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
                 style={{ display: 'block', margin: 'auto', maxWidth: '100%', maxHeight: '100%' }}
               />
             </div>
-            <div className="mt-3 flex gap-2 w-full">
-              <button
-                type="button"
-                className="flex-1 px-3 py-2 bg-gray-700 rounded text-sm"
-                onClick={() => setCalibrateOpen(true)}
-              >
-                Calibrate…
-              </button>
-            </div>
+          <div className="mt-3 flex gap-2 w-full">
+            <button
+              type="button"
+              className="flex-1 px-3 py-2 bg-gray-700 rounded text-sm"
+              onClick={() => setCalibrateOpen(true)}
+            >
+              Calibrate…
+            </button>
           </div>
+          <p className="text-[11px] text-gray-400 mt-2 self-start">
+            Tip: Applying a hand without choosing a tool uses its preset, pre‑calibrated tool. Selecting a different tool may require calibration.
+          </p>
+        </div>
         </div>
 
         {/* Footer */}
@@ -517,7 +570,7 @@ export const HandToolSelector: React.FC<Props> = ({ open, initialHand, initialTo
               }
               onApply({ hand: selectedLegacy.hand, tool: selectedLegacy.tool, scale, mirror: false, calibrated: (effective && Object.keys(effective).length ? effective : undefined) });
             }}
-            disabled={!selectedLegacy.hand || !selectedLegacy.tool || (!!tools.length && !selectedToolId)}
+            disabled={!selectedLegacy.hand || !selectedLegacy.tool}
           >Apply Selection</button>
         </div>
       </div>

@@ -81,7 +81,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
   });
   const [mirror, setMirror] = useState(initialSettings?.mirror ?? false);
   const [toolRotationOffsetDeg, setToolRotationOffsetDeg] = useState<number>(initialSettings?.toolRotationOffsetDeg ?? 0);
-  const [nibLock] = useState<boolean>(initialSettings?.nibLock !== false);
+  const [nibLock, setNibLock] = useState<boolean>(initialSettings?.nibLock !== false);
   // Removed local Show Foreground control (managed in Properties Panel)
   
   // Force update counter to ensure live changes are reflected
@@ -334,7 +334,48 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
             </div>
 
             <div className="space-y-2">
-              <h4 className="text-sm font-semibold text-gray-400">Hand Coordinates</h4>
+              <div className="flex items-center justify-between">
+                <h4 className="text-sm font-semibold text-gray-400">Hand Coordinates</h4>
+                <button
+                  type="button"
+                  className="text-[11px] px-2 py-1 bg-gray-700 hover:bg-gray-600 rounded"
+                  onClick={() => {
+                    try {
+                      // Base nib in hand space
+                      const comp = HandToolCompositor.composeHandTool(
+                        (mirror ? HandToolCompositor.mirrorHandAsset(handAsset) : handAsset),
+                        (mirror ? HandToolCompositor.mirrorToolAsset(toolAsset) : toolAsset),
+                        { x: 0, y: 0 }, 0, 1
+                      );
+                      const baseNib = {
+                        x: comp.finalTipPosition.x - comp.handPosition.x,
+                        y: comp.finalTipPosition.y - comp.handPosition.y,
+                      };
+                      // Heuristic: seat tool deeper into grip along hand forward direction
+                      const fwd = {
+                        x: handAsset.gripForward.x - handAsset.gripBase.x,
+                        y: handAsset.gripForward.y - handAsset.gripBase.y,
+                      };
+                      const len = Math.hypot(fwd.x, fwd.y) || 1;
+                      const nx = fwd.x / len;
+                      const ny = fwd.y / len;
+                      const depth = Math.max(8, Math.round(handAsset.sizePx.h * 0.04));
+                      // Move opposite the forward vector to seat into palm
+                      let ax = baseNib.x - nx * depth;
+                      let ay = baseNib.y - ny * depth;
+                      // Mirror-aware conversion for preview input controls
+                      const suggested = mirror
+                        ? { x: handAsset.sizePx.w - ax, y: ay }
+                        : { x: ax, y: ay };
+                      setNibAnchor(suggested);
+                      onLiveChange?.({ nibAnchor: suggested, extraOffset: { x: calibrationOffset.x, y: calibrationOffset.y } });
+                      forceUpdate((t)=>t+1);
+                    } catch {}
+                  }}
+                >
+                  Auto Calibrate
+                </button>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">X (pixels)</label>
@@ -508,7 +549,25 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                   Rotates the tool image around the tip for perfect alignment.
                 </p>
               </div>
-              {/* Nib lock is always ON; checkbox removed intentionally */}
+              <label className="flex items-center gap-2 mt-2 text-xs text-gray-300">
+                <input
+                  type="checkbox"
+                  checked={nibLock}
+                  onChange={(e)=> {
+                    const checked = e.target.checked;
+                    setNibLock(checked);
+                    onLiveChange?.({
+                      nibLock: checked,
+                      extraOffset: { x: calibrationOffset.x, y: calibrationOffset.y },
+                    });
+                    forceUpdate(prev => prev + 1);
+                  }}
+                />
+                Nib Lock (keep tip pinned)
+              </label>
+              <p className="text-[11px] text-gray-400 mt-1">
+                Uncheck to rotate around tool center (tip will move).
+              </p>
             </div>
 
             {/* Mirror UI removed — mirror is managed in Properties Panel. */}
@@ -535,7 +594,7 @@ const HandFollowerCalibrationModal: React.FC<HandFollowerCalibrationModalProps> 
                 showForeground: true,
                 toolRotationOffsetDeg,
                 calibrationBaseScale: initialSettings?.baseScale ?? 1,
-                nibLock: true,
+                nibLock,
                 extraOffset: { x: calibrationOffset.x, y: calibrationOffset.y },
               });
               onClose();

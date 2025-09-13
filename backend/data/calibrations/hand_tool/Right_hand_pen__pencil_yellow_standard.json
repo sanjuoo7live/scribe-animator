@@ -1,7 +1,7 @@
 {
   "handId": "Right_hand_pen",
-  "toolId": "pen_black_slim",
-  "savedAt": "2025-09-13T09:43:26.543Z",
+  "toolId": "pencil_yellow_standard",
+  "savedAt": "2025-09-13T10:20:18.686Z",
   "version": 1,
   "tipBacktrackPx": 0,
   "calibrationOffset": {
@@ -9,14 +9,14 @@
     "y": 0
   },
   "nibAnchor": {
-    "x": -21,
-    "y": 649
+    "x": -312,
+    "y": 656
   },
   "mirror": false,
   "showForeground": true,
   "toolRotationOffsetDeg": 0,
   "calibrationBaseScale": 1,
-  "nibLock": false,
+  "nibLock": true,
   "extraOffset": {
     "x": 0,
     "y": 0
